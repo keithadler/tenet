@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>tenet</AssemblyName>
+    <RootNamespace>Tenet.Cli</RootNamespace>
+    <Description>Command-line checker for Lean 4 exports.</Description>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>tenet</ToolCommandName>
+    <IsPackable>true</IsPackable>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Tenet.Kernel/Tenet.Kernel.csproj" />
+    <ProjectReference Include="../Tenet.Export/Tenet.Export.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+</Project>

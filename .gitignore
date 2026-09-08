@@ -1,0 +1,20 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+TestResults/
+artifacts/
+*.nupkg
+*.snupkg
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Large Lean exports are generated, never committed (see docs/testing.md)
+tests/exports/*.ndjson
+!tests/fixtures/*.ndjson

@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Tenet.Cli/Tenet.Cli.csproj" />
+    <Project Path="src/Tenet.Export/Tenet.Export.csproj" />
+    <Project Path="src/Tenet.Kernel/Tenet.Kernel.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Tenet.Tests/Tenet.Tests.csproj" />
+  </Folder>
+</Solution>

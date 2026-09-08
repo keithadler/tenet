@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore
+      - run: dotnet build --no-restore -c Release
+      - run: dotnet test --no-build -c Release --logger "trx;LogFileName=results.trx"
+      - run: dotnet run --no-build -c Release --project src/Tenet.Cli -- check tests/fixtures/Nat.add_succ.ndjson
+
+  check-prelude:
+    # Re-check the Lean prelude from a fresh export on every push to main.
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Build lean4export
+        run: |
+          git clone --depth 1 https://github.com/leanprover/lean4export
+          cd lean4export && lake build
+      - name: Export Init.Prelude and Init.Core
+        run: |
+          mkdir -p exports
+          cd lean4export
+          lake env .lake/build/bin/lean4export Init.Prelude > ../exports/Init.Prelude.ndjson
+          lake env .lake/build/bin/lean4export Init.Core > ../exports/Init.Core.ndjson
+      - run: dotnet build -c Release
+      - run: dotnet run --no-build -c Release --project src/Tenet.Cli -- check exports/Init.Prelude.ndjson
+      - run: dotnet run --no-build -c Release --project src/Tenet.Cli -- check exports/Init.Core.ndjson

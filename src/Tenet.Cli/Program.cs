@@ -1,0 +1,244 @@
+using System.Diagnostics;
+using System.Globalization;
+using Tenet.Export;
+using Tenet.Kernel;
+
+namespace Tenet.Cli;
+
+internal static class Program
+{
+    private const string Usage = """
+        tenet - an independent type checker for Lean 4 exports, on .NET
+
+        usage:
+          tenet check <file.ndjson> [options]     check every declaration in an export
+          tenet info  <file.ndjson>               print the export's metadata and counts
+          tenet version
+
+        options for check:
+          --only <name>[,<name>...]   check only these declarations; everything else is added unchecked
+          --fail-fast                 stop at the first failure
+          --no-compare                do not compare derived constructors/recursors with the exporter's
+          --quiet                     no progress output
+          --slow <seconds>            report declarations slower than this (default 1)
+          --stack-mb <n>              stack size for the checking thread (default 1024)
+
+        exit status: 0 all declarations checked, 1 some failed, 2 usage or file error
+        """;
+
+    private static int Main(string[] args)
+    {
+        if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+        {
+            Console.WriteLine(Usage);
+            return args.Length == 0 ? 2 : 0;
+        }
+        try
+        {
+            return args[0] switch
+            {
+                "check" => RunOnBigStack(() => Check(args[1..]), ParseStackMb(args)),
+                "info" => Info(args[1..]),
+                "version" => Version(),
+                _ => Fail($"unknown command '{args[0]}'\n\n{Usage}"),
+            };
+        }
+        catch (ExportFormatException e)
+        {
+            Console.Error.WriteLine("error: not a valid export: " + e.Message);
+            return 2;
+        }
+        catch (IOException e)
+        {
+            Console.Error.WriteLine("error: " + e.Message);
+            return 2;
+        }
+    }
+
+    private static int Fail(string msg)
+    {
+        Console.Error.WriteLine("error: " + msg);
+        return 2;
+    }
+
+    private static int Version()
+    {
+        Console.WriteLine("tenet " + (typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"));
+        Console.WriteLine("export formats: " + string.Join(", ", NdjsonReader.SupportedFormatMajors.Select(m => m + ".x")));
+        return 0;
+    }
+
+    private static int ParseStackMb(string[] args)
+    {
+        for (int i = 0; i + 1 < args.Length; i++)
+        {
+            if (args[i] == "--stack-mb" && int.TryParse(args[i + 1], out int mb))
+            {
+                return mb;
+            }
+        }
+        return 1024;
+    }
+
+    /// <summary>Kernel recursion follows expression depth; run on a thread with a generous stack.</summary>
+    private static int RunOnBigStack(Func<int> f, int stackMb)
+    {
+        int result = 2;
+        Exception? error = null;
+        var t = new Thread(() =>
+        {
+            try
+            {
+                result = f();
+            }
+            catch (Exception e)
+            {
+                error = e;
+            }
+        }, stackMb * 1024 * 1024);
+        t.Start();
+        t.Join();
+        if (error is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+        }
+        return result;
+    }
+
+    private static int Info(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            return Fail("info needs a file");
+        }
+        var sw = Stopwatch.StartNew();
+        ExportFile file = NdjsonReader.ReadFile(args[0]);
+        sw.Stop();
+        PrintMeta(file, args[0], sw.Elapsed);
+        var kinds = file.Decls.GroupBy(d => d.Kind).OrderByDescending(g => g.Count());
+        foreach (var g in kinds)
+        {
+            Console.WriteLine($"  {g.Key,-10} {g.Count(),8}");
+        }
+        int consts = file.DeclaredNames().Count();
+        Console.WriteLine($"  {"constants",-10} {consts,8}");
+        return 0;
+    }
+
+    private static void PrintMeta(ExportFile file, string path, TimeSpan parseTime)
+    {
+        Console.WriteLine($"{Path.GetFileName(path)}: {file.Decls.Count} declarations, {file.Exprs.Count} expressions, {file.Names.Count - 1} names, {file.Levels.Count - 1} levels (parsed in {parseTime.TotalSeconds:F1}s)");
+        if (file.Meta is ExportMeta m)
+        {
+            Console.WriteLine($"  exported by {m.ExporterName} {m.ExporterVersion}, format {m.FormatVersion}, Lean {m.LeanVersion} ({m.LeanGitHash[..Math.Min(9, m.LeanGitHash.Length)]})");
+        }
+    }
+
+    private static int Check(string[] args)
+    {
+        if (args.Length < 1 || args[0].StartsWith("--", StringComparison.Ordinal))
+        {
+            return Fail("check needs a file\n\n" + Usage);
+        }
+        string path = args[0];
+        HashSet<Name>? only = null;
+        bool failFast = false;
+        bool compare = true;
+        bool quiet = false;
+        double slow = 1.0;
+        for (int i = 1; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--only":
+                    if (++i >= args.Length)
+                    {
+                        return Fail("--only needs a value");
+                    }
+                    only = new HashSet<Name>(args[i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(Name.Parse));
+                    break;
+                case "--fail-fast":
+                    failFast = true;
+                    break;
+                case "--no-compare":
+                    compare = false;
+                    break;
+                case "--quiet":
+                    quiet = true;
+                    break;
+                case "--slow":
+                    if (++i >= args.Length || !double.TryParse(args[i], NumberStyles.Float, CultureInfo.InvariantCulture, out slow))
+                    {
+                        return Fail("--slow needs a number of seconds");
+                    }
+                    break;
+                case "--stack-mb":
+                    i++;
+                    break;
+                default:
+                    return Fail($"unknown option '{args[i]}'\n\n{Usage}");
+            }
+        }
+
+        var sw = Stopwatch.StartNew();
+        ExportFile file = NdjsonReader.ReadFile(path);
+        sw.Stop();
+        if (!quiet)
+        {
+            PrintMeta(file, path, sw.Elapsed);
+        }
+
+        var lastReport = Stopwatch.StartNew();
+        bool isTty = !Console.IsErrorRedirected;
+        var options = new CheckOptions
+        {
+            Only = only,
+            ContinueOnError = !failFast,
+            CompareInductive = compare,
+            SlowThreshold = TimeSpan.FromSeconds(slow),
+            Progress = quiet ? null : p =>
+            {
+                if (lastReport.ElapsedMilliseconds < 250 && p.Index != p.Total)
+                {
+                    return;
+                }
+                lastReport.Restart();
+                string line = $"  {p.Index}/{p.Total}  {p.Elapsed.TotalSeconds,7:F1}s  failed {p.Failed}  {Truncate(p.Current.ToString(), 60)}";
+                if (isTty)
+                {
+                    Console.Error.Write("\r" + line.PadRight(100));
+                }
+                else
+                {
+                    Console.Error.WriteLine(line);
+                }
+            },
+        };
+        CheckResult result = ExportChecker.Check(file, options);
+        if (!quiet && isTty)
+        {
+            Console.Error.WriteLine();
+        }
+
+        foreach (CheckFailure f in result.Failures)
+        {
+            Console.WriteLine($"FAIL {f.Kind} {f.Name} ({f.Elapsed.TotalSeconds:F2}s)");
+            foreach (string line in f.Message.Split('\n'))
+            {
+                Console.WriteLine("    " + line);
+            }
+        }
+        if (result.Slow.Count > 0 && !quiet)
+        {
+            Console.WriteLine($"slow declarations (> {slow:F1}s):");
+            foreach (var (name, elapsed) in result.Slow.OrderByDescending(s => s.Elapsed).Take(20))
+            {
+                Console.WriteLine($"  {elapsed.TotalSeconds,7:F2}s  {name}");
+            }
+        }
+        Console.WriteLine($"{(result.Success ? "OK" : "FAILED")}: {result.Checked} checked, {result.Failures.Count} failed, {result.Skipped} skipped, {result.Environment.Count} constants, {result.Elapsed.TotalSeconds:F1}s");
+        return result.Success ? 0 : 1;
+    }
+
+    private static string Truncate(string s, int n) => s.Length <= n ? s : s[..(n - 1)] + "…";
+}
