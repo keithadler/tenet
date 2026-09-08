@@ -16,7 +16,7 @@ namespace Tenet.DiffTest;
 internal static class Program
 {
     private const string Usage = """
-        usage: difftest --export FILE --tenet PATH --oracle PATH [--variants N] [--mutations M] [--seed S] [--out DIR] [--keep]
+        usage: difftest --export FILE --tenet PATH --oracle PATH [--variants N] [--mutations M] [--seed S] [--out DIR] [--keep] [--timeout SECONDS]
 
           --export     an .ndjson export (small ones such as Init.Prelude work best: each variant is checked twice)
           --tenet      path to the tenet executable
@@ -26,6 +26,7 @@ internal static class Program
           --seed       random seed (default: time based)
           --out        directory for variants and logs (default: a temp directory)
           --keep       keep variants that produced no disagreement (default: delete them)
+          --timeout    kill a checker run after this many seconds and count it as incomplete (default 1800)
         """;
 
     private sealed record Verdicts(HashSet<string> Failed, HashSet<string> All, bool Incomplete, string Raw);
@@ -48,6 +49,7 @@ internal static class Program
                 case "--seed": seed = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--out": outDir = args[++i]; break;
                 case "--keep": keep = true; break;
+                case "--timeout": TimeoutSeconds = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 default: Console.Error.WriteLine(Usage); return 2;
             }
         }
@@ -218,6 +220,9 @@ internal static class Program
     /// <summary>Both tools print Lean names; strip the «» escaping so odd components compare equal.</summary>
     private static string Normalize(string name) => name.Replace("«", "", StringComparison.Ordinal).Replace("»", "", StringComparison.Ordinal);
 
+    /// <summary>A checker run longer than this is killed; Lean's kernel has no unfolding limit, so a mutation can send it into a very long reduction.</summary>
+    private static int TimeoutSeconds = 1800;
+
     private static string Run(string exe, string[] args, out int exitCode)
     {
         var psi = new ProcessStartInfo(exe) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
@@ -228,7 +233,15 @@ internal static class Program
         p.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (sb) sb.AppendLine(e.Data); };
         p.BeginOutputReadLine();
         p.BeginErrorReadLine();
-        p.WaitForExit();
+        if (!p.WaitForExit(TimeSpan.FromSeconds(TimeoutSeconds)))
+        {
+            p.Kill(entireProcessTree: true);
+            p.WaitForExit();
+            Console.Error.WriteLine($"  {Path.GetFileName(exe)} killed after {TimeoutSeconds}s; the run counts as incomplete");
+            exitCode = -1;
+            return sb.ToString(); // without a SUMMARY line, so the caller treats it as incomplete
+        }
+        p.WaitForExit(); // flush the async readers
         exitCode = p.ExitCode;
         return sb.ToString();
     }

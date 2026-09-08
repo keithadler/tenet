@@ -74,6 +74,17 @@ Intermediate settings keep server GC but cap its appetite:
 DOTNET_GCHeapCount=4 DOTNET_GCConserveMemory=7 tenet check Mathlib.ndjson
 ```
 
+## Classic attacks
+
+`AttackTests` states the standard ways to derive `False` in a dependent type theory as
+declarations the kernel must reject: a non-positive inductive (Curry's paradox), a
+constructor argument in a universe too large for its type (Girard's paradox), a constructor
+that does not return its own type, an ill-typed index, large elimination out of a
+proposition with several constructors (deciding propositions), definitional equality
+between proofs of different propositions, `Sort u : Sort u`, and literal arithmetic whose
+result would not fit (refused, never computed). Each test also checks the rejection
+reason, so a rejection for the wrong reason fails.
+
 ## Robustness of the `.olean` reader
 
 A memory-mapped reader that trusts stored pointers or sizes would read outside the mapping

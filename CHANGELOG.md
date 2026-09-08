@@ -10,6 +10,10 @@ versions follow [Semantic Versioning](https://semver.org/).
   earlier objects, so a corrupted file can only produce an `OleanFormatException`; `tenet check`
   reports it as a file error (exit 2) instead of crashing. A corruption fuzzer (`OleanFuzzTests`,
   on the checked-in `Init.Coe` fixture) exercises this.
+- `AttackTests`: the classic derivations of `False` (non-positive inductives, Girard's
+  paradox, large elimination from Prop, and so on) as declarations the kernel must reject.
+- `Tenet.DiffTest --timeout SECONDS` (default 1800) kills a checker run that does not finish,
+  since Lean's kernel has no unfolding limit and a mutation can send it into a very long reduction.
 
 ## [0.3.0] - 2026-09-08
 
