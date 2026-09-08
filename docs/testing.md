@@ -117,6 +117,11 @@ so the faithful algorithm alone is compared against Lean.
 Both campaigns (40 variants of Init.Prelude, seed 7) gave 12,145 agreed rejections and no
 disagreements.
 
+The CI campaign (seed 36) then found a second real difference: `RecursorInfo.GetMajorInduct`
+walked the recursor's type accepting only pis, while the reference's `binding_body` walks
+lambdas too, so after a mutation turned the major premise's binder into a lambda Tenet
+rejected `Substring.Raw.noConfusion` and Lean did not. Fixed by walking both binders.
+
 ### Triage: disagreements that are not Tenet bugs
 
 Differential testing on mutated inputs can produce disagreements that are artifacts of

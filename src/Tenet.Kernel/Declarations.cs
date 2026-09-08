@@ -272,15 +272,20 @@ public sealed class RecursorInfo : ConstantInfo
 
     public int MajorIdx => NumParams + NumMotives + NumMinors + NumIndices;
 
-    /// <summary>The inductive type of the major premise, read off the recursor's type.</summary>
+    /// <summary>
+    /// The inductive type of the major premise, read off the recursor's type. Like the reference
+    /// (<c>recursor_val::get_major_induct</c>, which uses <c>binding_body</c>), this walks lambdas as well as
+    /// pis, so a recursor whose type is malformed in that way still names its inductive type here and is
+    /// rejected elsewhere for the same reason the reference rejects it.
+    /// </summary>
     public Name GetMajorInduct()
     {
         Expr e = Type;
         for (int i = 0; i < MajorIdx; i++)
         {
-            e = e is PiExpr p ? p.Body : throw new KernelException($"malformed recursor type for '{Name}'");
+            e = e is BindingExpr b ? b.Body : throw new KernelException($"malformed recursor type for '{Name}'");
         }
-        if (e is PiExpr major && major.Domain.GetAppFn() is ConstExpr c)
+        if (e is BindingExpr major && major.Domain.GetAppFn() is ConstExpr c)
         {
             return c.Name;
         }

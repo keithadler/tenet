@@ -20,6 +20,9 @@ versions follow [Semantic Versioning](https://semver.org/).
   declaration before checking it; `TENET_MAX_UNFOLDS` overrides the unfolding limit.
 
 ### Fixed
+- `RecursorInfo.GetMajorInduct` walks lambdas as well as pis, as the reference does; found
+  by the CI differential campaign (Tenet rejected `Substring.Raw.noConfusion` on a mutated
+  export that Lean accepts).
 - Error messages print expressions with a bound (`ExprPrinter.MaxLength`). Terms are shared
   graphs, and printing one as a tree could take memory exponential in its size; a rejection
   in Mathlib's `AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq` ran the process out of
