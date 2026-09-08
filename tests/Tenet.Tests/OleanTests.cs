@@ -170,3 +170,65 @@ public class OleanTests
         Assert.True(compared > 1500, $"only {compared} constants compared");
     }
 }
+
+public class OleanCheckerTests
+{
+    [Fact]
+    public void PreludeChecksInPlace()
+    {
+        string? lib = OleanTests.ToolchainLib();
+        if (lib is null)
+        {
+            return;
+        }
+        var search = new LeanSearchPath();
+        search.Add(lib);
+        using var checker = new OleanChecker(search);
+        Name prelude = Name.Of("Init", "Prelude");
+        checker.Load([(prelude, Path.Combine(lib, "Init", "Prelude.olean"))]);
+        OleanCheckResult r = checker.Check([prelude], new OleanCheckOptions { Jobs = 4 });
+        Assert.True(r.Success, string.Join("\n", r.Failures.Take(5).Select(f => f.Name + ": " + f.Message)));
+        Assert.True(r.Checked > 1900, $"checked {r.Checked}");
+        Assert.Equal(1, r.ModulesChecked);
+    }
+
+    [Fact]
+    public void CoreChecksWithImportsResolvedLazily()
+    {
+        string? lib = OleanTests.ToolchainLib();
+        if (lib is null)
+        {
+            return;
+        }
+        var search = new LeanSearchPath();
+        search.Add(lib);
+        using var checker = new OleanChecker(search);
+        Name core = Name.Of("Init", "Core");
+        checker.Load([(core, Path.Combine(lib, "Init", "Core.olean"))]);
+        Assert.True(checker.Modules.Count > 1, "imports should be mapped");
+        OleanCheckResult r = checker.Check([core], new OleanCheckOptions { Jobs = 4 });
+        Assert.True(r.Success, string.Join("\n", r.Failures.Take(5).Select(f => f.Name + ": " + f.Message)));
+        Assert.Equal(1, r.ModulesChecked);
+        Assert.True(r.ModulesLoaded > 1);
+    }
+
+    [Fact]
+    public void ATamperedConstantIsRejectedInPlace()
+    {
+        string? lib = OleanTests.ToolchainLib();
+        if (lib is null)
+        {
+            return;
+        }
+        // Decode Prelude, swap two theorem proofs, and replay the units against a resolver-backed environment.
+        using var m = new OleanModule(Path.Combine(lib, "Init", "Prelude.olean"));
+        var constants = m.DecodeAll().ToList();
+        var thms = constants.OfType<TheoremInfo>().Take(2).ToList();
+        Assert.Equal(2, thms.Count);
+        var tampered = new TheoremInfo(thms[0].Name, thms[0].LevelParams, thms[0].Type, thms[1].Value, thms[0].All);
+        var env = new Tenet.Kernel.Environment();
+        env.SetResolver(n => n.Equals(tampered.Name) ? tampered : m.FindConstant(n));
+        env.MarkQuotInitialized();
+        Assert.Throws<KernelException>(() => Replay.CheckUnit(env, new Replay.Unit(tampered.Name, "theorem", [tampered]), installed: true));
+    }
+}

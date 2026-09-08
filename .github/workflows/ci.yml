@@ -48,6 +48,12 @@ jobs:
       - run: dotnet build -c Release
       - run: dotnet run --no-build -c Release --project src/Tenet.Cli -- check exports/Init.Prelude.ndjson
       - run: dotnet run --no-build -c Release --project src/Tenet.Cli -- check exports/Init.Core.ndjson
+      - name: Check all of Init in place from the toolchain's .olean files
+        run: |
+          cd tools/leancheck
+          LIB="$(lake env printenv LEAN_SYSROOT)/lib/lean"
+          cd ../..
+          dotnet run --no-build -c Release --project src/Tenet.Cli -- check "$LIB/Init.olean" --all --quiet
       - name: Build the Lean kernel oracle
         run: |
           cd tools/leancheck && lake build
