@@ -23,6 +23,31 @@ public sealed class TypeChecker
     public Environment Env { get; }
     public LocalContext Lctx { get; }
     private readonly DefinitionSafety _safety;
+
+    /// <summary>Process-wide counters of kernel work, for diagnostics and for proving a run was not vacuous.</summary>
+    public static class Stats
+    {
+        private static long s_infer, s_whnf, s_whnfCore, s_defEq, s_unfold, s_iota, s_natLit;
+        public static long Infer => s_infer;
+        public static long Whnf => s_whnf;
+        public static long WhnfCore => s_whnfCore;
+        public static long DefEq => s_defEq;
+        public static long Unfold => s_unfold;
+        public static long Iota => s_iota;
+        public static long NatLit => s_natLit;
+        internal static void CountInfer() => Interlocked.Increment(ref s_infer);
+        internal static void CountWhnf() => Interlocked.Increment(ref s_whnf);
+        internal static void CountWhnfCore() => Interlocked.Increment(ref s_whnfCore);
+        internal static void CountDefEq() => Interlocked.Increment(ref s_defEq);
+        internal static void CountUnfold() => Interlocked.Increment(ref s_unfold);
+        internal static void CountIota() => Interlocked.Increment(ref s_iota);
+        internal static void CountNatLit() => Interlocked.Increment(ref s_natLit);
+        public static void Reset()
+        {
+            s_infer = s_whnf = s_whnfCore = s_defEq = s_unfold = s_iota = s_natLit = 0;
+        }
+        public static string Summary => $"infer {Infer}, whnf {Whnf}, whnfCore {WhnfCore}, defEq {DefEq}, unfold {Unfold}, iota {Iota}, natLit {NatLit}";
+    }
     private bool _eagerReduce;
     private Name[]? _lparams;
 
@@ -396,6 +421,7 @@ public sealed class TypeChecker
         {
             return cached;
         }
+        Stats.CountInfer();
         Expr r;
         switch (e)
         {
@@ -514,6 +540,7 @@ public sealed class TypeChecker
         {
             return cached;
         }
+        Stats.CountWhnfCore();
         Expr r;
         switch (e)
         {
@@ -547,6 +574,7 @@ public sealed class TypeChecker
                         Expr? red = ReduceRecursor(e, cheapRec, cheapProj);
                         if (red is not null)
                         {
+                            Stats.CountIota();
                             return WhnfCore(red, cheapRec, cheapProj);
                         }
                         return e;
@@ -820,6 +848,7 @@ public sealed class TypeChecker
         {
             return cached;
         }
+        Stats.CountWhnf();
         Expr t = e;
         while (true)
         {
@@ -833,12 +862,14 @@ public sealed class TypeChecker
             v = ReduceNat(t1);
             if (v is not null)
             {
+                Stats.CountNatLit();
                 _whnfCache[e] = v;
                 return v;
             }
             Expr? next = UnfoldDefinition(t1);
             if (next is not null)
             {
+                Stats.CountUnfold();
                 t = next;
             }
             else
@@ -1263,6 +1294,7 @@ public sealed class TypeChecker
 
     private bool IsDefEqCore(Expr t, Expr s)
     {
+        Stats.CountDefEq();
         LBool r = QuickIsDefEq(t, s);
         if (r != LBool.Undef)
         {

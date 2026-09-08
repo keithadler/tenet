@@ -14,17 +14,19 @@ from it, and it shares no code with Lean. That is the point: a proof that surviv
 independent kernels is a proof you can trust a little more.
 
 ```
-$ tenet check Init.Prelude.ndjson
-Init.Prelude.ndjson: 3161 declarations, 51014 expressions, 6215 names ...
-OK: 3161 checked, 0 failed, 0 skipped, 4979 constants, 12.3s
+$ tenet check Init.ndjson
+Init.ndjson: 58135 declarations, 6128566 expressions, 295965 names, 577 levels (parsed in 6.3s)
+  exported by lean4export 3.1.0, format 3.1.0, Lean 4.34.0-rc2 (6a10ac8c2)
+OK: 58135 checked, 0 failed, 0 skipped, 59591 constants, 36.9s
 ```
 
 ## Status
 
-Early. The kernel is complete in the sense that every rule of the reference kernel has a
-counterpart here, and it checks the Lean prelude with the kernel-derived recursors
-compared field-for-field against Lean's own. See [docs/status.md](docs/status.md) for
-exactly what has been run and what has not.
+Version 0.1. Every rule of the reference kernel has a counterpart here, and Tenet checks
+the whole Lean 4 core library (`Init`, 58,135 declarations) with zero failures, deriving
+the recursors itself and comparing them field for field against Lean's own. See
+[docs/status.md](docs/status.md) for what has been run, and for the evidence that the
+checks are not vacuous.
 
 Tenet is not affiliated with the Lean FRO or Microsoft. "Lean" is the name of their
 prover; this project only reads its export format.

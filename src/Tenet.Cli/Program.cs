@@ -20,6 +20,7 @@ internal static class Program
           --fail-fast                 stop at the first failure
           --no-compare                do not compare derived constructors/recursors with the exporter's
           --quiet                     no progress output
+          --stats                     print kernel work counters at the end
           --slow <seconds>            report declarations slower than this (default 1)
           --stack-mb <n>              stack size for the checking thread (default 1024)
 
@@ -145,6 +146,7 @@ internal static class Program
         bool failFast = false;
         bool compare = true;
         bool quiet = false;
+        bool stats = false;
         double slow = 1.0;
         for (int i = 1; i < args.Length; i++)
         {
@@ -165,6 +167,9 @@ internal static class Program
                     break;
                 case "--quiet":
                     quiet = true;
+                    break;
+                case "--stats":
+                    stats = true;
                     break;
                 case "--slow":
                     if (++i >= args.Length || !double.TryParse(args[i], NumberStyles.Float, CultureInfo.InvariantCulture, out slow))
@@ -235,6 +240,10 @@ internal static class Program
             {
                 Console.WriteLine($"  {elapsed.TotalSeconds,7:F2}s  {name}");
             }
+        }
+        if (stats)
+        {
+            Console.WriteLine("kernel work: " + TypeChecker.Stats.Summary);
         }
         Console.WriteLine($"{(result.Success ? "OK" : "FAILED")}: {result.Checked} checked, {result.Failures.Count} failed, {result.Skipped} skipped, {result.Environment.Count} constants, {result.Elapsed.TotalSeconds:F1}s");
         return result.Success ? 0 : 1;
