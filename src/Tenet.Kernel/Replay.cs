@@ -315,6 +315,45 @@ public static class Replay
     private static string Fmt(Name[] ns) => "[" + string.Join(", ", ns.Select(n => n.ToString())) + "]";
 
     /// <summary>Every constant name referenced by the constant's type, value, and rules.</summary>
+    /// <summary>
+    /// The axioms a declaration depends on, transitively, as Lean's <c>#print axioms</c> reports them, together with
+    /// the number of constants reached. A proof resting on nothing but <c>propext</c>, <c>Classical.choice</c> and
+    /// <c>Quot.sound</c> is complete in Lean's logic; <c>sorryAx</c> marks a hole. Constants the lookup cannot find
+    /// are passed over, so the caller should check the declaration first.
+    /// </summary>
+    public static (SortedSet<Name> Axioms, long Visited) AxiomsOf(Func<Name, ConstantInfo?> find, Name start)
+    {
+        var axioms = new SortedSet<Name>();
+        var seen = new HashSet<Name>();
+        var todo = new Stack<Name>();
+        long visited = 0;
+        todo.Push(start);
+        while (todo.Count > 0)
+        {
+            Name cur = todo.Pop();
+            if (!seen.Add(cur))
+            {
+                continue;
+            }
+            ConstantInfo? c = find(cur);
+            if (c is null)
+            {
+                continue;
+            }
+            visited++;
+            if (c is AxiomInfo)
+            {
+                axioms.Add(cur);
+                continue;
+            }
+            foreach (Name u in UsedConstants(c))
+            {
+                todo.Push(u);
+            }
+        }
+        return (axioms, visited);
+    }
+
     public static HashSet<Name> UsedConstants(ConstantInfo c)
     {
         var used = new HashSet<Name>();

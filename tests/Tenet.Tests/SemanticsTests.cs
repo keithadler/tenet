@@ -143,4 +143,23 @@ public class SemanticsTests
         Assert.False(Replay.LooksLikeOldCodegenName(Name.Of("Nat", "add")));
         Assert.False(Replay.LooksLikeOldCodegenName(Name.Of("x").Num(2)));
     }
+
+    [Fact]
+    public void AxiomsOfFollowsDependenciesTransitively()
+    {
+        var env = new Environment();
+        // axiom ax : Prop ;  def usesAx : Prop := ax ;  def usesUsesAx : Prop := usesAx
+        env.Add(new AxiomDecl(Name.Of("ax"), [], Expr.Prop, false));
+        env.Add(new DefinitionDecl(Name.Of("usesAx"), [], Expr.Prop, Expr.Const(Name.Of("ax"), []), ReducibilityHints.Regular(1), DefinitionSafety.Safe));
+        env.Add(new DefinitionDecl(Name.Of("usesUsesAx"), [], Expr.Prop, Expr.Const(Name.Of("usesAx"), []), ReducibilityHints.Regular(2), DefinitionSafety.Safe));
+        // def clean : Prop := ∀ (p : Prop), p    (a Pi into Prop is a Prop, and mentions no constant)
+        env.Add(new DefinitionDecl(Name.Of("clean"), [], Expr.Prop, Expr.Pi(Name.Of("p"), Expr.Prop, Expr.BVar(0)), ReducibilityHints.Regular(1), DefinitionSafety.Safe));
+
+        var (axioms, visited) = Replay.AxiomsOf(env.Find, Name.Of("usesUsesAx"));
+        Assert.Equal([Name.Of("ax")], axioms);
+        Assert.Equal(3, visited);
+
+        Assert.Empty(Replay.AxiomsOf(env.Find, Name.Of("clean")).Axioms);
+        Assert.Equal([Name.Of("ax")], Replay.AxiomsOf(env.Find, Name.Of("ax")).Axioms);
+    }
 }

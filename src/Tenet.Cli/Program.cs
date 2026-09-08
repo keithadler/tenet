@@ -19,6 +19,7 @@ internal static class Program
           tenet info  <file.ndjson>               print the export's metadata and counts
           tenet show  <file.ndjson> <name>...     print declarations from an export (type, value, metadata)
           tenet show  <Module.olean> <name>...    print declarations from a compiled module or its imports
+          tenet axioms <file> <name>...           print the axioms a declaration depends on, transitively
           tenet version
 
         options for check:
@@ -62,6 +63,7 @@ internal static class Program
                 "check" => RunOnBigStack(() => Check(args[1..]), ParseStackMb(args)),
                 "info" => Info(args[1..]),
                 "show" => Show(args[1..]),
+                "axioms" => Axioms(args[1..]),
                 "version" => Version(),
                 _ => Fail($"unknown command '{args[0]}'\n\n{Usage}"),
             };
@@ -233,6 +235,72 @@ internal static class Program
             }
         }
         return missing == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Print the axioms a declaration depends on, transitively, the way Lean's <c>#print axioms</c> does.
+    /// A proof that rests on nothing but <c>propext</c>, <c>Classical.choice</c> and <c>Quot.sound</c> is a
+    /// complete proof in Lean's logic; anything else, <c>sorryAx</c> above all, is a hole.
+    /// </summary>
+    private static int Axioms(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Fail("axioms needs a file and at least one name");
+        }
+        var names = args[1..].Select(Name.Parse).ToList();
+        Func<Name, ConstantInfo?> find;
+        IDisposable? owner = null;
+        string where;
+        if (args[0].EndsWith(".olean", StringComparison.Ordinal))
+        {
+            var search = new Tenet.Olean.LeanSearchPath();
+            search.AddFromEnvironment();
+            search.AddAroundOleanFile(args[0]);
+            var checker = new Tenet.Olean.OleanChecker(search);
+            owner = checker;
+            Name module = search.ModuleNameOf(args[0]);
+            checker.Load([(module, args[0])]);
+            search.AddToolchainFor(checker.Modules[module].LeanVersion);
+            checker.Load([(module, args[0])]);
+            find = checker.Resolve;
+            where = $"{module} and its imports";
+        }
+        else
+        {
+            ExportFile file = NdjsonReader.ReadFile(args[0]);
+            var env = new Environment();
+            foreach (ExportDecl d in file.Decls)
+            {
+                ExportChecker.AddUnchecked(env, d);
+            }
+            find = env.Find;
+            where = "this export";
+        }
+        using (owner)
+        {
+            int missing = 0;
+            foreach (Name n in names)
+            {
+                if (find(n) is null)
+                {
+                    Console.WriteLine($"{n}: not in {where}");
+                    missing++;
+                    continue;
+                }
+                var (axioms, visited) = Replay.AxiomsOf(find, n);
+                Console.WriteLine($"{n} depends on {visited} constants and these axioms:");
+                if (axioms.Count == 0)
+                {
+                    Console.WriteLine("  (none)");
+                }
+                foreach (Name a in axioms)
+                {
+                    Console.WriteLine($"  {a}{(a.ToString() == "sorryAx" ? "   <-- an incomplete proof" : "")}");
+                }
+            }
+            return missing == 0 ? 0 : 1;
+        }
     }
 
     /// <summary>Print declarations from a compiled module and the modules it imports.</summary>

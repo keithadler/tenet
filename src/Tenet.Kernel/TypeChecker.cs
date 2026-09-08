@@ -41,7 +41,7 @@ public sealed class TypeChecker
         private static long s_infer, s_whnf, s_whnfCore, s_defEq, s_unfold, s_iota, s_natLit, s_faithfulRetries;
         /// <summary>Declarations the fast mode rejected that were then re-checked with the failure cache off.</summary>
         public static long FaithfulRetries => s_faithfulRetries;
-        internal static void CountFaithfulRetry() => Interlocked.Increment(ref s_faithfulRetries);
+        internal static void CountFaithfulRetry() => Count(ref s_faithfulRetries);
         private static long s_unfoldWhnf, s_unfoldLazy, s_whnfCoreHit, s_whnfHit, s_inferHit, s_defEqSuccessHit, s_recTry, s_recOk;
         internal static void Count(ref long c) { if (Enabled) Interlocked.Increment(ref c); }
         public static string Detail => $"unfold in whnf {s_unfoldWhnf}, unfold in lazy delta {s_unfoldLazy}; cache hits: whnfCore {s_whnfCoreHit}, whnf {s_whnfHit}, infer {s_inferHit}, defEq success {s_defEqSuccessHit}; recursor attempts {s_recTry} of which reduced {s_recOk}";

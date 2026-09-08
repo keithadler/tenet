@@ -21,6 +21,9 @@ versions follow [Semantic Versioning](https://semver.org/).
   meets them because it skips every unsafe constant.
 - An `unknown constant` failure says so when no loaded module stores the constant.
 - `tenet show FILE.olean NAME...` prints declarations from a compiled module and its imports.
+- `tenet axioms FILE NAME...` prints the axioms a declaration depends on, transitively, the way
+  Lean's `#print axioms` does, so a proof can be shown to rest on nothing but `propext`,
+  `Classical.choice` and `Quot.sound`, with no `sorryAx`. Works on exports and `.olean` files.
 
 ## [0.3.1] - 2026-09-08
 
