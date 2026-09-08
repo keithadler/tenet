@@ -44,7 +44,9 @@ def report (name : Name) (r : Except String Unit) : M Unit := do
 def addChecked (d : Declaration) : M (Except String Unit) := do
   match (← get).env.addDeclCore 0 0 d (cancelTk? := none) with
   | .ok env => modify fun s => { s with env := env }; return .ok ()
-  | .error ex => return .error (← ex.toMessageData {} |>.toString)
+  | .error ex =>
+    let opts : Options := ({} : Options).setBool `pp.universes true
+    return .error (← ex.toMessageData opts |>.toString)
 
 def installRaw (cis : List ConstantInfo) : M Unit :=
   for ci in cis do

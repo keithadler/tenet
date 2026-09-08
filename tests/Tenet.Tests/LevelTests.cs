@@ -79,3 +79,26 @@ public class LevelTests
         Assert.False(Level.IMaxRaw(Level.One, V).IsNotZero());
     }
 }
+
+public class LevelReferenceAlgorithmTests
+{
+    /// <summary>
+    /// The reference kernel's level normalization is incomplete on purpose and Tenet must be incomplete in exactly the
+    /// same way: `imax s (max r 1)` normalizes to `max s (max 1 r)` while `max s (max r 1)` normalizes to
+    /// `max 1 (max r s)`, so the two are NOT judged equivalent even though they denote the same universe.
+    /// Found by differential testing (Init.Core, PULift.up.inj).
+    /// </summary>
+    [Fact]
+    public void ImaxThatCollapsesToMaxIsNotReflattened()
+    {
+        Level r = Level.Param(Name.Of("r"));
+        Level s = Level.Param(Name.Of("s"));
+        Level maxR1 = Level.MaxRaw(r, Level.One);
+        Level a = Level.IMaxRaw(s, maxR1);
+        Level b = Level.MaxRaw(s, maxR1);
+        Assert.False(Level.IsEquiv(a, b));
+        // and the flattened spelling is what the reference produces for b
+        Assert.Equal("max 1 (max r s)", b.Normalize().ToString());
+        Assert.Equal("max s (max 1 r)", a.Normalize().ToString());
+    }
+}

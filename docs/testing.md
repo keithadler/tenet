@@ -109,3 +109,27 @@ reference kernel compares structurally, so a cache hit that returned an equal bu
 object sent Tenet down a path that inferred the type of a stuck projection and rejected
 seven declarations Lean accepts. After the fix, 40 variants gave 8,409 agreed rejections
 and no disagreements.
+
+### Triage: disagreements that are not Tenet bugs
+
+Differential testing on mutated inputs can produce disagreements that are artifacts of
+the reference rather than defects in Tenet. Known classes:
+
+- **Universe normalization incompleteness in Lean.** Lean's `is_equivalent` on levels
+  normalizes each side once and does not re-flatten after an `imax` collapses into a
+  `max`, so `imax s (max r 1)` and `max s (max r 1)` (the same universe) normalize to
+  `max s (max 1 r)` and `max 1 (max r s)` and are judged unequal. Tenet's algorithm matches
+  Lean's here (see `LevelReferenceAlgorithmTests`). The disagreement arises because Lean
+  rewrites levels through simplifying constructors only when a pointer-identity shortcut
+  fails, which happens after the sharing pass Lean applies to theorem proofs; so Lean can
+  end up comparing `imax s (max r 1)` against `max s (max r 1)` where Tenet compares the
+  unchanged level against itself. Lean's elaborator never emits unsimplified levels, so
+  this cannot occur on a real export. Seen as `PULift.up.inj` in an Init.Core variant with a
+  `max-imax-swap` mutation. Run the oracle with `pp.universes` (it does so by default) to
+  recognize the pattern: two `Eq.{...}` levels that are equal as universes.
+- **Recovery policy after a failed block.** Both tools install a failed declaration
+  unchecked and continue; the oracle mirrors Tenet's choices (including enabling quotient
+  reduction after a broken quotient block). If the tools ever diverge here, later
+  rejections will differ without either kernel being wrong.
+- **Lean crashes.** Lean's kernel segfaults or aborts on some ill-formed inputs installed
+  unchecked. The harness reports the run as incomplete and keeps the variant.

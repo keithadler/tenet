@@ -64,6 +64,7 @@ mutates exports and compares the two verdict sets (see `docs/testing.md`). Campa
 | Init.Prelude (seed 2026) | 100 x 10 | 27,048 | 0 |
 | Init.Core (seed 7) | 40 x 12 | 30,156 | 0 real; the flagged items were a harness parsing artifact and a recovery-policy difference after a broken quotient block, both fixed in the tools |
 | Init.Core (seed 7, rerun with the fixed tools and two more mutation kinds) | 40 x 12 | 17,653 | 0 |
+| Init.Core (seed 11) | 100 x 8 | 19,860 | 1 flagged, triaged as Lean's universe-normalization incompleteness after its sharing pass (`PULift.up.inj`; the two universes are equal); see `docs/testing.md` |
 
 Two Lean-side observations from the same runs, reported for completeness: Lean's kernel
 segfaults (exit 139) on one mutated Init.Core variant and aborted mid-line on another, both
