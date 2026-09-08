@@ -12,6 +12,10 @@ Both fixtures export the theorem `Nat.add_succ` with its transitive dependencies
 The exported content is derived from the Lean 4 standard library and lean4export,
 both Apache License 2.0, Copyright Lean FRO and contributors.
 
+`olean/Coe.olean` and `olean/Coe.olean.private` are the compiled `Init.Coe` module from the
+Lean 4.34.0-rc2 toolchain (Apache License 2.0, Copyright Lean FRO and contributors), used by the
+`.olean` reader tests and by the corruption fuzzer in `OleanFuzzTests`.
+
 Larger exports (`Init.Prelude`, `Init.Core`, all of `Init`) are generated, never
 committed. Set `TENET_EXPORTS` to a directory containing them to run the
 integration tests; see `docs/testing.md`.

@@ -248,17 +248,50 @@ public sealed unsafe class OleanModule : IDisposable
     private static bool IsScalar(ulong v) => (v & 1) == 1;
     private static ulong Unbox(ulong v) => v >> 1;
 
-    /// <summary>The byte address of an object given its saved pointer value, across all mapped parts.</summary>
-    private byte* At(ulong addr)
+    /// <summary>
+    /// The byte address of <paramref name="len"/> bytes of stored data starting at saved pointer value
+    /// <paramref name="addr"/>, across all mapped parts. Every raw read goes through here so that a corrupted
+    /// file can only ever produce an <see cref="OleanFormatException"/>, never a read outside the mapping.
+    /// </summary>
+    private byte* At(ulong addr, long len = 8)
     {
-        foreach (Region r in _regions)
+        int i = RegionIndexOf(addr, len);
+        Region r = _regions[i];
+        return r.Base + (addr - r.BaseAddr);
+    }
+
+    private int RegionIndexOf(ulong addr, long len = 8)
+    {
+        for (int i = 0; i < _regions.Count; i++)
         {
-            if (r.Contains(addr))
+            Region r = _regions[i];
+            if (r.Contains(addr) && (ulong)len <= (ulong)r.Length - (addr - r.BaseAddr))
             {
-                return r.Base + (addr - r.BaseAddr);
+                return i;
             }
         }
-        throw new OleanFormatException(Path, $"pointer 0x{addr:x} points outside the module's parts ({string.Join(", ", _regions.Select(r => $"0x{r.BaseAddr:x}+{r.Length}"))})");
+        throw new OleanFormatException(Path, $"{len} bytes at 0x{addr:x} fall outside the module's parts ({string.Join(", ", _regions.Select(r => $"0x{r.BaseAddr:x}+{r.Length}"))})");
+    }
+
+    /// <summary>
+    /// Validate a pointer stored in a field of the object at <paramref name="parent"/>. Lean's compactor writes an
+    /// object only after everything it points to, and later parts (.server, .private) only point into earlier
+    /// ones, so a stored pointer always leads to a lower address in the same part or into an earlier part. Enforcing
+    /// that makes every walk over the object graph terminate, whatever the file contains.
+    /// </summary>
+    private ulong Child(ulong parent, ulong v)
+    {
+        if (IsScalar(v))
+        {
+            return v;
+        }
+        int pi = RegionIndexOf(parent);
+        int ci = RegionIndexOf(v);
+        if (ci > pi || (ci == pi && v >= parent))
+        {
+            throw new OleanFormatException(Path, $"object at 0x{parent:x} points forward to 0x{v:x}; stored objects only point to earlier ones");
+        }
+        return v;
     }
 
     private bool Gmp => _regions[0].Gmp;
@@ -276,10 +309,18 @@ public sealed unsafe class OleanModule : IDisposable
 
     private byte Tag(ulong a) => At(a)[7];
     private int NumObjs(ulong a) => At(a)[6];
-    private ulong Field(ulong a, int i) => *(ulong*)(At(a) + 8 + 8L * i);
-    private byte* ScalarBase(ulong a) => At(a) + 8 + 8L * NumObjs(a);
-    private byte ScalarU8(ulong a, int byteOffset) => ScalarBase(a)[byteOffset];
-    private uint ScalarU32(ulong a, int byteOffset) => *(uint*)(ScalarBase(a) + byteOffset);
+
+    private ulong Field(ulong a, int i)
+    {
+        if (i >= NumObjs(a))
+        {
+            throw new OleanFormatException(Path, $"object at 0x{a:x} has {NumObjs(a)} pointer fields, field {i} was requested");
+        }
+        return Child(a, *(ulong*)At(a + 8 + 8UL * (ulong)i));
+    }
+
+    private byte ScalarU8(ulong a, int byteOffset) => *At(a + 8 + 8UL * (ulong)NumObjs(a) + (ulong)byteOffset, 1);
+    private uint ScalarU32(ulong a, int byteOffset) => *(uint*)At(a + 8 + 8UL * (ulong)NumObjs(a) + (ulong)byteOffset, 4);
 
     private long ArrayLength(ulong a)
     {
@@ -287,10 +328,23 @@ public sealed unsafe class OleanModule : IDisposable
         {
             throw new OleanFormatException(Path, $"expected an Array object at 0x{a:x}, found tag {Tag(a)}");
         }
-        return (long)*(ulong*)(At(a) + 8);
+        long n = (long)*(ulong*)At(a + 8);
+        if (n < 0 || n > _regions.Max(r => r.Length) / 8)
+        {
+            throw new OleanFormatException(Path, $"array at 0x{a:x} claims {n} elements");
+        }
+        At(a + 24, 8 * n); // the whole element block is stored
+        return n;
     }
 
-    private ulong ArrayElement(ulong a, long i) => *(ulong*)(At(a) + 24 + 8 * i);
+    private ulong ArrayElement(ulong a, long i)
+    {
+        if (i < 0 || i >= ArrayLength(a))
+        {
+            throw new OleanFormatException(Path, $"array index {i} out of range at 0x{a:x}");
+        }
+        return Child(a, *(ulong*)At(a + 24 + 8UL * (ulong)i));
+    }
 
     private string DecodeString(ulong v)
     {
@@ -299,9 +353,13 @@ public sealed unsafe class OleanModule : IDisposable
         {
             throw new OleanFormatException(Path, $"expected a String object at 0x{a:x}, found tag {Tag(a)}");
         }
-        byte* p = At(a);
-        long size = (long)*(ulong*)(p + 8); // includes the NUL terminator
-        return Encoding.UTF8.GetString(p + 32, (int)(size - 1));
+        long size = (long)*(ulong*)At(a + 8); // includes the NUL terminator
+        if (size < 1 || size > int.MaxValue)
+        {
+            throw new OleanFormatException(Path, $"string at 0x{a:x} claims {size} bytes");
+        }
+        byte* chars = At(a + 32, size);
+        return Encoding.UTF8.GetString(chars, (int)(size - 1));
     }
 
     private BigInteger DecodeNat(ulong v)
@@ -315,25 +373,37 @@ public sealed unsafe class OleanModule : IDisposable
         {
             throw new OleanFormatException(Path, $"expected a Nat at 0x{a:x}, found tag {Tag(a)}");
         }
-        byte* p = At(a);
+        const long MaxNatBytes = 1L << 24; // far beyond any stored literal; bounds the allocation below
         if (Gmp)
         {
             // __mpz_struct { int alloc; int size; limb* d } then the 64-bit limbs follow the struct
+            byte* p = At(a, 24);
             int size = *(int*)(p + 12);
-            byte* limbs = At(*(ulong*)(p + 16));
-            var bytes = new byte[Math.Abs(size) * 8 + 1];
-            new ReadOnlySpan<byte>(limbs, Math.Abs(size) * 8).CopyTo(bytes);
+            long nbytes = Math.Abs((long)size) * 8;
+            if (nbytes > MaxNatBytes)
+            {
+                throw new OleanFormatException(Path, $"Nat at 0x{a:x} claims {nbytes} bytes");
+            }
+            byte* limbs = At(*(ulong*)(p + 16), nbytes);
+            var bytes = new byte[nbytes + 1];
+            new ReadOnlySpan<byte>(limbs, (int)nbytes).CopyTo(bytes);
             var r = new BigInteger(bytes);
             return size < 0 ? -r : r;
         }
         else
         {
             // mpz { bool sign; size_t size; digit* digits } with 32-bit digits following the struct
+            byte* p = At(a, 32);
             bool sign = p[8] != 0;
-            long size = (long)*(ulong*)(p + 16);
-            byte* digits = At(*(ulong*)(p + 24));
-            var bytes = new byte[size * 4 + 1];
-            new ReadOnlySpan<byte>(digits, (int)(size * 4)).CopyTo(bytes);
+            ulong size = *(ulong*)(p + 16);
+            if (size * 4 > (ulong)MaxNatBytes)
+            {
+                throw new OleanFormatException(Path, $"Nat at 0x{a:x} claims {size} digits");
+            }
+            long nbytes = (long)size * 4;
+            byte* digits = At(*(ulong*)(p + 24), nbytes);
+            var bytes = new byte[nbytes + 1];
+            new ReadOnlySpan<byte>(digits, (int)nbytes).CopyTo(bytes);
             var r = new BigInteger(bytes);
             return sign ? -r : r;
         }
@@ -415,13 +485,13 @@ public sealed unsafe class OleanModule : IDisposable
         return ls.Count == 0 ? [] : ls.ToArray();
     }
 
-    private static BinderInfo ToBinderInfo(byte b) => b switch
+    private BinderInfo ToBinderInfo(byte b) => b switch
     {
         0 => BinderInfo.Default,
         1 => BinderInfo.Implicit,
         2 => BinderInfo.StrictImplicit,
         3 => BinderInfo.InstImplicit,
-        _ => throw new InvalidDataException($"unexpected BinderInfo {b}"),
+        _ => throw new OleanFormatException(Path, $"unexpected BinderInfo {b}"),
     };
 
     private Expr DecodeExpr(ulong v)

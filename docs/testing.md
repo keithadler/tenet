@@ -74,6 +74,19 @@ Intermediate settings keep server GC but cap its appetite:
 DOTNET_GCHeapCount=4 DOTNET_GCConserveMemory=7 tenet check Mathlib.ndjson
 ```
 
+## Robustness of the `.olean` reader
+
+A memory-mapped reader that trusts stored pointers or sizes would read outside the mapping
+on a damaged file and kill the process, or loop on a pointer cycle. Every raw read in
+`OleanModule` goes through one bounds-checked accessor, and every stored pointer must lead
+to an earlier object (Lean's compactor writes an object after everything it points to, and
+later parts only point into earlier ones), so any walk over the object graph terminates.
+`OleanFuzzTests` corrupts the `Init.Coe` fixture in random ways (byte flips, bit flips,
+overwritten words, truncation, zeroed blocks) and requires every attempt to end in an
+`OleanFormatException` or a clean decode; 400 iterations per test run, more with
+`TENET_FUZZ_ITERATIONS`. The first run found one leak, a `BinderInfo` check that threw the
+wrong exception type. `tenet check` reports a malformed module as a file error (exit 2).
+
 ## Differential testing against Lean's kernel
 
 The strongest check on Tenet is disagreement hunting: the same export, possibly damaged,

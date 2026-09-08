@@ -3,6 +3,14 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- The `.olean` reader bounds-checks every raw read and requires stored pointers to lead to
+  earlier objects, so a corrupted file can only produce an `OleanFormatException`; `tenet check`
+  reports it as a file error (exit 2) instead of crashing. A corruption fuzzer (`OleanFuzzTests`,
+  on the checked-in `Init.Coe` fixture) exercises this.
+
 ## [0.3.0] - 2026-09-08
 
 Failed definitional-equality checks are cached, with a faithful re-check on rejection. The

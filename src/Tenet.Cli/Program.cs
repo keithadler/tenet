@@ -500,27 +500,36 @@ internal static class Program
         var lastReport = Stopwatch.StartNew();
         var reportLock = new object();
         bool isTty = !Console.IsErrorRedirected;
-        var result = checker.Check(targetNames, new Tenet.Olean.OleanCheckOptions
+        Tenet.Olean.OleanCheckResult result;
+        try
         {
-            CheckImports = all,
-            Only = only,
-            BeforeUnit = verbose ? n => Console.Error.WriteLine("  checking " + n) : null,
-            ContinueOnError = !failFast,
-            CompareInductive = compare,
-            SlowThreshold = TimeSpan.FromSeconds(slow),
-            Jobs = jobs,
-            WorkerStackMb = ParseStackMb(args),
-            Progress = quiet ? null : p =>
+            result = checker.Check(targetNames, new Tenet.Olean.OleanCheckOptions
             {
-                lock (reportLock)
+                CheckImports = all,
+                Only = only,
+                BeforeUnit = verbose ? n => Console.Error.WriteLine("  checking " + n) : null,
+                ContinueOnError = !failFast,
+                CompareInductive = compare,
+                SlowThreshold = TimeSpan.FromSeconds(slow),
+                Jobs = jobs,
+                WorkerStackMb = ParseStackMb(args),
+                Progress = quiet ? null : p =>
                 {
-                    if (lastReport.ElapsedMilliseconds < 250 && p.Done != p.Total) return;
-                    lastReport.Restart();
-                    string line = $"  [{p.ModuleIndex}/{p.ModuleCount}] {Truncate(p.Module.ToString(), 40)} {p.Done}/{p.Total}  {p.Elapsed.TotalSeconds,7:F1}s  failed {p.Failed}";
-                    if (isTty) Console.Error.Write("\r" + line.PadRight(100)); else Console.Error.WriteLine(line);
-                }
-            },
-        });
+                    lock (reportLock)
+                    {
+                        if (lastReport.ElapsedMilliseconds < 250 && p.Done != p.Total) return;
+                        lastReport.Restart();
+                        string line = $"  [{p.ModuleIndex}/{p.ModuleCount}] {Truncate(p.Module.ToString(), 40)} {p.Done}/{p.Total}  {p.Elapsed.TotalSeconds,7:F1}s  failed {p.Failed}";
+                        if (isTty) Console.Error.Write("\r" + line.PadRight(100)); else Console.Error.WriteLine(line);
+                    }
+                },
+            });
+        }
+        catch (Tenet.Olean.OleanFormatException e)
+        {
+            // a malformed module found while decoding a constant: a file error, not a kernel verdict
+            return Fail(e.Message);
+        }
         if (!quiet && isTty) Console.Error.WriteLine();
         foreach (var f in result.Failures)
         {
