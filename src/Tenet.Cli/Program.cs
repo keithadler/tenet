@@ -27,6 +27,7 @@ internal static class Program
           --slow <seconds>            report declarations slower than this (default 1)
           --stack-mb <n>              stack size for each checking thread, in MB (default 512)
           --low-memory                use the workstation garbage collector (about a third of the memory, slower)
+          --report <file.json>        also write the outcome (counts, failures, slow declarations) as JSON
 
         exit status: 0 all declarations checked, 1 some failed, 2 usage or file error
         """;
@@ -238,6 +239,7 @@ internal static class Program
         bool stats = false;
         double slow = 1.0;
         int jobs = System.Environment.ProcessorCount;
+        string? report = null;
         for (int i = 1; i < args.Length; i++)
         {
             switch (args[i])
@@ -277,6 +279,13 @@ internal static class Program
                     i++;
                     break;
                 case "--low-memory":
+                    break;
+                case "--report":
+                    if (++i >= args.Length)
+                    {
+                        return Fail("--report needs a file name");
+                    }
+                    report = args[i];
                     break;
                 default:
                     return Fail($"unknown option '{args[i]}'\n\n{Usage}");
@@ -359,9 +368,43 @@ internal static class Program
         {
             Console.WriteLine("kernel work: " + TypeChecker.Stats.Summary);
         }
+        if (report is not null)
+        {
+            WriteReport(report, path, result, jobs, stats);
+        }
         Console.WriteLine($"{(result.Success ? "OK" : "FAILED")}: {result.Checked} checked, {result.Failures.Count} failed, {result.Skipped} skipped, {result.Environment.Count} constants, {result.Elapsed.TotalSeconds:F1}s, {jobs} job{(jobs == 1 ? "" : "s")}");
         return result.Success ? 0 : 1;
     }
+
+    private static void WriteReport(string reportPath, string exportPath, CheckResult result, int jobs, bool stats)
+    {
+        var doc = new
+        {
+            tenet = typeof(Program).Assembly.GetName().Version?.ToString(3),
+            export = Path.GetFullPath(exportPath),
+            meta = result.Stream?.Meta is ExportMeta m ? new { exporter = m.ExporterName, exporterVersion = m.ExporterVersion, format = m.FormatVersion, lean = m.LeanVersion, leanGitHash = m.LeanGitHash } : null,
+            success = result.Success,
+            declarations = result.Stream?.Declarations,
+            expressions = result.Stream?.Expressions,
+            @checked = result.Checked,
+            failed = result.Failures.Count,
+            skipped = result.Skipped,
+            constants = result.Environment.Count,
+            jobs,
+            seconds = Math.Round(result.Elapsed.TotalSeconds, 2),
+            parseSeconds = result.Stream is StreamInfo si ? Math.Round(si.ParseTime.TotalSeconds, 2) : (double?)null,
+            failures = result.Failures.Select(f => new { name = f.Name.ToString(), kind = f.Kind, message = f.Message, seconds = Math.Round(f.Elapsed.TotalSeconds, 3) }).ToArray(),
+            slow = result.Slow.OrderByDescending(s => s.Elapsed).Select(s => new { name = s.Name.ToString(), seconds = Math.Round(s.Elapsed.TotalSeconds, 2) }).ToArray(),
+            kernelWork = stats ? new { infer = TypeChecker.Stats.Infer, whnf = TypeChecker.Stats.Whnf, whnfCore = TypeChecker.Stats.WhnfCore, defEq = TypeChecker.Stats.DefEq, unfold = TypeChecker.Stats.Unfold, iota = TypeChecker.Stats.Iota, natLit = TypeChecker.Stats.NatLit } : null,
+        };
+        File.WriteAllText(reportPath, System.Text.Json.JsonSerializer.Serialize(doc, ReportJsonOptions));
+    }
+
+    private static readonly System.Text.Json.JsonSerializerOptions ReportJsonOptions = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
 
     private static string Truncate(string s, int n) => s.Length <= n ? s : s[..(n - 1)] + "…";
 }
