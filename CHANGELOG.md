@@ -3,7 +3,10 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.1] - 2026-09-08
+
+Hardening and adoption: a corruption-proof `.olean` reader, the classic attacks as tests, one
+command to check a built Lake project, and a GitHub Action.
 
 ### Changed
 - The `.olean` reader bounds-checks every raw read and requires stored pointers to lead to
