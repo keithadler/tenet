@@ -46,6 +46,7 @@ public sealed class OleanChecker : IDisposable
     private readonly LeanSearchPath _search;
     private readonly Dictionary<Name, OleanModule> _modules = new();
     private readonly Dictionary<Name, Name> _owner = new(); // constant -> module
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Name, byte> _touched = new(); // modules decoded from since the last trim
 
     public OleanChecker(LeanSearchPath search) => _search = search;
 
@@ -130,7 +131,15 @@ public sealed class OleanChecker : IDisposable
     }
 
     /// <summary>Decode a constant from whichever loaded module declares it.</summary>
-    public ConstantInfo? Resolve(Name n) => _owner.TryGetValue(n, out Name? m) ? _modules[m].FindConstant(n) : null;
+    public ConstantInfo? Resolve(Name n)
+    {
+        if (!_owner.TryGetValue(n, out Name? m))
+        {
+            return null;
+        }
+        _touched[m] = 0;
+        return _modules[m].FindConstant(n);
+    }
 
     public OleanCheckResult Check(IReadOnlyList<Name> targets, OleanCheckOptions? options = null)
     {
@@ -237,6 +246,12 @@ public sealed class OleanChecker : IDisposable
             if (options.EvictBetweenModules)
             {
                 env.EvictResolved();
+                foreach (Name t in _touched.Keys)
+                {
+                    _modules[t].TrimCaches();
+                }
+                _touched.Clear();
+                m.TrimCaches();
             }
             if (!options.ContinueOnError && result.Failures.Count > 0)
             {

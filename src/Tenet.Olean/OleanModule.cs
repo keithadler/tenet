@@ -101,10 +101,11 @@ public sealed unsafe class OleanModule : IDisposable
     private const int TagMaxCtor = 243;
 
     private readonly List<Region> _regions = new();
-    private readonly Dictionary<ulong, Name> _names = new();
-    private readonly Dictionary<ulong, Level> _levels = new();
-    private readonly Dictionary<ulong, Expr> _exprs = new();
-    private readonly object _lock = new();
+    // Decoded objects by address. Concurrent: two workers may decode the same object at once and both results are
+    // equal, so whichever lands is fine. Cleared by TrimCaches to bound memory.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, Name> _names = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, Level> _levels = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, Expr> _exprs = new();
 
     // merged constant table: name -> address of its ConstantInfo object (private part wins)
     private readonly Name[] _constNames;
@@ -222,10 +223,15 @@ public sealed unsafe class OleanModule : IDisposable
         {
             return null;
         }
-        lock (_lock)
-        {
-            return DecodeConstantInfo(Ptr(a));
-        }
+        return DecodeConstantInfo(Ptr(a));
+    }
+
+    /// <summary>Drop the decoded-object caches (the constant name table stays). Objects are decoded again when needed.</summary>
+    public void TrimCaches()
+    {
+        _names.Clear();
+        _levels.Clear();
+        _exprs.Clear();
     }
 
     /// <summary>Decode every constant of the module (merged view).</summary>
