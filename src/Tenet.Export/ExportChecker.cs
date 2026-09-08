@@ -355,7 +355,7 @@ public static class ExportChecker
 
 
     /// <summary>Mutable tallies shared by the worker threads of the concurrent modes.</summary>
-    private sealed class Tally
+    private sealed class Tally : IDisposable
     {
         public readonly object Sync = new();
         public readonly List<CheckFailure> Failures = new();
@@ -364,7 +364,8 @@ public static class ExportChecker
         public int Checked;
         public int Skipped;
         public readonly Stopwatch Total = Stopwatch.StartNew();
-        public CancellationTokenSource Cts = new();
+        public readonly CancellationTokenSource Cts = new();
+        public void Dispose() => Cts.Dispose();
     }
 
     /// <summary>Check one declaration against a fully populated environment and record the outcome.</summary>
@@ -429,7 +430,7 @@ public static class ExportChecker
     private static CheckResult CheckParallel(ExportFile file, CheckOptions options)
     {
         var env = new Environment();
-        var tally = new Tally();
+        using var tally = new Tally();
 
         // Phase 1: every constant, unchecked, and the position of each name in the export.
         var position = new Dictionary<Name, int>();
@@ -665,7 +666,7 @@ public static class ExportChecker
         options ??= new CheckOptions();
         int jobs = Math.Max(1, options.Jobs);
         var env = new Environment();
-        var tally = new Tally();
+        using var tally = new Tally();
         var position = new System.Collections.Concurrent.ConcurrentDictionary<Name, int>();
         var file = new ExportFile();
         var channel = System.Threading.Channels.Channel.CreateBounded<(int Index, ExportDecl Decl)>(
