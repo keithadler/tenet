@@ -20,6 +20,10 @@ public sealed class OleanCheckOptions
     /// <summary>Drop decoded imported constants after each module, bounding memory at the cost of re-decoding.</summary>
     public bool EvictBetweenModules { get; init; } = true;
     public Action<OleanCheckProgress>? Progress { get; init; }
+    /// <summary>Called with each unit's name just before it is checked (for locating a declaration that hangs or crashes).</summary>
+    public Action<Name>? BeforeUnit { get; init; }
+    /// <summary>Check only these constants (their units); everything else in the module is installed unchecked.</summary>
+    public HashSet<Name>? Only { get; init; }
 }
 
 public sealed class OleanCheckResult
@@ -203,6 +207,11 @@ public sealed class OleanChecker : IDisposable
                         return;
                     }
                     Replay.Unit unit = ordered[i];
+                    if (options.Only is not null && !unit.Names.Any(options.Only.Contains))
+                    {
+                        continue;
+                    }
+                    options.BeforeUnit?.Invoke(unit.Name);
                     var sw = Stopwatch.StartNew();
                     try
                     {

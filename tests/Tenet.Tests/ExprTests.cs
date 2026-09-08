@@ -126,4 +126,18 @@ public class DepthTests
         t.Join();
         Assert.Null(error);
     }
+
+    [Fact]
+    public void PrinterOutputIsBounded()
+    {
+        // A shared graph whose tree unfolding has 2^40 leaves must still print in bounded space.
+        Expr e = Expr.Const(Name.Of("x"), []);
+        for (int i = 0; i < 40; i++)
+        {
+            e = Expr.App(e, e);
+        }
+        string s = ExprPrinter.Print(e);
+        Assert.True(s.Length < ExprPrinter.MaxLength + 100, $"printed {s.Length} characters");
+        Assert.EndsWith("(output truncated)", s, StringComparison.Ordinal);
+    }
 }

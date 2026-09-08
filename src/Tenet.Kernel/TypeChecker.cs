@@ -24,7 +24,7 @@ public sealed class TypeChecker
     /// Upper bound on definition unfoldings per checker. Lean bounds kernel work with a heartbeat limit; without a
     /// bound, an unsafe definition such as <c>unsafe def f : Nat := f</c> would make normalization spin forever.
     /// </summary>
-    public static long MaxUnfolds { get; set; } = 100_000_000;
+    public static long MaxUnfolds { get; set; } = System.Environment.GetEnvironmentVariable("TENET_MAX_UNFOLDS") is string mu && long.TryParse(mu, out long muv) && muv > 0 ? muv : 100_000_000;
 
     private long _unfolds;
 
@@ -38,7 +38,21 @@ public sealed class TypeChecker
         /// <summary>Counting is off by default: atomic increments on hot paths serialize parallel checking.</summary>
         public static bool Enabled { get; set; }
 
-        private static long s_infer, s_whnf, s_whnfCore, s_defEq, s_unfold, s_iota, s_natLit;
+        private static long s_infer, s_whnf, s_whnfCore, s_defEq, s_unfold, s_iota, s_natLit, s_faithfulRetries;
+        /// <summary>Declarations the fast mode rejected that were then re-checked with the failure cache off.</summary>
+        public static long FaithfulRetries => s_faithfulRetries;
+        internal static void CountFaithfulRetry() => Interlocked.Increment(ref s_faithfulRetries);
+        private static long s_unfoldWhnf, s_unfoldLazy, s_whnfCoreHit, s_whnfHit, s_inferHit, s_defEqSuccessHit, s_recTry, s_recOk;
+        internal static void Count(ref long c) { if (Enabled) Interlocked.Increment(ref c); }
+        public static string Detail => $"unfold in whnf {s_unfoldWhnf}, unfold in lazy delta {s_unfoldLazy}; cache hits: whnfCore {s_whnfCoreHit}, whnf {s_whnfHit}, infer {s_inferHit}, defEq success {s_defEqSuccessHit}; recursor attempts {s_recTry} of which reduced {s_recOk}";
+        internal static void UnfoldWhnf() => Count(ref s_unfoldWhnf);
+        internal static void UnfoldLazy() => Count(ref s_unfoldLazy);
+        internal static void WhnfCoreHit() => Count(ref s_whnfCoreHit);
+        internal static void WhnfHit() => Count(ref s_whnfHit);
+        internal static void InferHit() => Count(ref s_inferHit);
+        internal static void DefEqSuccessHit() => Count(ref s_defEqSuccessHit);
+        internal static void RecTry() => Count(ref s_recTry);
+        internal static void RecOk() => Count(ref s_recOk);
         public static long Infer => s_infer;
         public static long Whnf => s_whnf;
         public static long WhnfCore => s_whnfCore;
@@ -97,9 +111,23 @@ public sealed class TypeChecker
         }
         public static void Reset()
         {
-            s_infer = s_whnf = s_whnfCore = s_defEq = s_unfold = s_iota = s_natLit = 0;
+            s_infer = s_whnf = s_whnfCore = s_defEq = s_unfold = s_iota = s_natLit = s_faithfulRetries = 0;
         }
-        public static string Summary => $"infer {Infer}, whnf {Whnf}, whnfCore {WhnfCore}, defEq {DefEq}, unfold {Unfold}, iota {Iota}, natLit {NatLit}";
+        public static string Summary => $"infer {Infer}, whnf {Whnf}, whnfCore {WhnfCore}, defEq {DefEq}, unfold {Unfold}, iota {Iota}, natLit {NatLit}, faithful retries {FaithfulRetries}";
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Name, long> s_unfoldsByName = new();
+        internal static void CountUnfold(Name n)
+        {
+            if (Enabled)
+            {
+                Interlocked.Increment(ref s_unfold);
+                s_unfoldsByName.AddOrUpdate(n, 1, (_, c) => c + 1);
+            }
+        }
+
+        /// <summary>The most often unfolded definitions, like Lean's `[kernel] unfolded declarations` diagnostics.</summary>
+        public static IEnumerable<(Name Name, long Count)> TopUnfolds(int n) =>
+            s_unfoldsByName.OrderByDescending(kv => kv.Value).Take(n).Select(kv => (kv.Key, kv.Value));
     }
     private bool _eagerReduce;
     private Name[]? _lparams;
@@ -145,6 +173,7 @@ public sealed class TypeChecker
         Env = env;
         Lctx = lctx ?? new LocalContext();
         _safety = safety;
+        _cacheFailures = CacheFailures && !t_faithful;
     }
 
     // ------------------------------------------------------------------ public API
@@ -472,6 +501,7 @@ public sealed class TypeChecker
         Dictionary<Expr, Expr> cache = inferOnly ? _inferOnlyCache : _checkCache;
         if (cache.TryGetValue(e, out Expr? cached))
         {
+            Stats.InferHit();
             return cached;
         }
         Stats.CountInfer();
@@ -591,6 +621,7 @@ public sealed class TypeChecker
         }
         if (_whnfCoreCache.TryGetValue(e, out Expr? cached))
         {
+            Stats.WhnfCoreHit();
             return cached;
         }
         Stats.CountWhnfCore();
@@ -625,9 +656,11 @@ public sealed class TypeChecker
                     else if (f.Equals(f0))
                     {
                         // Structural, as in the reference (`f == f0`): a cache hit may hand back an equal but distinct object.
+                        Stats.RecTry();
                         Expr? red = ReduceRecursor(e, cheapRec, cheapProj);
                         if (red is not null)
                         {
+                            Stats.RecOk();
                             Stats.CountIota();
                             return WhnfCore(red, cheapRec, cheapProj);
                         }
@@ -900,6 +933,7 @@ public sealed class TypeChecker
         }
         if (_whnfCache.TryGetValue(e, out Expr? cached))
         {
+            Stats.WhnfHit();
             return cached;
         }
         Stats.CountWhnf();
@@ -923,7 +957,11 @@ public sealed class TypeChecker
             Expr? next = UnfoldDefinition(t1);
             if (next is not null)
             {
-                Stats.CountUnfold();
+                if (Stats.Enabled)
+                {
+                    Stats.CountUnfold(((ConstExpr)t1.GetAppFn()).Name);
+                    Stats.UnfoldWhnf();
+                }
                 if (++_unfolds > MaxUnfolds)
                 {
                     throw new KernelException($"deterministic timeout: more than {MaxUnfolds} definition unfoldings while checking one declaration (TypeChecker.MaxUnfolds)");
@@ -994,8 +1032,13 @@ public sealed class TypeChecker
 
     private LBool QuickIsDefEq(Expr t, Expr s)
     {
-        if (t.Equals(s) || SucceededBefore(t, s))
+        if (t.Equals(s))
         {
+            return LBool.True;
+        }
+        if (SucceededBefore(t, s))
+        {
+            Stats.DefEqSuccessHit();
             return LBool.True;
         }
         if (t.Kind == s.Kind)
@@ -1145,6 +1188,7 @@ public sealed class TypeChecker
 
     private ReductionStatus LazyDeltaReductionStep(ref Expr tn, ref Expr sn)
     {
+        Stats.UnfoldLazy();
         if (++_unfolds > MaxUnfolds)
         {
             throw new KernelException($"deterministic timeout: more than {MaxUnfolds} definition unfoldings while checking one declaration (TypeChecker.MaxUnfolds)");
@@ -1164,6 +1208,10 @@ public sealed class TypeChecker
             }
             else
             {
+                if (Stats.Enabled)
+                {
+                    Stats.CountUnfold(dt!.Name);
+                }
                 tn = WhnfCore(UnfoldDefinition(tn)!, false, true);
             }
         }
@@ -1176,6 +1224,10 @@ public sealed class TypeChecker
             }
             else
             {
+                if (Stats.Enabled)
+                {
+                    Stats.CountUnfold(ds!.Name);
+                }
                 sn = WhnfCore(UnfoldDefinition(sn)!, false, true);
             }
         }
@@ -1184,10 +1236,18 @@ public sealed class TypeChecker
             int c = ReducibilityHints.Compare(HintsOf(dt!), HintsOf(ds!));
             if (c < 0)
             {
+                if (Stats.Enabled)
+                {
+                    Stats.CountUnfold(dt!.Name);
+                }
                 tn = WhnfCore(UnfoldDefinition(tn)!, false, true);
             }
             else if (c > 0)
             {
+                if (Stats.Enabled)
+                {
+                    Stats.CountUnfold(ds!.Name);
+                }
                 sn = WhnfCore(UnfoldDefinition(sn)!, false, true);
             }
             else
@@ -1203,6 +1263,11 @@ public sealed class TypeChecker
                         }
                         CacheFailure(tn, sn);
                     }
+                }
+                if (Stats.Enabled)
+                {
+                    Stats.CountUnfold(dt!.Name);
+                    Stats.CountUnfold(ds!.Name);
                 }
                 tn = WhnfCore(UnfoldDefinition(tn)!, false, true);
                 sn = WhnfCore(UnfoldDefinition(sn)!, false, true);
@@ -1446,16 +1511,60 @@ public sealed class TypeChecker
         return false;
     }
 
+    /// <summary>
+    /// When true, failed definitional-equality checks are cached too. The reference kernel caches only successes
+    /// (definitional equality is not transitive, so reusing a failure can make the check stricter), which on some
+    /// Mathlib declarations repeats the same failing comparison hundreds of times. A cached failure can never turn a
+    /// rejection into an acceptance, so this mode accepts a subset of what the faithful mode accepts; callers re-check
+    /// a rejected declaration with <see cref="FaithfulScope"/> before reporting it. Default: on.
+    /// </summary>
+    public static bool CacheFailures { get; set; } = System.Environment.GetEnvironmentVariable("TENET_NO_FAILURE_CACHE") is null;
+
+    [ThreadStatic] private static bool t_faithful;
+    private readonly bool _cacheFailures;
+
+    /// <summary>Disables failure caching for checkers created on this thread while the scope is alive.</summary>
+    public readonly struct FaithfulScope : IDisposable
+    {
+        private readonly bool _entered;
+        private readonly bool _saved;
+        public FaithfulScope()
+        {
+            _entered = true;
+            _saved = t_faithful;
+            t_faithful = true;
+        }
+        public void Dispose()
+        {
+            if (_entered)
+            {
+                t_faithful = _saved;
+            }
+        }
+    }
+
+    /// <summary>True when checkers created now run the reference algorithm without failure caching.</summary>
+    public static bool InFaithfulScope => t_faithful;
+
     /// <summary>Definitional equality. Sound but incomplete; results are cached per checker.</summary>
     public bool IsDefEq(Expr t, Expr s)
     {
+        if (_cacheFailures && FailedBefore(t, s))
+        {
+            return false;
+        }
         bool r = IsDefEqCore(t, s);
         if (r)
         {
             CacheSuccess(t, s);
         }
+        else if (_cacheFailures)
+        {
+            CacheFailure(t, s);
+        }
         return r;
     }
+
 
     /// <summary>Eta-expand <paramref name="e"/> to a lambda over all arguments of its Pi type.</summary>
     public Expr EtaExpand(Expr e)

@@ -110,6 +110,13 @@ object sent Tenet down a path that inferred the type of a stuck projection and r
 seven declarations Lean accepts. After the fix, 40 variants gave 8,409 agreed rejections
 and no disagreements.
 
+Since Tenet caches failed definitional-equality checks and re-checks a rejected
+declaration with the cache off (docs/design.md, "The failure cache"), run a campaign
+both ways: once as above, and once with `TENET_NO_FAILURE_CACHE=1` in the environment
+so the faithful algorithm alone is compared against Lean.
+Both campaigns (40 variants of Init.Prelude, seed 7) gave 12,145 agreed rejections and no
+disagreements.
+
 ### Triage: disagreements that are not Tenet bugs
 
 Differential testing on mutated inputs can produce disagreements that are artifacts of

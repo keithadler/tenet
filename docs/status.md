@@ -11,7 +11,7 @@ Updated 2026-09-08.
 | `Init`, the whole core library (Lean 4.34.0-rc2) | 58,135 (59,591 constants) | 0 failures, 7 s wall clock including parsing (12 jobs); 21 s of checking with 1 job |
 | `Mathlib.Data.Real.Basic` and everything it imports (Mathlib master, 2026-09-08) | 179,215 (186,458 constants) | 0 failures, 9.8 s with 12 jobs, 4.2 GB peak |
 | all of `Init` from the toolchain's `.olean` files (`tenet check Init.olean --all`) | 64,814 units in 649 modules (includes `partial`/`unsafe` definitions the export omits) | 0 failures, 8 s, 2.5 GB peak |
-| **all of Mathlib and its dependencies from `.olean` files** (`tenet check Mathlib.olean --all`, Mathlib master 2026-09-08) | **765,497 units in 10,726 modules** | **0 failures, 6.5 min, 10.7 GB peak** |
+| **all of Mathlib and its dependencies from `.olean` files** (`tenet check Mathlib.olean --all`, Mathlib master 2026-09-08) | **765,497 units in 10,726 modules** | **0 failures, 6.1 min, 9 GB peak** |
 | Mathlib, first 5.9 GB of the export (Mathlib master, 2026-09-08; see note) | 657,351 (673,865 constants) | 0 failures, 16 min with `--low-memory` and 8 jobs, 8.4 GB peak |
 
 Note on the export-based Mathlib row: the exporter, not Tenet, ran out of memory on the
@@ -19,9 +19,25 @@ Note on the export-based Mathlib row: the exporter, not Tenet, ran out of memory
 limit: modules are memory-mapped and imported constants are decoded on demand, so the whole
 library fits. Tenet checked every complete declaration
 (reported as INCOMPLETE, exit 3) and rejected none. A complete run needs a machine with
-more memory for lean4export. The slowest single declarations took 30 to 88 seconds
-(`PresheafOfModules.freeObj._proof_2`, `AlgebraicGeometry.Proj.awayι_comp_map`), which is
-where kernel performance work would start.
+more memory for lean4export.
+
+## Performance
+
+The first Mathlib runs had single declarations taking 30 to 88 seconds. Profiling
+`PresheafOfModules.freeObj._proof_2` against Lean's own kernel (`set_option diagnostics
+true` and `trace.profiler`) showed Tenet doing 8 million definition unfoldings where
+Lean did 30 thousand: the same failing definitional-equality comparison was being repeated
+from hundreds of call sites, because the reference caches failures only inside lazy delta
+reduction. Tenet now caches them for the whole declaration and re-checks a rejection with
+the cache off so verdicts are unchanged (docs/design.md, "The failure cache"). That
+declaration went from 9.3 s to 0.5 s (Lean: 0.23 s), and the whole of Mathlib from 6.5 min
+to 6.1 min (the slow declarations were a small share of the total); 1,039 of the 765,497 declarations needed the faithful re-check.
+
+The slowest declarations now take 5 to 13 seconds (`CategoryTheory.instIsIsoIndCoimageImageComparison`,
+`AlgebraicGeometry.Proj.awayι_comp_map`, the `MayerVietorisSquare` lemmas in
+`Mathlib.CategoryTheory.Sites.SheafCohomology`), and the failure cache makes no difference
+to them: they unfold 4 to 10 million definitions in both modes. Whether Lean's kernel does
+the same work on them is the next thing to measure.
 
 Measured on a 12-core Apple M-series laptop with 17 GB, .NET 10, server GC. The reader
 parses about 145 MB/s and runs concurrently with checking, so wall time is close to the

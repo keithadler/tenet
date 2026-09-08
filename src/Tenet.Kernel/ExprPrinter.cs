@@ -5,16 +5,31 @@ namespace Tenet.Kernel;
 /// <summary>A compact printer for expressions, for diagnostics. Bound variables are shown by their binder names.</summary>
 public static class ExprPrinter
 {
+    /// <summary>
+    /// Output longer than this is cut off. Terms are shared graphs, and printing one as a tree can take
+    /// memory exponential in its size, so a diagnostic must never print without a bound.
+    /// </summary>
+    public static int MaxLength { get; set; } = 20_000;
+
     public static string Print(Expr e, LocalContext? lctx = null)
     {
         var sb = new StringBuilder();
         var names = new List<Name>();
         Go(e, sb, names, lctx, 0);
+        if (sb.Length > MaxLength)
+        {
+            sb.Length = MaxLength;
+            sb.Append(" … (output truncated)");
+        }
         return sb.ToString();
     }
 
     private static void Go(Expr e, StringBuilder sb, List<Name> names, LocalContext? lctx, int prec)
     {
+        if (sb.Length > MaxLength)
+        {
+            return;
+        }
         switch (e)
         {
             case BVarExpr b:

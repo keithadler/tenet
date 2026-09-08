@@ -25,6 +25,7 @@ internal static class Program
           --no-compare                do not compare derived constructors/recursors with the exporter's
           --quiet                     no progress output
           --stats                     print kernel work counters at the end
+          --verbose                   name each declaration before checking it (.olean files)
           --jobs <n>                  check n declarations concurrently (default: number of cores; 1 = sequential)
           --slow <seconds>            report declarations slower than this (default 1)
           --stack-mb <n>              stack size for each checking thread, in MB (default 512)
@@ -427,13 +428,18 @@ internal static class Program
     {
         var targets = new List<string>();
         var search = new Tenet.Olean.LeanSearchPath();
-        bool all = false, failFast = false, compare = true, quiet = false, stats = false;
+        bool all = false, failFast = false, compare = true, quiet = false, stats = false, verbose = false;
         double slow = 1.0;
         int jobs = System.Environment.ProcessorCount;
+        HashSet<Name>? only = null;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
+                case "--only":
+                    if (++i >= args.Length) return Fail("--only needs a value");
+                    only = new HashSet<Name>(args[i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(Name.Parse));
+                    break;
                 case "--lib":
                     if (++i >= args.Length) return Fail("--lib needs a directory");
                     search.Add(args[i]);
@@ -443,6 +449,7 @@ internal static class Program
                 case "--no-compare": compare = false; break;
                 case "--quiet": quiet = true; break;
                 case "--stats": stats = true; break;
+                case "--verbose": verbose = true; break;
                 case "--low-memory": break;
                 case "--slow":
                     if (++i >= args.Length || !double.TryParse(args[i], NumberStyles.Float, CultureInfo.InvariantCulture, out slow)) return Fail("--slow needs a number of seconds");
@@ -496,6 +503,8 @@ internal static class Program
         var result = checker.Check(targetNames, new Tenet.Olean.OleanCheckOptions
         {
             CheckImports = all,
+            Only = only,
+            BeforeUnit = verbose ? n => Console.Error.WriteLine("  checking " + n) : null,
             ContinueOnError = !failFast,
             CompareInductive = compare,
             SlowThreshold = TimeSpan.FromSeconds(slow),
@@ -529,7 +538,13 @@ internal static class Program
             foreach (var (module, name, elapsed) in result.Slow.OrderByDescending(s => s.Elapsed).Take(20))
                 Console.WriteLine($"  {elapsed.TotalSeconds,7:F2}s  {name} ({module})");
         }
-        if (stats) Console.WriteLine("kernel work: " + TypeChecker.Stats.Summary);
+        if (stats)
+        {
+            Console.WriteLine("kernel work: " + TypeChecker.Stats.Summary);
+            Console.WriteLine("  " + TypeChecker.Stats.Detail);
+            Console.WriteLine("most unfolded definitions:");
+            foreach (var (name, count) in TypeChecker.Stats.TopUnfolds(25)) Console.WriteLine($"  {count,9}  {name}");
+        }
         Console.WriteLine($"{(result.Success ? "OK" : "FAILED")}: {result.Checked} checked in {result.ModulesChecked} module{(result.ModulesChecked == 1 ? "" : "s")}, {result.Failures.Count} failed, {result.ModulesLoaded} modules mapped, {result.Elapsed.TotalSeconds:F1}s, {jobs} job{(jobs == 1 ? "" : "s")}");
         return result.Success ? 0 : 1;
     }

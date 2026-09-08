@@ -98,7 +98,11 @@ public sealed class Environment
         {
             _order.Add(info);
         }
+        t_added?.Add(info);
     }
+
+    /// <summary>Constants added by the current thread's in-progress <see cref="RunFastThenFaithful"/> action, for rollback.</summary>
+    [ThreadStatic] private static List<ConstantInfo>? t_added;
 
     public void CheckName(Name n)
     {
@@ -143,7 +147,64 @@ public sealed class Environment
     }
 
     /// <summary>Check a declaration and add the resulting constants.</summary>
-    public void Add(Declaration d, bool check = true) => AddCore(d, check, add: true);
+    public void Add(Declaration d, bool check = true) => RunFastThenFaithful(() => AddCore(d, check, add: true));
+
+    /// <summary>
+    /// Run a checking action so that a rejection leaves this environment unchanged. In the fast mode (failure caching
+    /// on), a rejected action is run again in the faithful mode, so the reported verdict is exactly the reference
+    /// algorithm's; the fast mode can only reject more, never accept more.
+    /// </summary>
+    private void RunFastThenFaithful(Action action)
+    {
+        bool fast = TypeChecker.CacheFailures && !TypeChecker.InFaithfulScope;
+        try
+        {
+            RunWithRollback(action);
+        }
+        catch (KernelException) when (fast)
+        {
+            TypeChecker.Stats.CountFaithfulRetry();
+            using var _ = new TypeChecker.FaithfulScope();
+            RunWithRollback(action);
+        }
+    }
+
+    private void RunWithRollback(Action action)
+    {
+        List<ConstantInfo>? saved = t_added;
+        var added = new List<ConstantInfo>();
+        t_added = added;
+        try
+        {
+            action();
+        }
+        catch (KernelException)
+        {
+            Rollback(added);
+            throw;
+        }
+        finally
+        {
+            t_added = saved;
+        }
+    }
+
+    /// <summary>Remove constants that a rejected action had already added.</summary>
+    private void Rollback(List<ConstantInfo> added)
+    {
+        if (added.Count == 0)
+        {
+            return;
+        }
+        lock (_order)
+        {
+            foreach (ConstantInfo c in added)
+            {
+                _constants.TryRemove(c.Name, out _);
+                _order.Remove(c);
+            }
+        }
+    }
 
     /// <summary>
     /// Run every check <see cref="Add"/> would run on a constant-like declaration whose constants are already present
@@ -156,7 +217,7 @@ public sealed class Environment
         {
             throw new KernelException("Validate does not apply to inductive or quotient declarations");
         }
-        AddCore(d, check: true, add: false);
+        RunFastThenFaithful(() => AddCore(d, check: true, add: false));
     }
 
     private void AddCore(Declaration d, bool check, bool add)

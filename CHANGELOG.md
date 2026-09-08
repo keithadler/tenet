@@ -3,6 +3,28 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- Failed definitional-equality checks are cached for the whole declaration, not only
+  inside lazy delta reduction. The slowest Mathlib declarations were repeating the same
+  failing comparison hundreds of times; `PresheafOfModules.freeObj._proof_2` went from
+  9.3 s to under 0.5 s (Lean's own kernel: 0.23 s), all of Mathlib from 6.5 to 6.1 minutes. A rejected
+  declaration is re-checked with the cache off so verdicts stay identical to the
+  reference kernel's; `TENET_NO_FAILURE_CACHE=1` turns the cache off. See docs/design.md.
+- A rejected declaration no longer leaves partially added constants (a mutual block
+  whose second member fails) in the environment.
+- `tenet check --stats` also prints the most often unfolded definitions, like Lean's
+  `[kernel] unfolded declarations` diagnostics, and how many declarations needed the
+  faithful re-check; `--only NAME` works for `.olean` files; `--verbose` names each
+  declaration before checking it; `TENET_MAX_UNFOLDS` overrides the unfolding limit.
+
+### Fixed
+- Error messages print expressions with a bound (`ExprPrinter.MaxLength`). Terms are shared
+  graphs, and printing one as a tree could take memory exponential in its size; a rejection
+  in Mathlib's `AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq` ran the process out of
+  memory while formatting the message.
+
 ## [0.2.0] - 2026-09-08
 
 All of Mathlib and its dependencies (765,497 declarations, 10,726 modules) checked in place

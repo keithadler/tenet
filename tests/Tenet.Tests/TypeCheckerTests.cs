@@ -93,4 +93,35 @@ public class TypeCheckerTests
         Expr etaF = Expr.Lam(Name.Of("x"), Expr.Prop, Expr.App(f, Expr.BVar(0)));
         Assert.True(tc.IsDefEq(f, etaF));
     }
+
+    [Fact]
+    public void RejectedMutualBlockLeavesNothingBehind()
+    {
+        // unsafe def a : Type 1 := Type   (fine)
+        // unsafe def b : Prop := Type     (type mismatch, found after both constants were added)
+        var a = new DefinitionDecl(Name.Of("a"), [], Expr.Sort(Level.Succ(Level.One)), Expr.Type0, ReducibilityHints.Regular(1), DefinitionSafety.Unsafe);
+        var b = new DefinitionDecl(Name.Of("b"), [], Expr.Prop, Expr.Type0, ReducibilityHints.Regular(1), DefinitionSafety.Unsafe);
+        foreach (bool faithful in new[] { false, true })
+        {
+            using var scope = faithful ? new TypeChecker.FaithfulScope() : default;
+            var env = new Environment();
+            Assert.Throws<KernelException>(() => env.Add(new MutualDefinitionDecl([a, b])));
+            Assert.Null(env.Find(Name.Of("a")));
+            Assert.Null(env.Find(Name.Of("b")));
+            Assert.Empty(env.OwnConstants);
+            env.Add(new MutualDefinitionDecl([a]));
+            Assert.NotNull(env.Find(Name.Of("a")));
+        }
+    }
+
+    [Fact]
+    public void FaithfulScopeDisablesFailureCaching()
+    {
+        Assert.False(TypeChecker.InFaithfulScope);
+        using (new TypeChecker.FaithfulScope())
+        {
+            Assert.True(TypeChecker.InFaithfulScope);
+        }
+        Assert.False(TypeChecker.InFaithfulScope);
+    }
 }

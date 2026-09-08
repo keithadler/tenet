@@ -18,7 +18,7 @@ accepted:
 | Environment | Append-only map from names to `ConstantInfo`. A child environment stages the auxiliary types used to eliminate nested inductives. |
 | Inference | `TypeChecker.Infer` (assumes well-typed input) and `Check` (validates), with separate caches; free variables are introduced through a `LocalContext` whose declarations never change. |
 | Reduction | `WhnfCore` (beta, zeta, projections, iota, quotient rules) and `Whnf` (adds delta and literal arithmetic), both cached. |
-| Definitional equality | Lazy delta reduction guided by reducibility hints and definitional heights, with proof irrelevance, eta for functions and structures, unit-like types, `Nat` literal offsets, and `String` literal expansion, in the same order as the reference. Success and failure pairs are cached per checker. |
+| Definitional equality | Lazy delta reduction guided by reducibility hints and definitional heights, with proof irrelevance, eta for functions and structures, unit-like types, `Nat` literal offsets, and `String` literal expansion, in the same order as the reference. Success pairs are cached per checker as in the reference; failure pairs are cached too (see below). |
 | Inductives | Positivity, universe constraints, parameter uniformity, then recursor generation. Nested occurrences are replaced by auxiliary mutual types, checked, and translated back. |
 
 ## Why the order matters
@@ -30,6 +30,32 @@ order or cache differently. Tenet follows the reference kernel's order so that a
 Lean accepts, Tenet accepts, and its checks are strictly a subset of Lean's reductions
 so that the converse also holds. This is also why some code reads as a transliteration
 of an algorithm rather than an idiomatic .NET design: the algorithm is the spec.
+
+## The failure cache
+
+The reference kernel caches successful definitional-equality checks for the whole
+declaration but failed ones only inside lazy delta reduction. On some Mathlib
+declarations the same failing comparison is then repeated hundreds of times from
+different call sites (`PresheafOfModules.freeObj._proof_2` did 8 million unfoldings
+where Lean's own kernel needed 30 thousand, because a comparison such as
+`fvar =?= DFunLike.coe …` that needs functoriality is false and gets asked again on
+every unfolding step). Tenet therefore also caches failures at the top-level
+`IsDefEq`, which makes the check up to 40 times faster on such declarations.
+
+A cached failure can only make the check stricter: every `true` is still justified by
+an actual derivation, so soundness is untouched, but because definitional equality is
+not transitive, a comparison that failed in one context can succeed later after more
+unfolding, and the cache would then reject a declaration the reference accepts. To
+keep verdicts identical to the reference, `Environment.Add` and `Validate` run a
+rejected declaration a second time with the failure cache off (`TypeChecker.FaithfulScope`)
+and report only that result. Accepted declarations are never re-run; a rejection costs
+about twice the time. `TENET_NO_FAILURE_CACHE=1` disables the fast mode entirely; the
+differential tests (docs/testing.md) are run both ways.
+
+The re-check is not theoretical: of the 765,497 declarations in Mathlib and its
+dependencies, 1,039 are rejected by the fast mode and accepted by the faithful one
+(`--stats` reports the count as "faithful retries"); `AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq`
+is one of them.
 
 ## Trust
 
