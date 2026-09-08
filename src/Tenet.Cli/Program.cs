@@ -15,6 +15,7 @@ internal static class Program
           tenet check <file.ndjson> [options]     check every declaration in an export
           tenet check <Module.olean>... [options] check compiled modules in place (imports are memory-mapped and
                                                    decoded on demand; --all checks the whole import closure)
+          tenet check <project dir> [options]     check every module of a built Lake project (.lake/build/lib/lean)
           tenet info  <file.ndjson>               print the export's metadata and counts
           tenet show  <file.ndjson> <name>...     print declarations from an export (type, value, metadata)
           tenet version
@@ -263,7 +264,7 @@ internal static class Program
         {
             return Fail("check needs a file\n\n" + Usage);
         }
-        if (args[0].EndsWith(".olean", StringComparison.Ordinal))
+        if (args[0].EndsWith(".olean", StringComparison.Ordinal) || Directory.Exists(args[0]))
         {
             return CheckOlean(args);
         }
@@ -425,6 +426,20 @@ internal static class Program
         return result.Failures.Count > 0 ? 1 : result.ReadError is not null ? 3 : 0;
     }
 
+    /// <summary>
+    /// The modules of a Lake project directory (everything under its <c>.lake/build/lib/lean</c>, which holds the
+    /// project's own modules; dependencies live under <c>.lake/packages</c>), or the <c>.olean</c> files under a plain directory.
+    /// </summary>
+    private static List<string> OleanFilesUnder(string dir)
+    {
+        string lib = Path.Combine(dir, ".lake", "build", "lib", "lean");
+        string root = Directory.Exists(lib) ? lib : dir;
+        return Directory.EnumerateFiles(root, "*.olean", SearchOption.AllDirectories)
+            .Where(f => !f.Contains(Path.Combine(".lake", "packages"), StringComparison.Ordinal))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+    }
+
     private static int CheckOlean(string[] args)
     {
         var targets = new List<string>();
@@ -466,6 +481,13 @@ internal static class Program
                 case "--stack-mb": i++; break;
                 default:
                     if (args[i].StartsWith("--", StringComparison.Ordinal)) return Fail($"unknown option '{args[i]}'\n\n{Usage}");
+                    if (Directory.Exists(args[i]))
+                    {
+                        List<string> found = OleanFilesUnder(args[i]);
+                        if (found.Count == 0) return Fail($"no .olean files under {args[i]} (is the project built? expected .lake/build/lib/lean)");
+                        targets.AddRange(found);
+                        break;
+                    }
                     if (!File.Exists(args[i])) return Fail($"no such file: {args[i]}");
                     targets.Add(args[i]);
                     break;
@@ -500,7 +522,8 @@ internal static class Program
         if (!quiet)
         {
             var first = checker.Modules[targetNames[0]];
-            Console.WriteLine($"{string.Join(", ", targetNames)}: Lean {first.LeanVersion} ({first.GitHash[..9]}); {checker.Modules.Count} modules mapped in {sw.Elapsed.TotalSeconds:F1}s{(all ? ", checking all of them" : ", checking the targets")}");
+            string shown = targetNames.Count <= 4 ? string.Join(", ", targetNames) : $"{string.Join(", ", targetNames.Take(3))} and {targetNames.Count - 3} more modules";
+            Console.WriteLine($"{shown}: Lean {first.LeanVersion} ({first.GitHash[..9]}); {checker.Modules.Count} modules mapped in {sw.Elapsed.TotalSeconds:F1}s{(all ? ", checking all of them" : ", checking the targets")}");
             Console.WriteLine("  library roots: " + string.Join(", ", search.Roots));
         }
         var lastReport = Stopwatch.StartNew();

@@ -77,7 +77,7 @@ Tenet reads export format 3.x (NDJSON), both the current 3.1 layout and the 3.0 
 
 | | |
 | --- | --- |
-| `tenet check FILE` | check every declaration; `--jobs N` (default: all cores), `--only a,b`, `--fail-fast`, `--low-memory`, `--report out.json`, `--stats`, `--slow SECONDS`, `--verbose`, `--quiet` |
+| `tenet check FILE` | check every declaration of an export, a `.olean` module, or a built Lake project directory; `--jobs N` (default: all cores), `--only a,b`, `--fail-fast`, `--low-memory`, `--report out.json`, `--stats`, `--slow SECONDS`, `--verbose`, `--quiet` |
 | `tenet info FILE` | metadata and counts |
 | `tenet show FILE NAME...` | print declarations: type, value, hints, constructor and recursor data |
 
