@@ -25,7 +25,7 @@ internal static class Program
           --stats                     print kernel work counters at the end
           --jobs <n>                  check n declarations concurrently (default: number of cores; 1 = sequential)
           --slow <seconds>            report declarations slower than this (default 1)
-          --stack-mb <n>              stack size for the checking thread (default 1024)
+          --stack-mb <n>              stack size for each checking thread, in MB (default 512)
 
         exit status: 0 all declarations checked, 1 some failed, 2 usage or file error
         """;
@@ -82,7 +82,7 @@ internal static class Program
                 return mb;
             }
         }
-        return 1024;
+        return 512;
     }
 
     /// <summary>Kernel recursion follows expression depth; run on a thread with a generous stack.</summary>
@@ -270,6 +270,7 @@ internal static class Program
             CompareInductive = compare,
             SlowThreshold = TimeSpan.FromSeconds(slow),
             Jobs = jobs,
+            WorkerStackMb = ParseStackMb(args),
             Progress = quiet ? null : p =>
             {
                 lock (reportLock)

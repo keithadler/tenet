@@ -88,3 +88,37 @@ public class ExprTests
         Assert.Equal("«a b».c", Name.Of("a b", "c").ToString());
     }
 }
+
+public class DepthTests
+{
+    /// <summary>Kernel recursion follows term depth; a few thousand nested binders must not overflow a worker's stack.</summary>
+    [Fact]
+    public void DeeplyNestedTermsCheck()
+    {
+        Exception? error = null;
+        var t = new Thread(() =>
+        {
+            try
+            {
+                var env = new Tenet.Kernel.Environment();
+                var tc = new TypeChecker(env);
+                const int depth = 5000;
+                Expr body = Expr.BVar(depth - 1);
+                for (int i = 0; i < depth; i++)
+                {
+                    body = Expr.Lam(Name.Of("x"), Expr.Prop, body);
+                }
+                Expr type = tc.Check(body, []);
+                Assert.True(type is PiExpr);
+                Assert.Equal(depth, type.ToString().Split('→').Length);
+            }
+            catch (Exception e)
+            {
+                error = e;
+            }
+        }, 512 * 1024 * 1024);
+        t.Start();
+        t.Join();
+        Assert.Null(error);
+    }
+}

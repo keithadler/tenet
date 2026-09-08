@@ -32,6 +32,12 @@ public sealed class CheckOptions
     /// to constants that precede it in the export, exactly as in sequential mode.
     /// </summary>
     public int Jobs { get; init; } = 1;
+
+    /// <summary>
+    /// Stack size for worker threads, in megabytes. Kernel recursion follows expression depth, so workers get
+    /// dedicated threads with large stacks rather than pool threads. The reservation is virtual; only touched pages cost memory.
+    /// </summary>
+    public int WorkerStackMb { get; init; } = 512;
 }
 
 /// <summary>What the streaming checker learned about the export while reading it.</summary>
@@ -387,15 +393,20 @@ public static class ExportChecker
         int checkedCount = 0;
         int skipped = 0;
         using var cts = new CancellationTokenSource();
-        var po = new ParallelOptions { MaxDegreeOfParallelism = options.Jobs, CancellationToken = cts.Token };
-        try
+        int next = -1;
+        RunWorkers(options, () =>
         {
-            Parallel.For(0, file.Decls.Count, po, i =>
+            while (!cts.IsCancellationRequested)
             {
+                int i = Interlocked.Increment(ref next);
+                if (i >= file.Decls.Count)
+                {
+                    return;
+                }
                 ExportDecl decl = file.Decls[i];
                 if (duplicates.Contains(i))
                 {
-                    return;
+                    continue;
                 }
                 bool check = options.Only is null || ShouldCheck(decl, options.Only);
                 var sw = Stopwatch.StartNew();
@@ -441,18 +452,52 @@ public static class ExportChecker
                     }
                     options.Progress(new CheckProgress(n, file.Decls.Count, decl.DisplayName, failed, total.Elapsed));
                 }
-            });
-        }
-        catch (OperationCanceledException)
-        {
-            // fail-fast requested
-        }
+            }
+        });
         result.Checked = checkedCount;
         result.Skipped = skipped;
         result.Failures.AddRange(failures.OrderBy(f => position.TryGetValue(f.Name, out int p) ? p : int.MaxValue));
         result.Slow.AddRange(slow);
         result.Elapsed = total.Elapsed;
         return result;
+    }
+
+    /// <summary>Run <paramref name="body"/> on <see cref="CheckOptions.Jobs"/> dedicated large-stack threads and wait for all of them.</summary>
+    private static void RunWorkers(CheckOptions options, Action body)
+    {
+        int jobs = Math.Max(1, options.Jobs);
+        var threads = new Thread[jobs];
+        var errors = new List<Exception>();
+        for (int w = 0; w < jobs; w++)
+        {
+            threads[w] = new Thread(() =>
+            {
+                try
+                {
+                    body();
+                }
+                catch (Exception e)
+                {
+                    lock (errors)
+                    {
+                        errors.Add(e);
+                    }
+                }
+            }, Math.Max(1, options.WorkerStackMb) * 1024 * 1024)
+            {
+                IsBackground = true,
+                Name = "tenet-check-" + w,
+            };
+            threads[w].Start();
+        }
+        foreach (Thread t in threads)
+        {
+            t.Join();
+        }
+        if (errors.Count > 0)
+        {
+            throw errors.Count == 1 ? errors[0] : new AggregateException(errors);
+        }
     }
 
     private static IEnumerable<Name> NamesOf(ExportDecl decl)
@@ -668,10 +713,7 @@ public static class ExportChecker
             }
         });
 
-        var workers = new Task[jobs];
-        for (int w = 0; w < jobs; w++)
-        {
-            workers[w] = Task.Run(() =>
+        RunWorkers(options, () =>
             {
                 var reader = channel.Reader;
                 while (true)
@@ -740,8 +782,6 @@ public static class ExportChecker
                     }
                 }
             });
-        }
-        Task.WaitAll(workers);
         Exception? readError = null;
         try
         {
