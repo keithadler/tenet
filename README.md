@@ -11,7 +11,9 @@ declaration from scratch and reports the first thing it cannot accept.
 
 It is written from the type theory and the reference kernel's behavior, not translated
 from it, and it shares no code with Lean. That is the point: a proof that survives two
-independent kernels is a proof you can trust a little more.
+independent kernels is a proof you can trust a little more. Tenet is not the first
+independent kernel and does not claim to be; it is the one on .NET. See
+[Other checkers](#other-checkers).
 
 ```
 $ tenet check .lake/build/lib/lean/Mathlib.olean --all
@@ -51,7 +53,7 @@ headline theorems rests on nothing but the three standard axioms, with no `sorry
 same run on `NavierStokes.Comparator.navier_stokes_breakdown_R3` and
 `navier_stokes_breakdown_periodic` gives the same three axioms.
 
-Be precise about what that is worth. It says a second kernel, written from the type theory
+Be precise about what that is worth. It says one more kernel, written from the type theory
 rather than translated from Lean's code, follows every step of those proofs and agrees.
 It says nothing about whether the theorem statements are the ones the
 [Clay problem](https://www.claymath.org/millennium/navier-stokes-equation/) asks for;
@@ -160,6 +162,27 @@ Expr t = tc.Infer(Expr.Const(Name.Of("id"), [Level.One]));   // ∀ {α : Type},
 checker; `Tenet.Olean` memory-maps compiled modules and decodes constants on demand;
 `Tenet.Cli` is the `tenet` command.
 
+## Other checkers
+
+Independent checking of Lean proofs is an established practice with several existing tools.
+Tenet is another entry, not a first.
+
+| | What it is | Catches a bug in Lean's kernel? |
+| --- | --- | --- |
+| [lean4checker](https://github.com/leanprover/lean4checker) | Official. Replays a module's environment through **Lean's own kernel** | No: it shares the kernel it is checking |
+| [lean4lean](https://github.com/digama0/lean4lean) | A Lean 4 kernel written in Lean 4, aimed at being verified against the type theory | Yes, and it is the most rigorous of these |
+| [nanoda](https://github.com/ammkrn/nanoda_lib) | An independent kernel in Rust; the checker [Comparator](https://github.com/leanprover/comparator) drives it | Yes |
+| [trepplein](https://github.com/gebner/trepplein) | An independent kernel in Scala | Yes |
+| Tenet | An independent kernel in C# on .NET | Yes |
+
+What Tenet adds is a second *implementation* on a different runtime, checked against Lean's
+own kernel declaration by declaration on damaged inputs, plus two things aimed at using it
+routinely: it reads compiled `.olean` files directly, so a project can be checked in place
+without producing an export first, and it runs the whole of Mathlib in about six minutes.
+
+Diversity is the point of all of these. Independent implementations only help if they are
+genuinely independent, so the sensible thing is to run more than one.
+
 ## What "checking" means here
 
 For each declaration in the export, in order:
@@ -177,6 +200,34 @@ For each declaration in the export, in order:
 
 What it does not do: run compiled code. `Lean.reduceBool` and `Lean.reduceNat` are
 rejected with a clear message, because trusting them means trusting the compiler.
+
+### What you still have to trust
+
+A checker moves trust, it does not remove it. Accepting a Tenet run means trusting:
+
+- the .NET runtime and the C# compiler;
+- `Tenet.Kernel`, about 3,500 lines, and whichever front end you used: the export reader,
+  or the `.olean` reader, which decodes Lean's compiled object graph directly;
+- that the input reflects what Lean actually checked. For an export, that is lean4export;
+  for `.olean` files, that the files came from the build you think they did;
+- that the theorem statements say what you believe they say. No kernel can help here.
+
+### Why the checks are not vacuous
+
+A checker that accepted everything would produce the same clean output, so:
+
+- **It rejects tampered proofs.** Every theorem in the prelude given the previous theorem's
+  proof: at least 95% must be rejected, with no collateral damage. Recursor rules and
+  theorem statements are tampered with in the fixtures too.
+- **Its verdicts are compared with Lean's own kernel**, declaration by declaration, on about
+  130,000 deliberately damaged declarations. That comparison has found five real bugs, all of
+  them in Tenet, including a head comparison that used reference equality where the reference
+  compares structurally, and a recursor walk that accepted only one binder shape.
+- **It derives rather than trusts.** Recursors and constructor metadata are re-derived from
+  the types and constructors alone and compared field by field with what Lean wrote.
+
+See [docs/status.md](docs/status.md) for the runs and [docs/testing.md](docs/testing.md) for
+the method.
 
 ## Layout
 
