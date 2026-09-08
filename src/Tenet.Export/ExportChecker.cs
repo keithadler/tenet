@@ -353,17 +353,83 @@ public static class ExportChecker
 
     private static string Fmt(Name[] ns) => "[" + string.Join(", ", ns.Select(n => n.ToString())) + "]";
 
+
+    /// <summary>Mutable tallies shared by the worker threads of the concurrent modes.</summary>
+    private sealed class Tally
+    {
+        public readonly object Sync = new();
+        public readonly List<CheckFailure> Failures = new();
+        public readonly List<(Name, TimeSpan)> Slow = new();
+        public int Done;
+        public int Checked;
+        public int Skipped;
+        public readonly Stopwatch Total = Stopwatch.StartNew();
+        public CancellationTokenSource Cts = new();
+    }
+
+    /// <summary>Check one declaration against a fully populated environment and record the outcome.</summary>
+    private static void CheckOne(Environment env, ExportDecl decl, Action orderCheck, CheckOptions options, Tally tally, Func<int> totalSoFar)
+    {
+        bool check = options.Only is null || ShouldCheck(decl, options.Only);
+        var sw = Stopwatch.StartNew();
+        if (!check)
+        {
+            Interlocked.Increment(ref tally.Skipped);
+        }
+        else
+        {
+            try
+            {
+                orderCheck();
+                ValidateDecl(env, decl, options.CompareInductive);
+                Interlocked.Increment(ref tally.Checked);
+            }
+            catch (KernelException e)
+            {
+                lock (tally.Sync)
+                {
+                    tally.Failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed));
+                }
+                if (!options.ContinueOnError)
+                {
+                    tally.Cts.Cancel();
+                }
+            }
+            sw.Stop();
+            if (sw.Elapsed >= options.SlowThreshold)
+            {
+                lock (tally.Sync)
+                {
+                    tally.Slow.Add((decl.DisplayName, sw.Elapsed));
+                }
+            }
+        }
+        int n = Interlocked.Increment(ref tally.Done);
+        if (options.Progress is not null)
+        {
+            int failed;
+            lock (tally.Sync)
+            {
+                failed = tally.Failures.Count;
+            }
+            options.Progress(new CheckProgress(n, Math.Max(n, totalSoFar()), decl.DisplayName, failed, tally.Total.Elapsed));
+        }
+    }
+
+    private static CheckResult Finish(Tally tally, Environment env, Func<Name, int?> positionOf)
+    {
+        var result = new CheckResult { Environment = env, Checked = tally.Checked, Skipped = tally.Skipped, Elapsed = tally.Total.Elapsed };
+        result.Failures.AddRange(tally.Failures.OrderBy(f => positionOf(f.Name) ?? int.MaxValue));
+        result.Slow.AddRange(tally.Slow);
+        return result;
+    }
+
     // ------------------------------------------------------------------ parallel mode
 
     private static CheckResult CheckParallel(ExportFile file, CheckOptions options)
     {
-        var result = new CheckResult();
         var env = new Environment();
-        result.Environment = env;
-        var total = Stopwatch.StartNew();
-        var failures = new List<CheckFailure>();
-        var slow = new List<(Name, TimeSpan)>();
-        var sync = new object();
+        var tally = new Tally();
 
         // Phase 1: every constant, unchecked, and the position of each name in the export.
         var position = new Dictionary<Name, int>();
@@ -382,84 +448,32 @@ public static class ExportChecker
             if (dup)
             {
                 duplicates.Add(i);
-                failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, $"'{decl.DisplayName}' has already been declared", TimeSpan.Zero));
+                tally.Failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, $"'{decl.DisplayName}' has already been declared", TimeSpan.Zero));
                 continue;
             }
             AddUnchecked(env, decl);
         }
 
         // Phase 2: check each declaration against the complete environment.
-        int done = 0;
-        int checkedCount = 0;
-        int skipped = 0;
-        using var cts = new CancellationTokenSource();
         int next = -1;
         RunWorkers(options, () =>
         {
-            while (!cts.IsCancellationRequested)
+            while (!tally.Cts.IsCancellationRequested)
             {
                 int i = Interlocked.Increment(ref next);
                 if (i >= file.Decls.Count)
                 {
                     return;
                 }
-                ExportDecl decl = file.Decls[i];
                 if (duplicates.Contains(i))
                 {
                     continue;
                 }
-                bool check = options.Only is null || ShouldCheck(decl, options.Only);
-                var sw = Stopwatch.StartNew();
-                if (!check)
-                {
-                    Interlocked.Increment(ref skipped);
-                }
-                else
-                {
-                    try
-                    {
-                        CheckOrder(decl, i, position);
-                        ValidateDecl(env, decl, options.CompareInductive);
-                        Interlocked.Increment(ref checkedCount);
-                    }
-                    catch (KernelException e)
-                    {
-                        lock (sync)
-                        {
-                            failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed));
-                        }
-                        if (!options.ContinueOnError)
-                        {
-                            cts.Cancel();
-                        }
-                    }
-                    sw.Stop();
-                    if (sw.Elapsed >= options.SlowThreshold)
-                    {
-                        lock (sync)
-                        {
-                            slow.Add((decl.DisplayName, sw.Elapsed));
-                        }
-                    }
-                }
-                int n = Interlocked.Increment(ref done);
-                if (options.Progress is not null)
-                {
-                    int failed;
-                    lock (sync)
-                    {
-                        failed = failures.Count;
-                    }
-                    options.Progress(new CheckProgress(n, file.Decls.Count, decl.DisplayName, failed, total.Elapsed));
-                }
+                ExportDecl decl = file.Decls[i];
+                CheckOne(env, decl, () => CheckOrder(decl, i, position), options, tally, () => file.Decls.Count);
             }
         });
-        result.Checked = checkedCount;
-        result.Skipped = skipped;
-        result.Failures.AddRange(failures.OrderBy(f => position.TryGetValue(f.Name, out int p) ? p : int.MaxValue));
-        result.Slow.AddRange(slow);
-        result.Elapsed = total.Elapsed;
-        return result;
+        return Finish(tally, env, n => position.TryGetValue(n, out int p) ? p : null);
     }
 
     /// <summary>Run <paramref name="body"/> on <see cref="CheckOptions.Jobs"/> dedicated large-stack threads and wait for all of them.</summary>
@@ -650,22 +664,13 @@ public static class ExportChecker
     {
         options ??= new CheckOptions();
         int jobs = Math.Max(1, options.Jobs);
-        var result = new CheckResult();
         var env = new Environment();
-        result.Environment = env;
-        var total = Stopwatch.StartNew();
-        var failures = new List<CheckFailure>();
-        var slow = new List<(Name, TimeSpan)>();
-        var sync = new object();
+        var tally = new Tally();
         var position = new System.Collections.Concurrent.ConcurrentDictionary<Name, int>();
         var file = new ExportFile();
         var channel = System.Threading.Channels.Channel.CreateBounded<(int Index, ExportDecl Decl)>(
             new System.Threading.Channels.BoundedChannelOptions(4096) { SingleWriter = true, SingleReader = jobs == 1 });
         int declCount = 0;
-        int done = 0;
-        int checkedCount = 0;
-        int skipped = 0;
-        using var cts = new CancellationTokenSource();
         var parseTime = Stopwatch.StartNew();
 
         var producer = Task.Run(() =>
@@ -685,21 +690,21 @@ public static class ExportChecker
                     }
                     if (dup)
                     {
-                        lock (sync)
+                        lock (tally.Sync)
                         {
-                            failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, $"'{decl.DisplayName}' has already been declared", TimeSpan.Zero));
+                            tally.Failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, $"'{decl.DisplayName}' has already been declared", TimeSpan.Zero));
                         }
                         return;
                     }
                     AddUnchecked(env, decl);
-                    // Blocks when the workers are behind, which bounds memory held in the queue.
+                    // Blocks when the workers are behind, which bounds the memory held in the queue.
                     while (!channel.Writer.TryWrite((i, decl)))
                     {
-                        if (cts.IsCancellationRequested)
+                        if (tally.Cts.IsCancellationRequested)
                         {
                             return;
                         }
-                        channel.Writer.WaitToWriteAsync(cts.Token).AsTask().GetAwaiter().GetResult();
+                        channel.Writer.WaitToWriteAsync(tally.Cts.Token).AsTask().GetAwaiter().GetResult();
                     }
                 });
             }
@@ -714,74 +719,30 @@ public static class ExportChecker
         });
 
         RunWorkers(options, () =>
+        {
+            var reader = channel.Reader;
+            while (true)
             {
-                var reader = channel.Reader;
-                while (true)
+                try
                 {
-                    (int Index, ExportDecl Decl) item;
-                    try
-                    {
-                        if (!reader.WaitToReadAsync(cts.Token).AsTask().GetAwaiter().GetResult())
-                        {
-                            return;
-                        }
-                    }
-                    catch (OperationCanceledException)
+                    if (!reader.WaitToReadAsync(tally.Cts.Token).AsTask().GetAwaiter().GetResult())
                     {
                         return;
                     }
-                    if (!reader.TryRead(out item))
-                    {
-                        continue;
-                    }
-                    ExportDecl decl = item.Decl;
-                    bool check = options.Only is null || ShouldCheck(decl, options.Only);
-                    var sw = Stopwatch.StartNew();
-                    if (!check)
-                    {
-                        Interlocked.Increment(ref skipped);
-                    }
-                    else
-                    {
-                        try
-                        {
-                            CheckOrderStreaming(decl, item.Index, position);
-                            ValidateDecl(env, decl, options.CompareInductive);
-                            Interlocked.Increment(ref checkedCount);
-                        }
-                        catch (KernelException e)
-                        {
-                            lock (sync)
-                            {
-                                failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed));
-                            }
-                            if (!options.ContinueOnError)
-                            {
-                                cts.Cancel();
-                            }
-                        }
-                        sw.Stop();
-                        if (sw.Elapsed >= options.SlowThreshold)
-                        {
-                            lock (sync)
-                            {
-                                slow.Add((decl.DisplayName, sw.Elapsed));
-                            }
-                        }
-                    }
-                    int n = Interlocked.Increment(ref done);
-                    if (options.Progress is not null)
-                    {
-                        int failed;
-                        lock (sync)
-                        {
-                            failed = failures.Count;
-                        }
-                        // Total is unknown until the reader finishes; report the count seen so far.
-                        options.Progress(new CheckProgress(n, Math.Max(n, declCount), decl.DisplayName, failed, total.Elapsed));
-                    }
                 }
-            });
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                if (!reader.TryRead(out (int Index, ExportDecl Decl) item))
+                {
+                    continue;
+                }
+                ExportDecl decl = item.Decl;
+                CheckOne(env, decl, () => CheckOrderStreaming(decl, item.Index, position), options, tally, () => declCount);
+            }
+        });
+
         Exception? readError = null;
         try
         {
@@ -791,11 +752,7 @@ public static class ExportChecker
         {
             readError = e;
         }
-        result.Checked = checkedCount;
-        result.Skipped = skipped;
-        result.Failures.AddRange(failures.OrderBy(f => position.TryGetValue(f.Name, out int p) ? p : int.MaxValue));
-        result.Slow.AddRange(slow);
-        result.Elapsed = total.Elapsed;
+        CheckResult result = Finish(tally, env, n => position.TryGetValue(n, out int p) ? p : null);
         result.Stream = new StreamInfo(file.Meta, declCount, file.Exprs.Count, file.Names.Count - 1, file.Levels.Count - 1, parseTime.Elapsed);
         if (readError is not null)
         {
