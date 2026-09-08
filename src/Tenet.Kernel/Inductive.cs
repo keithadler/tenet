@@ -750,7 +750,7 @@ public static class Inductive
                 {
                     cName = cName.AppendIndexAfter((ulong)dIdx + 1);
                 }
-                info.C = MkLocalDecl(cName, cTy, BinderInfo.Implicit);
+                info.C = MkLocalDecl(cName, cTy);  // made implicit later by InferImplicit, as the reference does
                 _recInfos.Add(info);
                 dIdx++;
             }

@@ -160,7 +160,9 @@ public sealed class Environment
         }
         if (check)
         {
-            var checker = new TypeChecker(this, safety: d.Safety);
+            // The reference checks safe and partial definitions with a safe checker: a partial
+            // definition may not depend on another partial one.
+            var checker = new TypeChecker(this);
             CheckConstantVal(d.Name, d.LevelParams, d.Type, checker);
             CheckNoFVar(d.Name, d.Value);
             Expr valType = checker.Check(d.Value, d.LevelParams);
@@ -196,7 +198,8 @@ public sealed class Environment
     {
         if (check)
         {
-            var checker = new TypeChecker(this, safety: d.IsUnsafe ? DefinitionSafety.Unsafe : DefinitionSafety.Safe);
+            // The reference checks opaque values with a safe checker regardless of the unsafe flag.
+            var checker = new TypeChecker(this);
             CheckConstantVal(d.Name, d.LevelParams, d.Type, checker);
             CheckNoFVar(d.Name, d.Value);
             Expr valType = checker.Check(d.Value, d.LevelParams);

@@ -88,7 +88,7 @@ public class LargeExportTests
         int rejected = result.Failures.Count(f => swapped.ContainsKey(f.Name));
         Assert.True(rejected >= swapped.Count * 95 / 100, $"only {rejected} of {swapped.Count} swapped proofs were rejected");
         // and nothing that was left alone should have failed
-        Assert.Empty(result.Failures.Where(f => !swapped.ContainsKey(f.Name)));
+        Assert.DoesNotContain(result.Failures, f => !swapped.ContainsKey(f.Name));
     }
 
     [Fact]
