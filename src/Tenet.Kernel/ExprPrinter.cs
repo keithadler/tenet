@@ -47,7 +47,8 @@ public static class ExprPrinter
                 }
                 else
                 {
-                    sb.Append("Sort (").Append(s.Level).Append(')');
+                    string l = s.Level.ToString();
+                    sb.Append("Sort ").Append(s.Level is ParamLevel || s.Level.IsExplicit ? l : "(" + l + ")");
                 }
                 break;
             case ConstExpr c:

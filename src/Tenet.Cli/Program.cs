@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Tenet.Export;
 using Tenet.Kernel;
+using Environment = Tenet.Kernel.Environment;
 
 namespace Tenet.Cli;
 
@@ -13,6 +14,7 @@ internal static class Program
         usage:
           tenet check <file.ndjson> [options]     check every declaration in an export
           tenet info  <file.ndjson>               print the export's metadata and counts
+          tenet show  <file.ndjson> <name>...     print declarations from an export (type, value, metadata)
           tenet version
 
         options for check:
@@ -41,6 +43,7 @@ internal static class Program
             {
                 "check" => RunOnBigStack(() => Check(args[1..]), ParseStackMb(args)),
                 "info" => Info(args[1..]),
+                "show" => Show(args[1..]),
                 "version" => Version(),
                 _ => Fail($"unknown command '{args[0]}'\n\n{Usage}"),
             };
@@ -125,6 +128,64 @@ internal static class Program
         int consts = file.DeclaredNames().Count();
         Console.WriteLine($"  {"constants",-10} {consts,8}");
         return 0;
+    }
+
+    private static int Show(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Fail("show needs a file and at least one name");
+        }
+        ExportFile file = NdjsonReader.ReadFile(args[0]);
+        var wanted = new HashSet<Name>(args[1..].Select(Name.Parse));
+        var env = new Environment();
+        foreach (ExportDecl d in file.Decls)
+        {
+            ExportChecker.AddUnchecked(env, d);
+        }
+        int missing = 0;
+        foreach (Name n in args[1..].Select(Name.Parse))
+        {
+            ConstantInfo? c = env.Find(n);
+            if (c is null)
+            {
+                Console.WriteLine($"{n}: not in this export");
+                missing++;
+                continue;
+            }
+            string lps = c.LevelParams.Length == 0 ? "" : ".{" + string.Join(", ", c.LevelParams.Select(l => l.ToString())) + "}";
+            Console.WriteLine($"{c.KindName} {c.Name}{lps} : {c.Type}");
+            switch (c)
+            {
+                case DefinitionInfo def:
+                    Console.WriteLine($"  := {def.Value}");
+                    Console.WriteLine($"  hints: {def.Hints}, safety: {def.Safety}");
+                    break;
+                case TheoremInfo thm:
+                    Console.WriteLine($"  := {thm.Value}");
+                    break;
+                case OpaqueInfo op:
+                    Console.WriteLine($"  := {op.OpaqueValue}");
+                    break;
+                case InductiveInfo ind:
+                    Console.WriteLine($"  params {ind.NumParams}, indices {ind.NumIndices}, ctors [{string.Join(", ", ind.Ctors.Select(x => x.ToString()))}], rec {(ind.IsRec ? "true" : "false")}, reflexive {(ind.IsReflexive ? "true" : "false")}, nested {ind.NumNested}");
+                    break;
+                case ConstructorInfo ctor:
+                    Console.WriteLine($"  of {ctor.Induct}, index {ctor.Cidx}, params {ctor.NumParams}, fields {ctor.NumFields}");
+                    break;
+                case RecursorInfo rec:
+                    Console.WriteLine($"  params {rec.NumParams}, indices {rec.NumIndices}, motives {rec.NumMotives}, minors {rec.NumMinors}, k {(rec.K ? "true" : "false")}");
+                    foreach (RecursorRule r in rec.Rules)
+                    {
+                        Console.WriteLine($"  rule {r.Ctor} ({r.NumFields} fields) := {r.Rhs}");
+                    }
+                    break;
+                case QuotInfo q:
+                    Console.WriteLine($"  quotient {q.Kind}");
+                    break;
+            }
+        }
+        return missing == 0 ? 0 : 1;
     }
 
     private static void PrintMeta(ExportFile file, string path, TimeSpan parseTime)

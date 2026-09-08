@@ -152,7 +152,12 @@ public static class NdjsonReader
 
     private static Name[] NamesAt(ExportFile file, JsonElement arr, long lineNo)
     {
-        var r = new Name[arr.GetArrayLength()];
+        int n = arr.GetArrayLength();
+        if (n == 0)
+        {
+            return [];
+        }
+        var r = new Name[n];
         int k = 0;
         foreach (JsonElement e in arr.EnumerateArray())
         {
@@ -163,7 +168,12 @@ public static class NdjsonReader
 
     private static Level[] LevelsAt(ExportFile file, JsonElement arr, long lineNo)
     {
-        var r = new Level[arr.GetArrayLength()];
+        int n = arr.GetArrayLength();
+        if (n == 0)
+        {
+            return [];
+        }
+        var r = new Level[n];
         int k = 0;
         foreach (JsonElement e in arr.EnumerateArray())
         {
