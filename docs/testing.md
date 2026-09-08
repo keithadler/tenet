@@ -168,6 +168,19 @@ the reference rather than defects in Tenet. Known classes:
   this cannot occur on a real export. Seen as `PULift.up.inj` in an Init.Core variant with a
   `max-imax-swap` mutation. Run the oracle with `pp.universes` (it does so by default) to
   recognize the pattern: two `Eq.{...}` levels that are equal as universes.
+  The same mechanism also produces the STRICT direction. In a `Mathlib.Data.Real.Basic`
+  variant, one `max (u_2+1) (u_1+1)` in the shared level table became
+  `imax (u_2+1) (u_1+1)`, and 46 declarations (`Sum.range_eq`, `StateT.instLawfulMonad`,
+  `RelEmbedding.wellFounded`, ...) were rejected by Tenet and accepted by Lean. Both
+  kernels normalize that `imax` to the unsorted `max (u_2+1) (u_1+1)`, which is not
+  structurally equal to the sorted `max (u_1+1) (u_2+1)` on the other side; Tenet
+  therefore rejects, and so would Lean's C++ on pointer-identical objects. Lean accepted
+  because instantiating the universe parameters of an imported constant rebuilt the level
+  through `mk_imax`, which turns it into a `max` and lets the sorted normal forms agree;
+  the rebuild happens only when pointer identity has been broken by sharing. The same
+  `max`-to-`imax` mutation on the prelude export produces identical verdicts from both
+  kernels, so whether Lean rewrites depends on object provenance, not semantics. Again
+  impossible on a real export: the elaborator never stores `imax _ (_+1)`.
 - **Recovery policy after a failed block.** Both tools install a failed declaration
   unchecked and continue; the oracle mirrors Tenet's choices (including enabling quotient
   reduction after a broken quotient block). If the tools ever diverge here, later
