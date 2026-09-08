@@ -132,6 +132,11 @@ internal static class Program
                 Console.WriteLine("  STRICT: Tenet rejects but Lean accepts:");
                 foreach (string n in tenetRejectsLeanAccepts.Take(10)) Console.WriteLine("    " + n + "  |  " + FirstLine(t.Raw, n));
             }
+            if ((tenetAcceptsLeanRejects.Count > 0 || tenetRejectsLeanAccepts.Count > 0) && applied.Contains("max-imax-swap"))
+            {
+                Console.WriteLine("  note: this variant carries a max-imax-swap mutation; disagreements whose universe levels print an `imax` are usually");
+                Console.WriteLine("        the reference's pointer-identity level rewriting, not a kernel difference (docs/testing.md, triage)");
+            }
             if (tenetAcceptsLeanRejects.Count == 0 && tenetRejectsLeanAccepts.Count == 0 && !keep)
             {
                 File.Delete(path);
