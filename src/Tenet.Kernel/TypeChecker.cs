@@ -20,6 +20,14 @@ public sealed class TypeChecker
     /// <summary>Upper bound on the size of a <c>Nat</c> literal the checker will compute, in bytes.</summary>
     public static long NatMaxSizeBytes { get; set; } = 128L * 1024 * 1024;
 
+    /// <summary>
+    /// Upper bound on definition unfoldings per checker. Lean bounds kernel work with a heartbeat limit; without a
+    /// bound, an unsafe definition such as <c>unsafe def f : Nat := f</c> would make normalization spin forever.
+    /// </summary>
+    public static long MaxUnfolds { get; set; } = 100_000_000;
+
+    private long _unfolds;
+
     public Environment Env { get; }
     public LocalContext Lctx { get; }
     private readonly DefinitionSafety _safety;
@@ -915,6 +923,10 @@ public sealed class TypeChecker
             if (next is not null)
             {
                 Stats.CountUnfold();
+                if (++_unfolds > MaxUnfolds)
+                {
+                    throw new KernelException($"deterministic timeout: more than {MaxUnfolds} definition unfoldings while checking one declaration (TypeChecker.MaxUnfolds)");
+                }
                 t = next;
             }
             else
@@ -1132,6 +1144,10 @@ public sealed class TypeChecker
 
     private ReductionStatus LazyDeltaReductionStep(ref Expr tn, ref Expr sn)
     {
+        if (++_unfolds > MaxUnfolds)
+        {
+            throw new KernelException($"deterministic timeout: more than {MaxUnfolds} definition unfoldings while checking one declaration (TypeChecker.MaxUnfolds)");
+        }
         ConstantInfo? dt = IsDelta(tn);
         ConstantInfo? ds = IsDelta(sn);
         if (dt is null && ds is null)

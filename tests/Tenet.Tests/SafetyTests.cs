@@ -101,4 +101,33 @@ public class SafetyTests
         CheckResult rp = ExportChecker.Check(file, new CheckOptions { Only = [Name.Of("Nat", "add_succ")], Jobs = 4 });
         Assert.Equal(1, rp.Checked);
     }
+
+    [Fact]
+    public void NonTerminatingUnsafeDefinitionHitsTheUnfoldLimit()
+    {
+        Environment env = LoadFixture();
+        // unsafe def loop : Nat := loop
+        env.Add(new DefinitionDecl(Name.Of("loop"), [], NatE, Expr.Const(Name.Of("loop"), []), ReducibilityHints.Regular(1), DefinitionSafety.Unsafe));
+        long saved = TypeChecker.MaxUnfolds;
+        TypeChecker.MaxUnfolds = 10_000;
+        try
+        {
+            var tc = new TypeChecker(env, safety: DefinitionSafety.Unsafe);
+            var ex = Assert.Throws<KernelException>(() => tc.Whnf(Expr.Const(Name.Of("loop"), [])));
+            Assert.Contains("deterministic timeout", ex.Message, StringComparison.Ordinal);
+            var tc2 = new TypeChecker(env, safety: DefinitionSafety.Unsafe);
+            Assert.Throws<KernelException>(() => tc2.IsDefEq(Expr.Const(Name.Of("loop"), []), Expr.NatLit(3)));
+        }
+        finally
+        {
+            TypeChecker.MaxUnfolds = saved;
+        }
+    }
+
+    [Fact]
+    public void NegativeIndicesAreKernelErrors()
+    {
+        Assert.Throws<KernelException>(() => Expr.BVar(-1));
+        Assert.Throws<KernelException>(() => Expr.Proj(Name.Of("Prod"), -1, Expr.Prop));
+    }
 }

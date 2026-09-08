@@ -117,7 +117,14 @@ public abstract class Expr : IEquatable<Expr>
 
     // ---- constructors ----
 
-    public static Expr BVar(int idx) => idx < BVarCache.Length ? BVarCache[idx] : new BVarExpr(idx);
+    public static Expr BVar(int idx)
+    {
+        if (idx < 0)
+        {
+            throw new KernelException("negative bound variable index");
+        }
+        return idx < BVarCache.Length ? BVarCache[idx] : new BVarExpr(idx);
+    }
     private static readonly BVarExpr[] BVarCache = CreateBVarCache();
     private static BVarExpr[] CreateBVarCache()
     {
@@ -139,7 +146,14 @@ public abstract class Expr : IEquatable<Expr>
     public static Expr Lit(Literal lit) => new LitExpr(lit);
     public static Expr NatLit(BigInteger n) => new LitExpr(new NatLiteral(n));
     public static Expr StrLit(string s) => new LitExpr(new StrLiteral(s));
-    public static Expr Proj(Name structName, int idx, Expr e) => new ProjExpr(structName, idx, e);
+    public static Expr Proj(Name structName, int idx, Expr e)
+    {
+        if (idx < 0)
+        {
+            throw new KernelException("negative projection index");
+        }
+        return new ProjExpr(structName, idx, e);
+    }
 
     /// <summary>A non-dependent function type <c>a → b</c>.</summary>
     public static Expr Arrow(Expr a, Expr b) => Pi(DefaultBinderName, a, b);
