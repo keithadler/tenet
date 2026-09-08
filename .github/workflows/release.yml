@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build -c Release
+      - run: dotnet test --no-build -c Release
+      - run: dotnet pack --no-build -c Release -o artifacts
+      - name: Attach packages to the GitHub release
+        run: gh release upload "$GITHUB_REF_NAME" artifacts/*.nupkg --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Publish to nuget.org
+        # Runs only when the NUGET_API_KEY repository secret is set.
+        if: ${{ env.NUGET_API_KEY != '' }}
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
