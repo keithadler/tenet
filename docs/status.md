@@ -8,11 +8,12 @@ Updated 2026-09-08.
 | `tests/fixtures/Nat.add_succ.v3.0.ndjson` (format 3.0.0, Lean 4.27.0-rc1) | 20 | checks |
 | `Init.Prelude` (Lean 4.34.0-rc2) | 1,824 | 0 failures, 0.2 s |
 | `Init.Core` (Lean 4.34.0-rc2) | 3,468 | 0 failures, 0.4 s |
-| `Init`, the whole core library (Lean 4.34.0-rc2) | 58,135 (59,591 constants) | 0 failures, 6.3 s with 12 jobs, 21 s with 1 job |
+| `Init`, the whole core library (Lean 4.34.0-rc2) | 58,135 (59,591 constants) | 0 failures, 7 s wall clock including parsing (12 jobs); 21 s of checking with 1 job |
 | `Mathlib.Data.Real.Basic` and everything it imports (Mathlib master, 2026-09-08) | 179,215 (186,458 constants) | 0 failures, 9.8 s with 12 jobs, 4.2 GB peak |
 
-Times are check time only (parsing adds about 6 s for the 347 MB `Init` export and 11 s
-for the 794 MB Mathlib one) on a 12-core Apple M-series laptop with 17 GB, .NET 10, server GC.
+Measured on a 12-core Apple M-series laptop with 17 GB, .NET 10, server GC. The reader
+parses about 145 MB/s and runs concurrently with checking, so wall time is close to the
+larger of the two.
 
 ## Parallel checking
 

@@ -40,42 +40,502 @@ public static class NdjsonReader
     /// </summary>
     public static void ReadStreaming(Stream stream, ExportFile file, Action<ExportDecl> onDecl)
     {
-        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 1 << 20);
+        // Read raw bytes and split on newlines; table entries take a forward-only Utf8JsonReader path,
+        // declarations (about 1% of lines) go through JsonDocument.
+        byte[] buffer = new byte[1 << 20];
+        int start = 0;
+        int end = 0;
         long lineNo = 0;
-        string? line;
-        while ((line = reader.ReadLine()) is not null)
+        bool first = true;
+        while (true)
         {
-            lineNo++;
-            if (line.Length == 0 || line.AsSpan().IsWhiteSpace())
+            int read = stream.Read(buffer, end, buffer.Length - end);
+            if (read == 0)
             {
-                continue;
-            }
-            try
-            {
-                using JsonDocument doc = JsonDocument.Parse(line);
-                ExportDecl? decl = ParseLine(file, doc.RootElement, lineNo);
-                if (decl is not null)
+                if (end > start)
                 {
-                    onDecl(decl);
+                    lineNo++;
+                    HandleLine(file, buffer.AsSpan(start, end - start), lineNo, onDecl, ref first);
                 }
+                return;
             }
-            catch (JsonException e)
+            end += read;
+            while (true)
             {
-                throw new ExportFormatException(lineNo, "malformed JSON: " + e.Message);
+                int nl = buffer.AsSpan(start, end - start).IndexOf((byte)'\n');
+                if (nl < 0)
+                {
+                    break;
+                }
+                lineNo++;
+                HandleLine(file, buffer.AsSpan(start, nl), lineNo, onDecl, ref first);
+                start += nl + 1;
             }
-            catch (KernelException e)
+            if (start == end)
             {
-                throw new ExportFormatException(lineNo, e.Message);
+                start = end = 0;
             }
-            catch (KeyNotFoundException e)
+            else if (start > 0)
             {
-                throw new ExportFormatException(lineNo, "missing field: " + e.Message);
+                Buffer.BlockCopy(buffer, start, buffer, 0, end - start);
+                end -= start;
+                start = 0;
             }
-            catch (InvalidOperationException e)
+            if (end == buffer.Length)
             {
-                throw new ExportFormatException(lineNo, "unexpected value: " + e.Message);
+                Array.Resize(ref buffer, buffer.Length * 2);
             }
         }
+    }
+
+    private static void HandleLine(ExportFile file, ReadOnlySpan<byte> line, long lineNo, Action<ExportDecl> onDecl, ref bool first)
+    {
+        if (first)
+        {
+            first = false;
+            if (line.StartsWith("\xEF\xBB\xBF"u8))
+            {
+                line = line[3..];
+            }
+        }
+        if (line.Length > 0 && line[^1] == (byte)'\r')
+        {
+            line = line[..^1];
+        }
+        if (line.IsEmpty || line.IndexOfAnyExcept((byte)' ', (byte)'\t') < 0)
+        {
+            return;
+        }
+        try
+        {
+            if (TryParseTableLine(file, line, lineNo))
+            {
+                return;
+            }
+            using JsonDocument doc = JsonDocument.Parse(line.ToArray());
+            ExportDecl? decl = ParseLine(file, doc.RootElement, lineNo);
+            if (decl is not null)
+            {
+                onDecl(decl);
+            }
+        }
+        catch (JsonException e)
+        {
+            throw new ExportFormatException(lineNo, "malformed JSON: " + e.Message);
+        }
+        catch (KernelException e)
+        {
+            throw new ExportFormatException(lineNo, e.Message);
+        }
+        catch (KeyNotFoundException e)
+        {
+            throw new ExportFormatException(lineNo, "missing field: " + e.Message);
+        }
+        catch (InvalidOperationException e)
+        {
+            throw new ExportFormatException(lineNo, "unexpected value: " + e.Message);
+        }
+    }
+
+    // ---- fast path for names, levels, and expressions ----
+
+    private static int ReadInt(ref Utf8JsonReader r, long lineNo)
+    {
+        if (!r.Read() || r.TokenType != JsonTokenType.Number)
+        {
+            throw new ExportFormatException(lineNo, "expected an integer");
+        }
+        return r.GetInt32();
+    }
+
+    private static int ReadIntProperty(ref Utf8JsonReader r, long lineNo, ReadOnlySpan<byte> name)
+    {
+        if (!r.Read() || r.TokenType != JsonTokenType.PropertyName || !r.ValueTextEquals(name))
+        {
+            return int.MinValue;
+        }
+        return ReadInt(ref r, lineNo);
+    }
+
+    /// <summary>Read a flat object of integer properties into <paramref name="values"/> by matching <paramref name="keys"/>; returns false on anything else.</summary>
+    private static bool ReadIntObject(ref Utf8JsonReader r, long lineNo, scoped ReadOnlySpan<string> keys, scoped Span<int> values)
+    {
+        if (!r.Read() || r.TokenType != JsonTokenType.StartObject)
+        {
+            return false;
+        }
+        values.Fill(int.MinValue);
+        while (r.Read())
+        {
+            if (r.TokenType == JsonTokenType.EndObject)
+            {
+                return true;
+            }
+            if (r.TokenType != JsonTokenType.PropertyName)
+            {
+                return false;
+            }
+            int k = -1;
+            for (int i = 0; i < keys.Length; i++)
+            {
+                if (r.ValueTextEquals(keys[i]))
+                {
+                    k = i;
+                    break;
+                }
+            }
+            if (k < 0)
+            {
+                return false;
+            }
+            values[k] = ReadInt(ref r, lineNo);
+        }
+        return false;
+    }
+
+    private static readonly string[] AppKeys = ["fn", "arg"];
+    private static readonly string[] ProjKeys = ["typeName", "idx", "struct"];
+
+    /// <summary>
+    /// Parse a table line (name, level, or expression). Returns false if the line is something else, in which
+    /// case nothing has been added and the caller falls back to the DOM parser.
+    /// </summary>
+    private static bool TryParseTableLine(ExportFile file, ReadOnlySpan<byte> line, long lineNo)
+    {
+        var r = new Utf8JsonReader(line, isFinalBlock: true, default);
+        if (!r.Read() || r.TokenType != JsonTokenType.StartObject)
+        {
+            return false;
+        }
+        int nameIdx = int.MinValue, levelIdx = int.MinValue, exprIdx = int.MinValue;
+        Name? name = null;
+        Level? level = null;
+        Expr? expr = null;
+        Span<int> ints = stackalloc int[5];
+        while (r.Read())
+        {
+            if (r.TokenType == JsonTokenType.EndObject)
+            {
+                break;
+            }
+            if (r.TokenType != JsonTokenType.PropertyName)
+            {
+                return false;
+            }
+            if (r.ValueTextEquals("in"u8))
+            {
+                nameIdx = ReadInt(ref r, lineNo);
+            }
+            else if (r.ValueTextEquals("il"u8))
+            {
+                levelIdx = ReadInt(ref r, lineNo);
+            }
+            else if (r.ValueTextEquals("ie"u8))
+            {
+                exprIdx = ReadInt(ref r, lineNo);
+            }
+            else if (r.ValueTextEquals("str"u8))
+            {
+                // {"pre": int, "str": string} in either order
+                if (!r.Read() || r.TokenType != JsonTokenType.StartObject)
+                {
+                    return false;
+                }
+                int pre = int.MinValue;
+                string? str = null;
+                while (r.Read() && r.TokenType == JsonTokenType.PropertyName)
+                {
+                    if (r.ValueTextEquals("pre"u8))
+                    {
+                        pre = ReadInt(ref r, lineNo);
+                    }
+                    else if (r.ValueTextEquals("str"u8))
+                    {
+                        r.Read();
+                        str = r.GetString();
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                if (pre == int.MinValue || str is null)
+                {
+                    return false;
+                }
+                name = NameAt(file, pre, lineNo).Str(str);
+            }
+            else if (r.ValueTextEquals("num"u8))
+            {
+                if (!r.Read() || r.TokenType != JsonTokenType.StartObject)
+                {
+                    return false;
+                }
+                int pre = int.MinValue;
+                ulong? num = null;
+                while (r.Read() && r.TokenType == JsonTokenType.PropertyName)
+                {
+                    if (r.ValueTextEquals("pre"u8))
+                    {
+                        pre = ReadInt(ref r, lineNo);
+                    }
+                    else if (r.ValueTextEquals("i"u8))
+                    {
+                        r.Read();
+                        num = r.GetUInt64();
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                if (pre == int.MinValue || num is null)
+                {
+                    return false;
+                }
+                name = NameAt(file, pre, lineNo).Num(num.Value);
+            }
+            else if (r.ValueTextEquals("succ"u8))
+            {
+                level = Level.Succ(LevelAt(file, ReadInt(ref r, lineNo), lineNo));
+            }
+            else if (r.ValueTextEquals("param"u8))
+            {
+                level = Level.Param(NameAt(file, ReadInt(ref r, lineNo), lineNo));
+            }
+            else if (r.ValueTextEquals("max"u8) || r.ValueTextEquals("imax"u8))
+            {
+                bool isMax = r.ValueTextEquals("max"u8);
+                if (!r.Read() || r.TokenType != JsonTokenType.StartArray)
+                {
+                    return false;
+                }
+                Level a = LevelAt(file, ReadInt(ref r, lineNo), lineNo);
+                Level b = LevelAt(file, ReadInt(ref r, lineNo), lineNo);
+                if (!r.Read() || r.TokenType != JsonTokenType.EndArray)
+                {
+                    return false;
+                }
+                level = isMax ? Level.MaxRaw(a, b) : Level.IMaxRaw(a, b);
+            }
+            else if (r.ValueTextEquals("bvar"u8))
+            {
+                expr = Expr.BVar(ReadInt(ref r, lineNo));
+            }
+            else if (r.ValueTextEquals("sort"u8))
+            {
+                expr = Expr.Sort(LevelAt(file, ReadInt(ref r, lineNo), lineNo));
+            }
+            else if (r.ValueTextEquals("const"u8))
+            {
+                if (!r.Read() || r.TokenType != JsonTokenType.StartObject)
+                {
+                    return false;
+                }
+                Name? cname = null;
+                Level[]? us = null;
+                while (r.Read() && r.TokenType == JsonTokenType.PropertyName)
+                {
+                    if (r.ValueTextEquals("name"u8))
+                    {
+                        cname = NameAt(file, ReadInt(ref r, lineNo), lineNo);
+                    }
+                    else if (r.ValueTextEquals("us"u8))
+                    {
+                        if (!r.Read() || r.TokenType != JsonTokenType.StartArray)
+                        {
+                            return false;
+                        }
+                        var list = new List<Level>();
+                        while (r.Read() && r.TokenType == JsonTokenType.Number)
+                        {
+                            list.Add(LevelAt(file, r.GetInt32(), lineNo));
+                        }
+                        if (r.TokenType != JsonTokenType.EndArray)
+                        {
+                            return false;
+                        }
+                        us = list.Count == 0 ? [] : list.ToArray();
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                if (cname is null || us is null)
+                {
+                    return false;
+                }
+                expr = Expr.Const(cname, us);
+            }
+            else if (r.ValueTextEquals("app"u8))
+            {
+                if (!ReadIntObject(ref r, lineNo, AppKeys, ints[..2]))
+                {
+                    return false;
+                }
+                expr = Expr.App(ExprAt(file, ints[0], lineNo), ExprAt(file, ints[1], lineNo));
+            }
+            else if (r.ValueTextEquals("lam"u8) || r.ValueTextEquals("forallE"u8))
+            {
+                bool isLam = r.ValueTextEquals("lam"u8);
+                if (!r.Read() || r.TokenType != JsonTokenType.StartObject)
+                {
+                    return false;
+                }
+                int bn = int.MinValue, bt = int.MinValue, bb = int.MinValue;
+                BinderInfo? bi = null;
+                while (r.Read() && r.TokenType == JsonTokenType.PropertyName)
+                {
+                    if (r.ValueTextEquals("name"u8))
+                    {
+                        bn = ReadInt(ref r, lineNo);
+                    }
+                    else if (r.ValueTextEquals("type"u8))
+                    {
+                        bt = ReadInt(ref r, lineNo);
+                    }
+                    else if (r.ValueTextEquals("body"u8))
+                    {
+                        bb = ReadInt(ref r, lineNo);
+                    }
+                    else if (r.ValueTextEquals("binderInfo"u8))
+                    {
+                        r.Read();
+                        bi = r.ValueTextEquals("default"u8) ? BinderInfo.Default
+                           : r.ValueTextEquals("implicit"u8) ? BinderInfo.Implicit
+                           : r.ValueTextEquals("strictImplicit"u8) ? BinderInfo.StrictImplicit
+                           : r.ValueTextEquals("instImplicit"u8) ? BinderInfo.InstImplicit
+                           : throw new ExportFormatException(lineNo, "unknown binderInfo");
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                if (bn == int.MinValue || bt == int.MinValue || bb == int.MinValue || bi is null)
+                {
+                    return false;
+                }
+                Name n = NameAt(file, bn, lineNo);
+                Expr t = ExprAt(file, bt, lineNo);
+                Expr b = ExprAt(file, bb, lineNo);
+                expr = isLam ? Expr.Lam(n, t, b, bi.Value) : Expr.Pi(n, t, b, bi.Value);
+            }
+            else if (r.ValueTextEquals("letE"u8))
+            {
+                if (!r.Read() || r.TokenType != JsonTokenType.StartObject)
+                {
+                    return false;
+                }
+                int ln = int.MinValue, lt = int.MinValue, lv = int.MinValue, lb = int.MinValue;
+                bool nondep = false;
+                while (r.Read() && r.TokenType == JsonTokenType.PropertyName)
+                {
+                    if (r.ValueTextEquals("name"u8))
+                    {
+                        ln = ReadInt(ref r, lineNo);
+                    }
+                    else if (r.ValueTextEquals("type"u8))
+                    {
+                        lt = ReadInt(ref r, lineNo);
+                    }
+                    else if (r.ValueTextEquals("value"u8))
+                    {
+                        lv = ReadInt(ref r, lineNo);
+                    }
+                    else if (r.ValueTextEquals("body"u8))
+                    {
+                        lb = ReadInt(ref r, lineNo);
+                    }
+                    else if (r.ValueTextEquals("nondep"u8))
+                    {
+                        r.Read();
+                        nondep = r.GetBoolean();
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                if (ln == int.MinValue || lt == int.MinValue || lv == int.MinValue || lb == int.MinValue)
+                {
+                    return false;
+                }
+                expr = Expr.Let(NameAt(file, ln, lineNo), ExprAt(file, lt, lineNo), ExprAt(file, lv, lineNo), ExprAt(file, lb, lineNo), nondep);
+            }
+            else if (r.ValueTextEquals("proj"u8))
+            {
+                if (!ReadIntObject(ref r, lineNo, ProjKeys, ints[..3]))
+                {
+                    return false;
+                }
+                expr = Expr.Proj(NameAt(file, ints[0], lineNo), ints[1], ExprAt(file, ints[2], lineNo));
+            }
+            else if (r.ValueTextEquals("natVal"u8))
+            {
+                r.Read();
+                string sv = r.GetString() ?? throw new ExportFormatException(lineNo, "natVal must be a string");
+                if (!BigInteger.TryParse(sv, NumberStyles.None, CultureInfo.InvariantCulture, out BigInteger n))
+                {
+                    throw new ExportFormatException(lineNo, $"invalid natVal '{sv}'");
+                }
+                expr = Expr.NatLit(n);
+            }
+            else if (r.ValueTextEquals("strVal"u8))
+            {
+                r.Read();
+                expr = Expr.StrLit(r.GetString() ?? throw new ExportFormatException(lineNo, "strVal must be a string"));
+            }
+            else
+            {
+                // meta, mdata, or a declaration: let the DOM parser handle it
+                return false;
+            }
+        }
+        if (nameIdx != int.MinValue && name is not null)
+        {
+            AddAt(file.Names, nameIdx, name, lineNo, "name");
+            return true;
+        }
+        if (levelIdx != int.MinValue && level is not null)
+        {
+            AddAt(file.Levels, levelIdx, level, lineNo, "level");
+            return true;
+        }
+        if (exprIdx != int.MinValue && expr is not null)
+        {
+            AddAt(file.Exprs, exprIdx, expr, lineNo, "expression");
+            return true;
+        }
+        return false;
+    }
+
+    private static Name NameAt(ExportFile file, int i, long lineNo)
+    {
+        if (i < 0 || i >= file.Names.Count)
+        {
+            throw new ExportFormatException(lineNo, $"reference to undefined name {i}");
+        }
+        return file.Names[i];
+    }
+
+    private static Level LevelAt(ExportFile file, int i, long lineNo)
+    {
+        if (i < 0 || i >= file.Levels.Count)
+        {
+            throw new ExportFormatException(lineNo, $"reference to undefined level {i}");
+        }
+        return file.Levels[i];
+    }
+
+    private static Expr ExprAt(ExportFile file, int i, long lineNo)
+    {
+        if (i < 0 || i >= file.Exprs.Count)
+        {
+            throw new ExportFormatException(lineNo, $"reference to undefined expression {i}");
+        }
+        return file.Exprs[i];
     }
 
     private static ExportDecl? ParseLine(ExportFile file, JsonElement root, long lineNo)
