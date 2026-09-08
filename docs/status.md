@@ -62,8 +62,13 @@ Results for the large exports are kept current by the `check-prelude` CI job.
 - Quotients.
 - Export reader for format 3.0 and 3.1.
 
-## Not implemented
+## Limits
 
-- Native reduction (`Lean.reduceBool` / `Lean.reduceNat`): rejected by design.
-- Parallel checking of independent declarations.
-- A `.olean` reader.
+- Native reduction (`Lean.reduceBool` / `Lean.reduceNat`) is rejected by design: an
+  external checker cannot trust the compiler.
+- Definition unfolding per declaration is bounded (`TypeChecker.MaxUnfolds`, default 100
+  million) so a non-terminating unsafe definition fails with a deterministic timeout
+  instead of hanging; Lean uses a heartbeat limit for the same purpose.
+- No `.olean` reader; the export format is the interface.
+- Memory: the whole export is held in memory. See `docs/testing.md` for the settings that
+  trade speed for footprint on very large exports.
