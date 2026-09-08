@@ -14,20 +14,20 @@ from it, and it shares no code with Lean. That is the point: a proof that surviv
 independent kernels is a proof you can trust a little more.
 
 ```
-$ tenet check Mathlib.Data.Real.Basic.ndjson
-Mathlib.Data.Real.Basic.ndjson: 179215 declarations, 12858402 expressions, 1004563 names, 2230 levels (parsed in 11.1s)
-  exported by lean4export 3.1.0, format 3.1.0, Lean 4.34.0-rc2 (6a10ac8c2)
-OK: 179215 checked, 0 failed, 0 skipped, 186458 constants, 9.8s, 12 jobs
+$ tenet check .lake/build/lib/lean/Mathlib.olean --all
+Mathlib: Lean 4.34.0-rc2 (6a10ac8c2); 10726 modules mapped in 1.5s, checking all of them
+OK: 765497 checked in 10726 modules, 0 failed, 10726 modules mapped, 390.5s, 12 jobs
 ```
 
 ## Status
 
-Version 0.1. Every rule of the reference kernel has a counterpart here. Tenet checks the
-whole Lean 4 core library (`Init`, 58,135 declarations) and 657,351 declarations of
-Mathlib (everything the exporter managed to write on a laptop) with zero failures,
-deriving the recursors itself and comparing them field for field against Lean's own. It checks in parallel; all
-of `Init` takes about six seconds on a laptop. See [docs/status.md](docs/status.md) for
-what has been run, and for the evidence that the checks are not vacuous.
+Version 0.2. Every rule of the reference kernel has a counterpart here. Tenet checks all
+of Mathlib and its dependencies, 765,497 declarations in 10,726 modules, directly from the
+compiled `.olean` files in six and a half minutes on a laptop, with zero failures, deriving
+the recursors itself and comparing them field for field against Lean's own. Its verdicts
+have been compared with Lean's kernel on about 100,000 deliberately damaged declarations.
+See [docs/status.md](docs/status.md) for what has been run and how the checks were shown
+not to be vacuous.
 
 Tenet is not affiliated with the Lean FRO or Microsoft. "Lean" is the name of their
 prover; this project only reads its export format.

@@ -10,11 +10,14 @@ Updated 2026-09-08.
 | `Init.Core` (Lean 4.34.0-rc2) | 3,468 | 0 failures, 0.4 s |
 | `Init`, the whole core library (Lean 4.34.0-rc2) | 58,135 (59,591 constants) | 0 failures, 7 s wall clock including parsing (12 jobs); 21 s of checking with 1 job |
 | `Mathlib.Data.Real.Basic` and everything it imports (Mathlib master, 2026-09-08) | 179,215 (186,458 constants) | 0 failures, 9.8 s with 12 jobs, 4.2 GB peak |
-| all of `Init` from the toolchain's `.olean` files (`tenet check Init.olean --all`) | 64,814 units in 649 modules (includes `partial`/`unsafe` definitions the export omits) | 0 failures, 8 s, 3.8 GB peak |
+| all of `Init` from the toolchain's `.olean` files (`tenet check Init.olean --all`) | 64,814 units in 649 modules (includes `partial`/`unsafe` definitions the export omits) | 0 failures, 8 s, 2.5 GB peak |
+| **all of Mathlib and its dependencies from `.olean` files** (`tenet check Mathlib.olean --all`, Mathlib master 2026-09-08) | **765,497 units in 10,726 modules** | **0 failures, 6.5 min, 10.7 GB peak** |
 | Mathlib, first 5.9 GB of the export (Mathlib master, 2026-09-08; see note) | 657,351 (673,865 constants) | 0 failures, 16 min with `--low-memory` and 8 jobs, 8.4 GB peak |
 
-Note on the Mathlib row: the exporter, not Tenet, ran out of memory on the 17 GB laptop
-after writing 5.9 GB; the file ends mid-line. Tenet checked every complete declaration
+Note on the export-based Mathlib row: the exporter, not Tenet, ran out of memory on the
+17 GB laptop after writing 5.9 GB; the file ends mid-line. The `.olean` path has no such
+limit: modules are memory-mapped and imported constants are decoded on demand, so the whole
+library fits. Tenet checked every complete declaration
 (reported as INCOMPLETE, exit 3) and rejected none. A complete run needs a machine with
 more memory for lean4export. The slowest single declarations took 30 to 88 seconds
 (`PresheafOfModules.freeObj._proof_2`, `AlgebraicGeometry.Proj.awayι_comp_map`), which is

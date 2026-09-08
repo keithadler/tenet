@@ -3,7 +3,10 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] - 2026-09-08
+
+All of Mathlib and its dependencies (765,497 declarations, 10,726 modules) checked in place
+from `.olean` files in 6.5 minutes with zero failures.
 
 ### Added
 - `Tenet.Olean`: reads Lean's compiled `.olean` files directly (memory-mapped, constants
@@ -47,5 +50,5 @@ First release.
 - Checks all of `Init` (58,135 declarations) and Mathlib up to `Mathlib.Data.Real.Basic`
   (179,215 declarations) with zero failures.
 
-[Unreleased]: https://github.com/keithadler/tenet/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/keithadler/tenet/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/keithadler/tenet/releases/tag/v0.1.0
