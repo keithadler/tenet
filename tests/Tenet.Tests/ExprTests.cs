@@ -140,4 +140,13 @@ public class DepthTests
         Assert.True(s.Length < ExprPrinter.MaxLength + 100, $"printed {s.Length} characters");
         Assert.EndsWith("(output truncated)", s, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void NameParseRoundTripsNumericComponents()
+    {
+        Name n = Name.Of("_private", "Mathlib", "Foo").Num(0).Str("bar");
+        Assert.Equal(n, Name.Parse("_private.Mathlib.Foo.0.bar"));
+        Assert.Equal("_private.Mathlib.Foo.0.bar", Name.Parse("_private.Mathlib.Foo.0.bar").ToString());
+        Assert.Equal(Name.Of("Nat", "succ"), Name.Parse("Nat.succ"));
+    }
 }

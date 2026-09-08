@@ -38,8 +38,24 @@ public abstract class Name : IEquatable<Name>, IComparable<Name>
         return n;
     }
 
-    /// <summary>Build a name from a dotted string with no escaping. Only for internal, well-known constants.</summary>
-    public static Name Parse(string dotted) => dotted.Length == 0 ? Anonymous : Of(dotted.Split('.'));
+    /// <summary>
+    /// Build a name from a dotted string with no escaping; an all-digit component is numeric, so that names
+    /// printed by <see cref="ToString"/> such as <c>_private.Mathlib.Foo.0.bar</c> round-trip. For internal
+    /// constants and command-line arguments.
+    /// </summary>
+    public static Name Parse(string dotted)
+    {
+        Name n = Anonymous;
+        if (dotted.Length == 0)
+        {
+            return n;
+        }
+        foreach (string p in dotted.Split('.'))
+        {
+            n = p.Length > 0 && p.All(char.IsAsciiDigit) && ulong.TryParse(p, out ulong v) ? n.Num(v) : n.Str(p);
+        }
+        return n;
+    }
 
     /// <summary>Lean's <c>Name.appendIndexAfter</c>: <c>u</c> becomes <c>u_1</c>.</summary>
     public Name AppendIndexAfter(ulong idx) => this switch

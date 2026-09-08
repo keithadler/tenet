@@ -20,6 +20,8 @@ versions follow [Semantic Versioning](https://semver.org/).
   declaration before checking it; `TENET_MAX_UNFOLDS` overrides the unfolding limit.
 
 ### Fixed
+- `Name.Parse` (and so `--only`) reads all-digit components as numeric, so private names such as
+  `_private.Mathlib.Foo.0.bar` round-trip.
 - `RecursorInfo.GetMajorInduct` walks lambdas as well as pis, as the reference does; found
   by the CI differential campaign (Tenet rejected `Substring.Raw.noConfusion` on a mutated
   export that Lean accepts).
