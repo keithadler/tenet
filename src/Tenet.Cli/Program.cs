@@ -29,7 +29,8 @@ internal static class Program
           --low-memory                use the workstation garbage collector (about a third of the memory, slower)
           --report <file.json>        also write the outcome (counts, failures, slow declarations) as JSON
 
-        exit status: 0 all declarations checked, 1 some failed, 2 usage or file error
+        exit status: 0 all declarations checked, 1 some failed, 2 usage or file error,
+                     3 the export is truncated or malformed (declarations before the problem were checked)
         """;
 
     private static int Main(string[] args)
@@ -348,6 +349,10 @@ internal static class Program
             }
         }
 
+        if (result.ReadError is ExportFormatException re)
+        {
+            Console.WriteLine($"INCOMPLETE: the export could not be read past {re.Message}; everything before it was checked");
+        }
         foreach (CheckFailure f in result.Failures)
         {
             Console.WriteLine($"FAIL {f.Kind} {f.Name} ({f.Elapsed.TotalSeconds:F2}s)");
@@ -372,8 +377,9 @@ internal static class Program
         {
             WriteReport(report, path, result, jobs, stats);
         }
-        Console.WriteLine($"{(result.Success ? "OK" : "FAILED")}: {result.Checked} checked, {result.Failures.Count} failed, {result.Skipped} skipped, {result.Environment.Count} constants, {result.Elapsed.TotalSeconds:F1}s, {jobs} job{(jobs == 1 ? "" : "s")}");
-        return result.Success ? 0 : 1;
+        string verdict = result.Failures.Count > 0 ? "FAILED" : result.ReadError is not null ? "INCOMPLETE" : "OK";
+        Console.WriteLine($"{verdict}: {result.Checked} checked, {result.Failures.Count} failed, {result.Skipped} skipped, {result.Environment.Count} constants, {result.Elapsed.TotalSeconds:F1}s, {jobs} job{(jobs == 1 ? "" : "s")}");
+        return result.Failures.Count > 0 ? 1 : result.ReadError is not null ? 3 : 0;
     }
 
     private static void WriteReport(string reportPath, string exportPath, CheckResult result, int jobs, bool stats)
@@ -384,6 +390,7 @@ internal static class Program
             export = Path.GetFullPath(exportPath),
             meta = result.Stream?.Meta is ExportMeta m ? new { exporter = m.ExporterName, exporterVersion = m.ExporterVersion, format = m.FormatVersion, lean = m.LeanVersion, leanGitHash = m.LeanGitHash } : null,
             success = result.Success,
+            incomplete = result.ReadError?.Message,
             declarations = result.Stream?.Declarations,
             expressions = result.Stream?.Expressions,
             @checked = result.Checked,

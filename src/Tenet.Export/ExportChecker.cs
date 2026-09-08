@@ -48,13 +48,19 @@ public sealed class CheckResult
     /// <summary>Set by <see cref="ExportChecker.CheckStreaming"/>.</summary>
     public StreamInfo? Stream { get; internal set; }
 
+    /// <summary>
+    /// Set when the export could not be read to the end (truncated or malformed). Every declaration before the
+    /// problem was still checked; <see cref="Success"/> is false.
+    /// </summary>
+    public ExportFormatException? ReadError { get; internal set; }
+
     public int Checked { get; internal set; }
     public int Skipped { get; internal set; }
     public List<CheckFailure> Failures { get; } = new();
     public List<(Name Name, TimeSpan Elapsed)> Slow { get; } = new();
     public TimeSpan Elapsed { get; internal set; }
     public Environment Environment { get; internal set; } = new();
-    public bool Success => Failures.Count == 0;
+    public bool Success => Failures.Count == 0 && ReadError is null;
 }
 
 /// <summary>Replays an export through the kernel, checking every declaration.</summary>
@@ -744,21 +750,19 @@ public static class ExportChecker
             }
         });
 
-        Exception? readError = null;
+        ExportFormatException? readError = null;
         try
         {
             producer.GetAwaiter().GetResult();
         }
-        catch (Exception e) when (e is ExportFormatException or IOException)
+        catch (ExportFormatException e)
         {
+            // Truncated or malformed tail: the declarations before it were checked; report both.
             readError = e;
         }
         CheckResult result = Finish(tally, env, n => position.TryGetValue(n, out int p) ? p : null);
         result.Stream = new StreamInfo(file.Meta, declCount, file.Exprs.Count, file.Names.Count - 1, file.Levels.Count - 1, parseTime.Elapsed);
-        if (readError is not null)
-        {
-            throw readError;
-        }
+        result.ReadError = readError;
         return result;
     }
 

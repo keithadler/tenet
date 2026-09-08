@@ -160,6 +160,20 @@ public class ReaderRobustnessTests
     }
 
     [Fact]
+    public void StreamingChecksEverythingBeforeATruncation()
+    {
+        byte[] bytes = File.ReadAllBytes(Fixture("Nat.add_succ.ndjson"));
+        // cut inside the last line (the theorem), keeping every earlier declaration intact
+        using var ms = new MemoryStream(bytes, 0, bytes.Length - 20);
+        CheckResult r = ExportChecker.CheckStreaming(ms, new CheckOptions { Jobs = 2 });
+        Assert.NotNull(r.ReadError);
+        Assert.False(r.Success);
+        Assert.Empty(r.Failures);
+        Assert.True(r.Checked > 0);
+        Assert.NotNull(r.Environment.Find(Name.Of("Nat", "rec")));
+    }
+
+    [Fact]
     public void OutOfSequenceIndexIsAFormatError()
     {
         string text = "{\"meta\":{\"exporter\":{\"name\":\"x\",\"version\":\"3.1.0\"},\"lean\":{\"githash\":\"\",\"version\":\"\"},\"format\":{\"version\":\"3.1.0\"}}}\n"
