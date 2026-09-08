@@ -49,7 +49,8 @@ unfolding, and the cache would then reject a declaration the reference accepts. 
 keep verdicts identical to the reference, `Environment.Add` and `Validate` run a
 rejected declaration a second time with the failure cache off (`TypeChecker.FaithfulScope`)
 and report only that result. Accepted declarations are never re-run; a rejection costs
-about twice the time. `TENET_NO_FAILURE_CACHE=1` disables the fast mode entirely; the
+about twice the time, except a rejection by the unfolding limit (`DeterministicTimeoutException`),
+which is final: the faithful mode could only repeat the work. `TENET_NO_FAILURE_CACHE=1` disables the fast mode entirely; the
 differential tests (docs/testing.md) are run both ways.
 
 The re-check is not theoretical: of the 765,497 declarations in Mathlib and its

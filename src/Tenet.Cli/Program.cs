@@ -26,6 +26,7 @@ internal static class Program
           --quiet                     no progress output
           --stats                     print kernel work counters at the end
           --verbose                   name each declaration before checking it (.olean files)
+          --report <file.json>        also write the outcome (counts, failures, slow declarations) as JSON
           --jobs <n>                  check n declarations concurrently (default: number of cores; 1 = sequential)
           --slow <seconds>            report declarations slower than this (default 1)
           --stack-mb <n>              stack size for each checking thread, in MB (default 512)
@@ -429,6 +430,7 @@ internal static class Program
         var targets = new List<string>();
         var search = new Tenet.Olean.LeanSearchPath();
         bool all = false, failFast = false, compare = true, quiet = false, stats = false, verbose = false;
+        string? report = null;
         double slow = 1.0;
         int jobs = System.Environment.ProcessorCount;
         HashSet<Name>? only = null;
@@ -450,6 +452,10 @@ internal static class Program
                 case "--quiet": quiet = true; break;
                 case "--stats": stats = true; break;
                 case "--verbose": verbose = true; break;
+                case "--report":
+                    if (++i >= args.Length) return Fail("--report needs a file name");
+                    report = args[i];
+                    break;
                 case "--low-memory": break;
                 case "--slow":
                     if (++i >= args.Length || !double.TryParse(args[i], NumberStyles.Float, CultureInfo.InvariantCulture, out slow)) return Fail("--slow needs a number of seconds");
@@ -555,6 +561,28 @@ internal static class Program
             foreach (var (name, count) in TypeChecker.Stats.TopUnfolds(25)) Console.WriteLine($"  {count,9}  {name}");
         }
         Console.WriteLine($"{(result.Success ? "OK" : "FAILED")}: {result.Checked} checked in {result.ModulesChecked} module{(result.ModulesChecked == 1 ? "" : "s")}, {result.Failures.Count} failed, {result.ModulesLoaded} modules mapped, {result.Elapsed.TotalSeconds:F1}s, {jobs} job{(jobs == 1 ? "" : "s")}");
+        if (report is not null)
+        {
+            var doc = new
+            {
+                tenet = typeof(Program).Assembly.GetName().Version?.ToString(3),
+                targets = targets.Select(Path.GetFullPath).ToArray(),
+                modules = targetNames.Select(n => n.ToString()).ToArray(),
+                lean = result.LeanVersion,
+                all,
+                success = result.Success,
+                modulesChecked = result.ModulesChecked,
+                modulesMapped = result.ModulesLoaded,
+                @checked = result.Checked,
+                failed = result.Failures.Count,
+                jobs,
+                seconds = Math.Round(result.Elapsed.TotalSeconds, 2),
+                failures = result.Failures.Select(f => new { name = f.Name.ToString(), module = f.Module.ToString(), kind = f.Kind, message = f.Message, seconds = Math.Round(f.Elapsed.TotalSeconds, 3) }).ToArray(),
+                slow = result.Slow.OrderByDescending(s => s.Elapsed).Select(s => new { name = s.Name.ToString(), module = s.Module.ToString(), seconds = Math.Round(s.Elapsed.TotalSeconds, 2) }).ToArray(),
+                kernelWork = stats ? new { infer = TypeChecker.Stats.Infer, whnf = TypeChecker.Stats.Whnf, whnfCore = TypeChecker.Stats.WhnfCore, defEq = TypeChecker.Stats.DefEq, unfold = TypeChecker.Stats.Unfold, iota = TypeChecker.Stats.Iota, natLit = TypeChecker.Stats.NatLit, faithfulRetries = TypeChecker.Stats.FaithfulRetries } : null,
+            };
+            File.WriteAllText(report, System.Text.Json.JsonSerializer.Serialize(doc, ReportJsonOptions));
+        }
         return result.Success ? 0 : 1;
     }
 

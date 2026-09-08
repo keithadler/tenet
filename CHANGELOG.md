@@ -10,6 +10,9 @@ versions follow [Semantic Versioning](https://semver.org/).
   earlier objects, so a corrupted file can only produce an `OleanFormatException`; `tenet check`
   reports it as a file error (exit 2) instead of crashing. A corruption fuzzer (`OleanFuzzTests`,
   on the checked-in `Init.Coe` fixture) exercises this.
+- `tenet check FILE.olean --report out.json` writes the outcome as JSON, as the export mode does.
+- A declaration that hits the unfolding limit (`DeterministicTimeoutException`) is reported
+  once and not re-checked in the faithful mode, which would only repeat the work.
 - `AttackTests`: the classic derivations of `False` (non-positive inductives, Girard's
   paradox, large elimination from Prop, and so on) as declarations the kernel must reject.
 - `Tenet.DiffTest --timeout SECONDS` (default 1800) kills a checker run that does not finish,

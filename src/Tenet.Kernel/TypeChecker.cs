@@ -964,7 +964,7 @@ public sealed class TypeChecker
                 }
                 if (++_unfolds > MaxUnfolds)
                 {
-                    throw new KernelException($"deterministic timeout: more than {MaxUnfolds} definition unfoldings while checking one declaration (TypeChecker.MaxUnfolds)");
+                    throw new DeterministicTimeoutException(MaxUnfolds);
                 }
                 t = next;
             }
@@ -1191,7 +1191,7 @@ public sealed class TypeChecker
         Stats.UnfoldLazy();
         if (++_unfolds > MaxUnfolds)
         {
-            throw new KernelException($"deterministic timeout: more than {MaxUnfolds} definition unfoldings while checking one declaration (TypeChecker.MaxUnfolds)");
+            throw new DeterministicTimeoutException(MaxUnfolds);
         }
         ConstantInfo? dt = IsDelta(tn);
         ConstantInfo? ds = IsDelta(sn);

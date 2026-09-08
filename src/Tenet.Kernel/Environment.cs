@@ -161,7 +161,7 @@ public sealed class Environment
         {
             RunWithRollback(action);
         }
-        catch (KernelException) when (fast)
+        catch (KernelException e) when (fast && e is not DeterministicTimeoutException)
         {
             TypeChecker.Stats.CountFaithfulRetry();
             using var _ = new TypeChecker.FaithfulScope();

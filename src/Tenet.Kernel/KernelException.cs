@@ -24,3 +24,16 @@ public sealed class UnsupportedException : KernelException
 {
     public UnsupportedException(string message) : base(message) { }
 }
+
+/// <summary>
+/// The per-declaration unfolding limit (<see cref="TypeChecker.MaxUnfolds"/>) was exceeded. Reported like any other
+/// rejection, but never re-checked in the faithful mode: the reference algorithm without failure caching would only
+/// repeat the work.
+/// </summary>
+public sealed class DeterministicTimeoutException : KernelException
+{
+    public DeterministicTimeoutException(long limit)
+        : base($"deterministic timeout: more than {limit} definition unfoldings while checking one declaration (TypeChecker.MaxUnfolds)")
+    {
+    }
+}

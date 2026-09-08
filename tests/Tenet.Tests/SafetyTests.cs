@@ -113,10 +113,17 @@ public class SafetyTests
         try
         {
             var tc = new TypeChecker(env, safety: DefinitionSafety.Unsafe);
-            var ex = Assert.Throws<KernelException>(() => tc.Whnf(Expr.Const(Name.Of("loop"), [])));
+            var ex = Assert.Throws<DeterministicTimeoutException>(() => tc.Whnf(Expr.Const(Name.Of("loop"), [])));
             Assert.Contains("deterministic timeout", ex.Message, StringComparison.Ordinal);
             var tc2 = new TypeChecker(env, safety: DefinitionSafety.Unsafe);
-            Assert.Throws<KernelException>(() => tc2.IsDefEq(Expr.Const(Name.Of("loop"), []), Expr.NatLit(3)));
+            Assert.Throws<DeterministicTimeoutException>(() => tc2.IsDefEq(Expr.Const(Name.Of("loop"), []), Expr.NatLit(3)));
+            // and a declaration that hits the limit is rejected once, without the faithful re-check
+            long before = TypeChecker.Stats.FaithfulRetries;
+            // unsafe theorem-like def : Eq Nat loop 3 := Eq.refl Nat 3   forces loop =?= 3, which unfolds forever
+            Expr eq = Expr.MkApp(Expr.Const(Name.Of("Eq"), [Level.One]), NatE, Expr.Const(Name.Of("loop"), []), Expr.NatLit(3));
+            Expr refl = Expr.MkApp(Expr.Const(Name.Of("Eq", "refl"), [Level.One]), NatE, Expr.NatLit(3));
+            Assert.Throws<DeterministicTimeoutException>(() => env.Add(new DefinitionDecl(Name.Of("loop2"), [], eq, refl, ReducibilityHints.Regular(1), DefinitionSafety.Unsafe)));
+            Assert.Equal(before, TypeChecker.Stats.FaithfulRetries);
         }
         finally
         {
