@@ -184,8 +184,7 @@ internal static class Program
             }
             else if (line.StartsWith("FAIL ", StringComparison.Ordinal))
             {
-                int c = line.IndexOf(':', StringComparison.Ordinal);
-                string n = Normalize((c > 0 ? line[5..c] : line[5..]).Trim());
+                string n = Normalize(OracleName(line[5..]));
                 failed.Add(n);
                 all.Add(n);
             }
@@ -197,6 +196,23 @@ internal static class Program
         // The oracle ends every complete run with a SUMMARY line; anything else means Lean crashed or aborted.
         if (code == 2 || (all.Count == 0 && failed.Count == 0) || !output.Contains("SUMMARY ok=", StringComparison.Ordinal)) incomplete = true;
         return new Verdicts(failed, all, incomplete, output);
+    }
+
+    /// <summary>
+    /// The name at the start of an oracle FAIL line, up to the ": " separator, skipping colons inside «» escapes
+    /// (notation constants such as «term_::_» contain them).
+    /// </summary>
+    private static string OracleName(string rest)
+    {
+        int depth = 0;
+        for (int i = 0; i < rest.Length; i++)
+        {
+            char ch = rest[i];
+            if (ch == '«') depth++;
+            else if (ch == '»') depth = Math.Max(0, depth - 1);
+            else if (ch == ':' && depth == 0 && i + 1 < rest.Length && rest[i + 1] == ' ') return rest[..i].Trim();
+        }
+        return rest.Trim();
     }
 
     /// <summary>Both tools print Lean names; strip the «» escaping so odd components compare equal.</summary>
@@ -244,6 +260,8 @@ internal static class Mutator
         ("sort-level", SortLevel),                       // a sort gets another existing level
         ("const-rename", ConstRename),                   // a constant refers to a different existing name
         ("drop-safety", UnsafeToSafe),                   // an unsafe def relabeled safe (if any)
+        ("max-imax-swap", MaxImaxSwap),                  // a universe max becomes imax or vice versa
+        ("let-nondep", LetNonDepFlip),                   // no semantic effect in the kernel: both must accept
     ];
 
     public static string? Apply(string[] lines, Random rng)
@@ -439,6 +457,23 @@ internal static class Mutator
         if (maxIn < 1) return false;
         int target = rng.Next(1, maxIn + 1);
         return ReplaceFirst(lines, k, new Regex("\"name\":(\\d+)"), m => m.Groups[1].Value == target.ToString(CultureInfo.InvariantCulture) ? m.Value : "\"name\":" + target);
+    }
+
+    private static bool MaxImaxSwap(string[] lines, Random rng)
+    {
+        var xs = LinesWith(lines, "\"max\":[").Concat(LinesWith(lines, "\"imax\":[")).ToList();
+        int? i = Pick(xs, rng);
+        if (i is not int k) return false;
+        lines[k] = lines[k].Contains("\"imax\":[", StringComparison.Ordinal)
+            ? lines[k].Replace("\"imax\":[", "\"max\":[", StringComparison.Ordinal)
+            : lines[k].Replace("\"max\":[", "\"imax\":[", StringComparison.Ordinal);
+        return true;
+    }
+
+    private static bool LetNonDepFlip(string[] lines, Random rng)
+    {
+        int? i = Pick(LinesWith(lines, "\"nondep\":"), rng);
+        return i is int k && ReplaceFirst(lines, k, new Regex("\"nondep\":(true|false)"), m => m.Groups[1].Value == "true" ? "\"nondep\":false" : "\"nondep\":true");
     }
 
     private static bool UnsafeToSafe(string[] lines, Random rng)

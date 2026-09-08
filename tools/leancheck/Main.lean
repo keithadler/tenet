@@ -20,6 +20,11 @@ both arguments are owned, matching `Lean.Kernel.Environment.add`. -/
 @[extern "lean_environment_add"]
 opaque kernelEnvAdd (env : Kernel.Environment) (cinfo : ConstantInfo) : Kernel.Environment
 
+/-- Mark quotients as initialized without checking; bound to the symbol Lean exports for its own use. Used so that,
+after a broken quotient block has been installed unchecked, quotient reduction is enabled exactly as in Tenet. -/
+@[extern "lean_environment_mark_quot_init"]
+opaque kernelMarkQuotInit (env : Kernel.Environment) : Kernel.Environment
+
 structure St where
   env : Kernel.Environment
   ok : Nat := 0
@@ -138,6 +143,7 @@ def checkQuot (consts : Std.HashMap Name ConstantInfo) : M Unit := do
   match ← addChecked .quotDecl with
   | .error msg =>
     installRaw (exported.filterMap consts.get?)
+    modify fun s => { s with env := kernelMarkQuotInit s.env }
     for n in exported do
       report n (.error msg)
   | .ok () =>
@@ -155,6 +161,7 @@ def checkQuot (consts : Std.HashMap Name ConstantInfo) : M Unit := do
       report n r
     if anyBad then
       installRaw (exported.filterMap consts.get?)
+      modify fun s => { s with env := kernelMarkQuotInit s.env }
 
 def run (path : String) : IO UInt32 := do
   let handle ← IO.FS.Handle.mk path .read
