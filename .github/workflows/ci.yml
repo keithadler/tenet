@@ -48,3 +48,12 @@ jobs:
       - run: dotnet build -c Release
       - run: dotnet run --no-build -c Release --project src/Tenet.Cli -- check exports/Init.Prelude.ndjson
       - run: dotnet run --no-build -c Release --project src/Tenet.Cli -- check exports/Init.Core.ndjson
+      - name: Build the Lean kernel oracle
+        run: cd tools/leancheck && lake build
+      - name: Differential test against Lean's kernel (mutated prelude)
+        run: |
+          tools/Tenet.DiffTest/bin/Release/net10.0/Tenet.DiffTest \
+            --export exports/Init.Prelude.ndjson \
+            --tenet src/Tenet.Cli/bin/Release/net10.0/tenet \
+            --oracle tools/leancheck/.lake/build/bin/leancheck \
+            --variants 15 --mutations 10 --seed ${{ github.run_number }}
