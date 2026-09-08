@@ -355,7 +355,7 @@ public static class NdjsonReader
                         {
                             return false;
                         }
-                        us = list.Count == 0 ? [] : list.ToArray();
+                        us = list.Count == 0 ? [] : file.InternLevels(list);
                     }
                     else
                     {

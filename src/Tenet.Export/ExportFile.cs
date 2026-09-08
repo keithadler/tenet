@@ -75,6 +75,38 @@ public sealed class ExportFile
     public List<Expr> Exprs { get; } = new();
     public List<ExportDecl> Decls { get; } = new();
 
+    private readonly Dictionary<LevelsKey, Level[]> _levelArrays = new();
+
+    /// <summary>Constants with the same universe arguments share one array; Mathlib has millions of such constants.</summary>
+    internal Level[] InternLevels(List<Level> ls)
+    {
+        var key = new LevelsKey(ls);
+        if (_levelArrays.TryGetValue(key, out Level[]? arr))
+        {
+            return arr;
+        }
+        arr = ls.ToArray();
+        _levelArrays[new LevelsKey(arr)] = arr;
+        return arr;
+    }
+
+    private readonly struct LevelsKey : IEquatable<LevelsKey>
+    {
+        private readonly IReadOnlyList<Level> _ls;
+        public LevelsKey(IReadOnlyList<Level> ls) => _ls = ls;
+        public bool Equals(LevelsKey other) => Level.ListEquals(_ls, other._ls);
+        public override bool Equals(object? obj) => obj is LevelsKey k && Equals(k);
+        public override int GetHashCode()
+        {
+            var h = new HashCode();
+            foreach (Level l in _ls)
+            {
+                h.Add(l.Hash);
+            }
+            return h.ToHashCode();
+        }
+    }
+
     /// <summary>All constant names the file declares, in order.</summary>
     public IEnumerable<Name> DeclaredNames()
     {
