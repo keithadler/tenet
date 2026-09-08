@@ -7,7 +7,7 @@ namespace Tenet.Kernel;
 /// </summary>
 public sealed class Environment
 {
-    private readonly Dictionary<Name, ConstantInfo> _constants = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Name, ConstantInfo> _constants = new();
     private readonly List<ConstantInfo> _order = new();
     private readonly Environment? _parent;
     private readonly HashSet<Name>? _hidden;
@@ -60,11 +60,14 @@ public sealed class Environment
 
     public bool Contains(Name n) => Find(n) is not null;
 
-    /// <summary>Add a constant without checking it.</summary>
+    /// <summary>Add a constant without checking it. Safe to call from one thread while others read.</summary>
     public void AddCore(ConstantInfo info)
     {
         _constants[info.Name] = info;
-        _order.Add(info);
+        lock (_order)
+        {
+            _order.Add(info);
+        }
     }
 
     public void CheckName(Name n)

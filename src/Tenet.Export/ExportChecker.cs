@@ -34,8 +34,14 @@ public sealed class CheckOptions
     public int Jobs { get; init; } = 1;
 }
 
+/// <summary>What the streaming checker learned about the export while reading it.</summary>
+public sealed record StreamInfo(ExportMeta? Meta, int Declarations, int Expressions, int Names, int Levels, TimeSpan ParseTime);
+
 public sealed class CheckResult
 {
+    /// <summary>Set by <see cref="ExportChecker.CheckStreaming"/>.</summary>
+    public StreamInfo? Stream { get; internal set; }
+
     public int Checked { get; internal set; }
     public int Skipped { get; internal set; }
     public List<CheckFailure> Failures { get; } = new();
@@ -585,6 +591,202 @@ public static class ExportChecker
                 }
             default:
                 throw new KernelException("unknown exported declaration kind " + decl.Kind);
+        }
+    }
+
+    // ------------------------------------------------------------------ streaming mode
+
+    /// <summary>
+    /// Parse and check concurrently: one thread reads the export and installs each declaration unchecked as it
+    /// arrives; <see cref="CheckOptions.Jobs"/> workers check declarations in the meantime. Results are the same as
+    /// <see cref="Check"/> in parallel mode; wall time is close to the larger of parse time and check time.
+    /// </summary>
+    public static CheckResult CheckStreaming(Stream stream, CheckOptions? options = null)
+    {
+        options ??= new CheckOptions();
+        int jobs = Math.Max(1, options.Jobs);
+        var result = new CheckResult();
+        var env = new Environment();
+        result.Environment = env;
+        var total = Stopwatch.StartNew();
+        var failures = new List<CheckFailure>();
+        var slow = new List<(Name, TimeSpan)>();
+        var sync = new object();
+        var position = new System.Collections.Concurrent.ConcurrentDictionary<Name, int>();
+        var file = new ExportFile();
+        var channel = System.Threading.Channels.Channel.CreateBounded<(int Index, ExportDecl Decl)>(
+            new System.Threading.Channels.BoundedChannelOptions(4096) { SingleWriter = true, SingleReader = jobs == 1 });
+        int declCount = 0;
+        int done = 0;
+        int checkedCount = 0;
+        int skipped = 0;
+        using var cts = new CancellationTokenSource();
+        var parseTime = Stopwatch.StartNew();
+
+        var producer = Task.Run(() =>
+        {
+            try
+            {
+                NdjsonReader.ReadStreaming(stream, file, decl =>
+                {
+                    int i = declCount++;
+                    bool dup = false;
+                    foreach (Name n in NamesOf(decl))
+                    {
+                        if (!position.TryAdd(n, i))
+                        {
+                            dup = true;
+                        }
+                    }
+                    if (dup)
+                    {
+                        lock (sync)
+                        {
+                            failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, $"'{decl.DisplayName}' has already been declared", TimeSpan.Zero));
+                        }
+                        return;
+                    }
+                    AddUnchecked(env, decl);
+                    // Blocks when the workers are behind, which bounds memory held in the queue.
+                    while (!channel.Writer.TryWrite((i, decl)))
+                    {
+                        if (cts.IsCancellationRequested)
+                        {
+                            return;
+                        }
+                        channel.Writer.WaitToWriteAsync(cts.Token).AsTask().GetAwaiter().GetResult();
+                    }
+                });
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            finally
+            {
+                parseTime.Stop();
+                channel.Writer.TryComplete();
+            }
+        });
+
+        var workers = new Task[jobs];
+        for (int w = 0; w < jobs; w++)
+        {
+            workers[w] = Task.Run(() =>
+            {
+                var reader = channel.Reader;
+                while (true)
+                {
+                    (int Index, ExportDecl Decl) item;
+                    try
+                    {
+                        if (!reader.WaitToReadAsync(cts.Token).AsTask().GetAwaiter().GetResult())
+                        {
+                            return;
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                    if (!reader.TryRead(out item))
+                    {
+                        continue;
+                    }
+                    ExportDecl decl = item.Decl;
+                    bool check = options.Only is null || ShouldCheck(decl, options.Only);
+                    var sw = Stopwatch.StartNew();
+                    if (!check)
+                    {
+                        Interlocked.Increment(ref skipped);
+                    }
+                    else
+                    {
+                        try
+                        {
+                            CheckOrderStreaming(decl, item.Index, position);
+                            ValidateDecl(env, decl, options.CompareInductive);
+                            Interlocked.Increment(ref checkedCount);
+                        }
+                        catch (KernelException e)
+                        {
+                            lock (sync)
+                            {
+                                failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed));
+                            }
+                            if (!options.ContinueOnError)
+                            {
+                                cts.Cancel();
+                            }
+                        }
+                        sw.Stop();
+                        if (sw.Elapsed >= options.SlowThreshold)
+                        {
+                            lock (sync)
+                            {
+                                slow.Add((decl.DisplayName, sw.Elapsed));
+                            }
+                        }
+                    }
+                    int n = Interlocked.Increment(ref done);
+                    if (options.Progress is not null)
+                    {
+                        int failed;
+                        lock (sync)
+                        {
+                            failed = failures.Count;
+                        }
+                        // Total is unknown until the reader finishes; report the count seen so far.
+                        options.Progress(new CheckProgress(n, Math.Max(n, declCount), decl.DisplayName, failed, total.Elapsed));
+                    }
+                }
+            });
+        }
+        Task.WaitAll(workers);
+        Exception? readError = null;
+        try
+        {
+            producer.GetAwaiter().GetResult();
+        }
+        catch (Exception e) when (e is ExportFormatException or IOException)
+        {
+            readError = e;
+        }
+        result.Checked = checkedCount;
+        result.Skipped = skipped;
+        result.Failures.AddRange(failures.OrderBy(f => position.TryGetValue(f.Name, out int p) ? p : int.MaxValue));
+        result.Slow.AddRange(slow);
+        result.Elapsed = total.Elapsed;
+        result.Stream = new StreamInfo(file.Meta, declCount, file.Exprs.Count, file.Names.Count - 1, file.Levels.Count - 1, parseTime.Elapsed);
+        if (readError is not null)
+        {
+            throw readError;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// In streaming mode a name that is not yet positioned is declared later (or never): every constant that
+    /// precedes this declaration was positioned before the declaration was queued.
+    /// </summary>
+    private static void CheckOrderStreaming(ExportDecl decl, int index, System.Collections.Concurrent.ConcurrentDictionary<Name, int> position)
+    {
+        foreach (Expr e in ExprsOf(decl))
+        {
+            ExprOps.ForEach(e, (t, _) =>
+            {
+                if (t is ConstExpr c)
+                {
+                    if (!position.TryGetValue(c.Name, out int p))
+                    {
+                        throw new KernelException($"'{decl.DisplayName}' refers to '{c.Name}', which is not declared before it");
+                    }
+                    if (p > index)
+                    {
+                        throw new KernelException($"'{decl.DisplayName}' refers to '{c.Name}', which is declared later in the export");
+                    }
+                }
+                return true;
+            });
         }
     }
 }

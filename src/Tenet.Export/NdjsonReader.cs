@@ -30,7 +30,17 @@ public static class NdjsonReader
     public static ExportFile Read(Stream stream)
     {
         var file = new ExportFile();
-        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 1 << 16);
+        ReadStreaming(stream, file, d => file.Decls.Add(d));
+        return file;
+    }
+
+    /// <summary>
+    /// Parse the export, keeping the shared tables in <paramref name="file"/> and handing each declaration to
+    /// <paramref name="onDecl"/> as soon as it is complete, instead of collecting them.
+    /// </summary>
+    public static void ReadStreaming(Stream stream, ExportFile file, Action<ExportDecl> onDecl)
+    {
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 1 << 20);
         long lineNo = 0;
         string? line;
         while ((line = reader.ReadLine()) is not null)
@@ -43,7 +53,11 @@ public static class NdjsonReader
             try
             {
                 using JsonDocument doc = JsonDocument.Parse(line);
-                ParseLine(file, doc.RootElement, lineNo);
+                ExportDecl? decl = ParseLine(file, doc.RootElement, lineNo);
+                if (decl is not null)
+                {
+                    onDecl(decl);
+                }
             }
             catch (JsonException e)
             {
@@ -62,10 +76,9 @@ public static class NdjsonReader
                 throw new ExportFormatException(lineNo, "unexpected value: " + e.Message);
             }
         }
-        return file;
     }
 
-    private static void ParseLine(ExportFile file, JsonElement root, long lineNo)
+    private static ExportDecl? ParseLine(ExportFile file, JsonElement root, long lineNo)
     {
         if (root.ValueKind != JsonValueKind.Object)
         {
@@ -74,24 +87,24 @@ public static class NdjsonReader
         if (root.TryGetProperty("meta", out JsonElement meta))
         {
             ParseMeta(file, meta, lineNo);
-            return;
+            return null;
         }
         if (root.TryGetProperty("in", out JsonElement inIdx))
         {
             AddAt(file.Names, inIdx.GetInt32(), ParseName(file, root, lineNo), lineNo, "name");
-            return;
+            return null;
         }
         if (root.TryGetProperty("il", out JsonElement ilIdx))
         {
             AddAt(file.Levels, ilIdx.GetInt32(), ParseLevel(file, root, lineNo), lineNo, "level");
-            return;
+            return null;
         }
         if (root.TryGetProperty("ie", out JsonElement ieIdx))
         {
             AddAt(file.Exprs, ieIdx.GetInt32(), ParseExpr(file, root, lineNo), lineNo, "expression");
-            return;
+            return null;
         }
-        file.Decls.Add(ParseDecl(file, root, lineNo));
+        return ParseDecl(file, root, lineNo);
     }
 
     private static void AddAt<T>(List<T> table, int idx, T item, long lineNo, string what)

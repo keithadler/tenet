@@ -255,12 +255,9 @@ internal static class Program
         }
 
         TypeChecker.Stats.Enabled = stats;
-        var sw = Stopwatch.StartNew();
-        ExportFile file = NdjsonReader.ReadFile(path);
-        sw.Stop();
-        if (!quiet)
+        if (!File.Exists(path))
         {
-            PrintMeta(file, path, sw.Elapsed);
+            return Fail($"no such file: {path}");
         }
 
         var lastReport = Stopwatch.StartNew();
@@ -294,10 +291,22 @@ internal static class Program
                 }
             },
         };
-        CheckResult result = ExportChecker.Check(file, options);
+        CheckResult result;
+        using (FileStream fs = File.OpenRead(path))
+        {
+            result = ExportChecker.CheckStreaming(fs, options);
+        }
         if (!quiet && isTty)
         {
             Console.Error.WriteLine();
+        }
+        if (!quiet && result.Stream is StreamInfo si)
+        {
+            Console.WriteLine($"{Path.GetFileName(path)}: {si.Declarations} declarations, {si.Expressions} expressions, {si.Names} names, {si.Levels} levels (parsed in {si.ParseTime.TotalSeconds:F1}s, overlapped with checking)");
+            if (si.Meta is ExportMeta m)
+            {
+                Console.WriteLine($"  exported by {m.ExporterName} {m.ExporterVersion}, format {m.FormatVersion}, Lean {m.LeanVersion} ({m.LeanGitHash[..Math.Min(9, m.LeanGitHash.Length)]})");
+            }
         }
 
         foreach (CheckFailure f in result.Failures)

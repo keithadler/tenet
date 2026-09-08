@@ -45,6 +45,38 @@ public class FixtureTests
         Assert.Equal(seq.Environment.Count, par.Environment.Count);
     }
 
+    [Theory]
+    [InlineData("Nat.add_succ.ndjson", 1)]
+    [InlineData("Nat.add_succ.ndjson", 4)]
+    [InlineData("Nat.add_succ.v3.0.ndjson", 4)]
+    public void StreamingModeChecks(string fixture, int jobs)
+    {
+        using FileStream fs = File.OpenRead(Fixture(fixture));
+        CheckResult result = ExportChecker.CheckStreaming(fs, new CheckOptions { Jobs = jobs });
+        Assert.True(result.Success, string.Join("\n", result.Failures.Select(f => f.Name + ": " + f.Message)));
+        Assert.NotNull(result.Stream);
+        Assert.Equal(result.Stream!.Declarations, result.Checked);
+        Assert.IsType<TheoremInfo>(result.Environment.Get(Name.Of("Nat", "add_succ")));
+    }
+
+    [Fact]
+    public void StreamingModeRejectsTamperedProof()
+    {
+        // Rewrite the fixture so that Nat.add_succ claims Nat = Nat, then stream it.
+        string[] lines = File.ReadAllLines(Fixture("Nat.add_succ.ndjson"));
+        ExportFile file = NdjsonReader.ReadFile(Fixture("Nat.add_succ.ndjson"));
+        var thm = (ExportTheorem)file.Decls.First(d => d is ExportTheorem);
+        int typeIdx = file.Exprs.IndexOf(thm.Type);
+        // find the expression index of `Nat` (the constant) to reuse as a bogus "type"
+        int natIdx = file.Exprs.FindIndex(e => e.IsConstOf(Name.Of("Nat")));
+        Assert.True(typeIdx >= 0 && natIdx >= 0);
+        int thmLine = Array.FindIndex(lines, l => l.Contains("\"thm\"", StringComparison.Ordinal));
+        lines[thmLine] = lines[thmLine].Replace($"\"type\":{typeIdx}", $"\"type\":{natIdx}", StringComparison.Ordinal);
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(string.Join("\n", lines)));
+        CheckResult result = ExportChecker.CheckStreaming(ms, new CheckOptions { Jobs = 4 });
+        Assert.Contains(result.Failures, f => f.Name.Equals(Name.Of("Nat", "add_succ")));
+    }
+
     [Fact]
     public void ParallelModeRejectsForwardReferences()
     {
