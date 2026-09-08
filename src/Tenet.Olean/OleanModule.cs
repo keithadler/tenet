@@ -13,7 +13,6 @@ internal sealed unsafe class Region : IDisposable
 {
     public const int HeaderSize = 5 + 1 + 1 + 33 + 40 + 8;
 
-    private readonly MemoryMappedFile _file;
     private readonly MemoryMappedViewAccessor _view;
     public readonly byte* Base;
     public readonly long Length;
@@ -38,8 +37,12 @@ internal sealed unsafe class Region : IDisposable
         {
             throw new OleanFormatException(path, "file is too small to be an .olean");
         }
-        _file = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        _view = _file.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+        // The mapping outlives the file handle; closing the handle at once keeps thousands of modules under the
+        // process's open-file limit.
+        using (MemoryMappedFile file = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read))
+        {
+            _view = file.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+        }
         byte* p = null;
         _view.SafeMemoryMappedViewHandle.AcquirePointer(ref p);
         Base = p;
@@ -77,7 +80,6 @@ internal sealed unsafe class Region : IDisposable
     {
         _view.SafeMemoryMappedViewHandle.ReleasePointer();
         _view.Dispose();
-        _file.Dispose();
     }
 }
 

@@ -50,5 +50,4 @@ compilation was correct.
 ## Non-goals
 
 - Elaboration, tactics, or a Lean frontend of any kind.
-- Reading `.olean` files directly; the export format is the interface.
 - Bit-for-bit reproduction of Lean's error messages.

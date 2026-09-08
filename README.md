@@ -45,6 +45,22 @@ dotnet run -c Release --project src/Tenet.Cli -- check path/to/export.ndjson
 
 Or as a global tool once published: `dotnet tool install -g tenet`.
 
+## Check a Lean project in place
+
+Tenet reads Lean's compiled `.olean` files directly, so no export step is needed:
+
+```bash
+tenet check .lake/build/lib/lean/MyProject/Main.olean          # this module; imports are trusted
+tenet check .lake/build/lib/lean/MyProject.olean --all         # the module and everything it imports
+tenet check ~/.elan/toolchains/*/lib/lean/Init.olean --all     # the whole core library, about 8 seconds
+```
+
+Every module in the import closure is memory-mapped and its constants are decoded only when
+the kernel looks them up, so memory stays proportional to the module being checked rather than
+to everything it imports. Library roots are found from the Lake build tree around the target,
+`LEAN_PATH`, and the elan toolchain matching the module's Lean version; add more with `--lib`.
+`partial` and `unsafe` definitions are checked too, as the mutual blocks Lean added them as.
+
 ## Produce an export to check
 
 ```bash
@@ -90,7 +106,8 @@ Expr t = tc.Infer(Expr.Const(Name.Of("id"), [Level.One]));   // ∀ {α : Type},
 ```
 
 `Tenet.Export` reads `.ndjson` exports into the same data structures and drives the
-checker; `Tenet.Cli` is the `tenet` command.
+checker; `Tenet.Olean` memory-maps compiled modules and decodes constants on demand;
+`Tenet.Cli` is the `tenet` command.
 
 ## What "checking" means here
 
@@ -115,6 +132,7 @@ rejected with a clear message, because trusting them means trusting the compiler
 ```
 src/Tenet.Kernel     the kernel (no dependencies)
 src/Tenet.Export     export reader and check driver
+src/Tenet.Olean      .olean reader (memory-mapped, lazy) and in-place checker
 src/Tenet.Cli        the tenet command
 tests/Tenet.Tests    xunit tests; large-export tests run when TENET_EXPORTS is set
 tests/fixtures       small committed exports

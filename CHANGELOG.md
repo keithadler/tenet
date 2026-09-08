@@ -6,6 +6,11 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `Tenet.Olean`: reads Lean's compiled `.olean` files directly (memory-mapped, constants
+  decoded on demand, the module system's private part merged). `tenet check Foo.olean`
+  checks a module in place; `--all` checks the import closure; `tenet info Foo.olean`.
+- `partial` and `unsafe` definitions are checked, as mutual blocks under their own safety.
+- `Environment.SetResolver` for constants that live outside the environment.
 - `tenet show FILE NAME...` prints declarations from an export.
 - `tenet check --low-memory` relaunches with the workstation garbage collector (about a
   third of the memory, 3 to 4 times slower).
