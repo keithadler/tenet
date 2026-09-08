@@ -67,3 +67,19 @@ jobs:
             --tenet src/Tenet.Cli/bin/Release/net10.0/tenet \
             --oracle tools/leancheck/.lake/build/bin/leancheck \
             --variants 15 --mutations 10 --seed ${{ github.run_number }}
+
+  action:
+    # The GitHub Action (action.yml) end to end: build a small Lake project, then check it with the released tenet.
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Build a Lake project (the kernel oracle)
+        run: cd tools/leancheck && lake build
+      - uses: ./
+        with:
+          project: tools/leancheck

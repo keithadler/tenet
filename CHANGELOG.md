@@ -11,6 +11,8 @@ versions follow [Semantic Versioning](https://semver.org/).
   reports it as a file error (exit 2) instead of crashing. A corruption fuzzer (`OleanFuzzTests`,
   on the checked-in `Init.Coe` fixture) exercises this.
 - `tenet check FILE.olean --report out.json` writes the outcome as JSON, as the export mode does.
+- A GitHub Action (`uses: keithadler/tenet@main`) that installs the released tool and checks a built
+  Lake project, with a job summary; CI runs it on `tools/leancheck`.
 - `tenet check <project dir>` checks every module a Lake project has built (its `.lake/build/lib/lean`),
   so a project's CI can run one command.
 - A declaration that hits the unfolding limit (`DeterministicTimeoutException`) is reported

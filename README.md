@@ -89,6 +89,21 @@ Tenet caches failed definitional-equality checks, which the reference kernel doe
 re-checks a rejected declaration without the cache so verdicts match Lean's exactly; set
 `TENET_NO_FAILURE_CACHE=1` to run the reference algorithm alone (docs/design.md).
 
+## Use it in a Lean project's CI
+
+After `lake build`, one step re-checks every module the project compiled with an independent kernel:
+
+```yaml
+- uses: keithadler/tenet@main
+  with:
+    project: .          # a Lake project directory, a .olean file, or an export
+    # all: "true"       # also check every imported module
+    # args: --jobs 2
+```
+
+The action installs the released `tenet` tool, runs `tenet check`, and writes a summary with any
+failing declarations to the job page. The same command works locally: `tenet check .` in a built project.
+
 ## Use the kernel as a library
 
 `Tenet.Kernel` has no dependency on the export format. You build expressions, add

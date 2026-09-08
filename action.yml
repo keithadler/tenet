@@ -1,0 +1,65 @@
+name: "Tenet: check Lean modules"
+description: "Independently re-check a built Lean 4 project's compiled modules with the Tenet kernel (.NET)."
+author: "Keith Adler"
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  project:
+    description: "Path of the Lake project (its .lake/build/lib/lean is checked), or a .olean file, or an export."
+    required: false
+    default: "."
+  version:
+    description: "Tenet release to install (a tag without the v)."
+    required: false
+    default: "0.3.0"
+  all:
+    description: "Also check every imported module (the whole import closure), not only the project's own."
+    required: false
+    default: "false"
+  args:
+    description: "Extra arguments for tenet check (for example --jobs 2 --slow 5)."
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Install tenet ${{ inputs.version }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        dir="$RUNNER_TEMP/tenet-nupkg"
+        mkdir -p "$dir"
+        curl -sSfL "https://github.com/keithadler/tenet/releases/download/v${{ inputs.version }}/tenet.${{ inputs.version }}.nupkg" -o "$dir/tenet.${{ inputs.version }}.nupkg"
+        dotnet tool install --global tenet --version "${{ inputs.version }}" --add-source "$dir" --ignore-failed-sources
+        echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+    - name: tenet check
+      shell: bash
+      run: |
+        set -euo pipefail
+        all=""
+        if [ "${{ inputs.all }}" = "true" ]; then all="--all"; fi
+        tenet version
+        tenet check "${{ inputs.project }}" $all --report "$RUNNER_TEMP/tenet-report.json" ${{ inputs.args }}
+    - name: Summary
+      if: always()
+      shell: bash
+      run: |
+        r="$RUNNER_TEMP/tenet-report.json"
+        if [ -f "$r" ]; then
+          python3 - "$r" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+        import json, sys
+        d = json.load(open(sys.argv[1]))
+        ok = d.get("success")
+        print(f"## Tenet: {'all declarations check' if ok else 'FAILED'}")
+        print()
+        print(f"- checked: {d.get('checked')} declarations in {d.get('modulesChecked', d.get('declarations'))} modules, {d.get('seconds')} s, Lean {d.get('lean', d.get('meta', {}).get('lean') if isinstance(d.get('meta'), dict) else '')}")
+        for f in d.get("failures", [])[:20]:
+            print(f"- FAIL `{f['name']}`: {f['message'].splitlines()[0][:200]}")
+        PY
+        fi
