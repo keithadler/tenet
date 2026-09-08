@@ -3,7 +3,11 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.0] - 2026-09-08
+
+Failed definitional-equality checks are cached, with a faithful re-check on rejection. The
+slowest Mathlib declarations are now faster in Tenet than in Lean's own kernel, measured
+declaration by declaration on the same exports.
 
 ### Changed
 - Failed definitional-equality checks are cached for the whole declaration, not only
