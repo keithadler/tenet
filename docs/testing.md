@@ -174,3 +174,10 @@ the reference rather than defects in Tenet. Known classes:
   rejections will differ without either kernel being wrong.
 - **Lean crashes.** Lean's kernel segfaults or aborts on some ill-formed inputs installed
   unchecked. The harness reports the run as incomplete and keeps the variant.
+- **Neither kernel finishes.** A mutation can make definitional unfolding run away: on one
+  Mathlib-slice variant, both kernels ground on the same mutated
+  `Std.Time.PlainTime.format._sparseCasesOn_1` for more than ten minutes. Tenet's unfolding
+  limit ends it with a deterministic timeout (100 million by default; `TENET_MAX_UNFOLDS`
+  lowers it for campaigns); Lean's kernel has no such limit, so the harness kills a run
+  after `--timeout` seconds and counts it as incomplete. When only one kernel finishes, check
+  it is the one with the limit before reading anything into the difference.
