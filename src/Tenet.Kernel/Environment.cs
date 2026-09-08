@@ -90,6 +90,18 @@ public sealed class Environment
 
     public bool Contains(Name n) => Find(n) is not null;
 
+    private static readonly Name StringOfList = Name.Of("String", "ofList");
+    private static readonly Name StringMk = Name.Of("String", "mk");
+
+    /// <summary>
+    /// The constant a string literal expands to. The reference kernel hardcodes one name, and that name changed with
+    /// <c>String</c>'s representation: <c>String.mk</c> while <c>String</c> was <c>structure String where mk :: data : List Char</c>
+    /// (up to about Lean 4.20), <c>String.ofList</c> since. Reading it from the environment instead lets one checker
+    /// handle modules built by either toolchain, and can only affect what a literal reduces to, never what is accepted
+    /// without a reduction.
+    /// </summary>
+    public Name StringLiteralConstructor => Contains(StringOfList) ? StringOfList : StringMk;
+
     /// <summary>Add a constant without checking it. Safe to call from one thread while others read.</summary>
     public void AddCore(ConstantInfo info)
     {

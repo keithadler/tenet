@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Diagnostics;
 using Tenet.Kernel;
 using Environment = Tenet.Kernel.Environment;
@@ -31,6 +32,8 @@ public sealed class OleanCheckResult
     public int ModulesChecked { get; internal set; }
     public int ModulesLoaded { get; internal set; }
     public int Checked { get; internal set; }
+    /// <summary>Units not checked because they are helpers of Lean's old code generator (see <c>Replay.Unit.IsOldCodegenHelper</c>).</summary>
+    public int SkippedOldCodegen { get; internal set; }
     public List<OleanCheckFailure> Failures { get; } = new();
     public List<(Name Module, Name Name, TimeSpan Elapsed)> Slow { get; } = new();
     public TimeSpan Elapsed { get; internal set; }
@@ -49,6 +52,35 @@ public sealed class OleanChecker : IDisposable
 {
     private readonly LeanSearchPath _search;
     private readonly Dictionary<Name, OleanModule> _modules = new();
+
+    private static readonly Regex UnknownConstant = new(@"^unknown constant '(?<n>[^']*)'$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Add context to a kernel message when the missing constant is in no loaded module. Lean realizes some names on
+    /// demand (`.induct`, `.splitter` and other reserved names) and does not always store them, so a declaration that
+    /// mentions one cannot be checked from module data by any kernel; that is a property of the files, not of the proof.
+    /// </summary>
+    private string Explain(string message)
+    {
+        Match m = UnknownConstant.Match(message);
+        if (!m.Success)
+        {
+            return message;
+        }
+        Name n = Name.Parse(m.Groups["n"].Value);
+        lock (_modules)
+        {
+            foreach (OleanModule mod in _modules.Values)
+            {
+                if (mod.Contains(n))
+                {
+                    return message;
+                }
+            }
+        }
+        return message + "\n  no loaded module stores this constant. Lean realizes some names on demand and does not\n"
+             + "  always write them to the .olean, so no kernel can check this declaration from module data alone.";
+    }
     private readonly Dictionary<Name, Name> _owner = new(); // constant -> module
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Name, byte> _touched = new(); // modules decoded from since the last trim
 
@@ -194,6 +226,7 @@ public sealed class OleanChecker : IDisposable
 
             int done = 0;
             int checkedHere = 0;
+            int skippedHere = 0;
             var sync = new object();
             using var cts = new CancellationTokenSource();
             int next = -1;
@@ -211,6 +244,12 @@ public sealed class OleanChecker : IDisposable
                     {
                         continue;
                     }
+                    if (unit.IsOldCodegenHelper)
+                    {
+                        // Uncheckable by construction: see Replay.Unit.IsOldCodegenHelper. Counted, never checked.
+                        Interlocked.Increment(ref skippedHere);
+                        continue;
+                    }
                     options.BeforeUnit?.Invoke(unit.Name);
                     var sw = Stopwatch.StartNew();
                     try
@@ -223,7 +262,7 @@ public sealed class OleanChecker : IDisposable
                     {
                         lock (sync)
                         {
-                            result.Failures.Add(new OleanCheckFailure(module, unit.Name, unit.Kind, e.Message, sw.Elapsed, e.RaisedAt));
+                            result.Failures.Add(new OleanCheckFailure(module, unit.Name, unit.Kind, Explain(e.Message), sw.Elapsed, e.RaisedAt));
                         }
                         if (!options.ContinueOnError)
                         {
@@ -251,6 +290,7 @@ public sealed class OleanChecker : IDisposable
                 }
             });
             result.Checked += checkedHere;
+            result.SkippedOldCodegen += skippedHere;
             result.ModulesChecked++;
             if (options.EvictBetweenModules)
             {

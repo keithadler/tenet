@@ -159,7 +159,6 @@ public sealed class TypeChecker
     private static readonly Name BoolTrue = Name.Of("Bool", "true");
     private static readonly Name BoolFalse = Name.Of("Bool", "false");
     private static readonly Name EagerReduce = Name.Of("eagerReduce");
-    private static readonly Name StringOfList = Name.Of("String", "ofList");
     private static readonly Name LeanReduceBool = Name.Of("Lean", "reduceBool");
     private static readonly Name LeanReduceNat = Name.Of("Lean", "reduceNat");
 
@@ -577,7 +576,7 @@ public sealed class TypeChecker
     {
         if (c.IsStrLit)
         {
-            c = Whnf(Inductive.StringLitToConstructor(c));
+            c = Whnf(Inductive.StringLitToConstructor(Env, c));
         }
         Expr mk = c.GetAppArgs(out Expr[] args);
         if (mk is not ConstExpr mkc || Env.Find(mkc.Name) is not ConstructorInfo mkVal)
@@ -1389,9 +1388,9 @@ public sealed class TypeChecker
 
     private LBool TryStringLitExpansionCore(Expr t, Expr s)
     {
-        if (t.IsStrLit && s is AppExpr sa && sa.Fn is ConstExpr { Levels.Length: 0 } c && c.Name.Equals(StringOfList))
+        if (t.IsStrLit && s is AppExpr sa && sa.Fn is ConstExpr { Levels.Length: 0 } c && c.Name.Equals(Env.StringLiteralConstructor))
         {
-            return ToLBool(IsDefEqCore(Whnf(Inductive.StringLitToConstructor(t)), s));
+            return ToLBool(IsDefEqCore(Whnf(Inductive.StringLitToConstructor(Env, t)), s));
         }
         return LBool.Undef;
     }

@@ -119,4 +119,28 @@ public class SemanticsTests
         // and a constant applied to the wrong number of universe levels is rejected
         Assert.Throws<KernelException>(() => tc.Check(Expr.Const(Eq, []), []));
     }
+
+    [Fact]
+    public void StringLiteralConstructorFollowsTheEnvironment()
+    {
+        // Lean's kernel hardcodes the constant a string literal expands to, and it changed with String's
+        // representation. Tenet reads it from the environment so one checker handles either toolchain.
+        var modern = new Environment();
+        modern.AddCore(new DefinitionInfo(Name.Of("String", "ofList"), [], Expr.Type0, Expr.Type0, ReducibilityHints.Abbrev, DefinitionSafety.Safe, [Name.Of("String", "ofList")]));
+        Assert.Equal(Name.Of("String", "ofList"), modern.StringLiteralConstructor);
+
+        // an environment without String.ofList (Lean up to about 4.20) uses the structure's constructor
+        Assert.Equal(Name.Of("String", "mk"), new Environment().StringLiteralConstructor);
+    }
+
+    [Fact]
+    public void OldCodegenHelpersAreRecognized()
+    {
+        Assert.True(Replay.LooksLikeOldCodegenName(Name.Of("instHPow", "_cstage2")));
+        Assert.True(Replay.LooksLikeOldCodegenName(Name.Of("List", "map", "_spec_1")));
+        Assert.True(Replay.LooksLikeOldCodegenName(Name.Of("f", "_elambda_1")));
+        Assert.False(Replay.LooksLikeOldCodegenName(Name.Of("Array", "eraseIdx", "induct")));
+        Assert.False(Replay.LooksLikeOldCodegenName(Name.Of("Nat", "add")));
+        Assert.False(Replay.LooksLikeOldCodegenName(Name.Of("x").Num(2)));
+    }
 }

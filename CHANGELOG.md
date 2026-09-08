@@ -3,6 +3,25 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- CI checks the `.olean` reader and the kernel against several Lean toolchains, not only the
+  pinned one: each matrix job installs a toolchain and checks its whole `Init` library in place.
+
+### Fixed
+- The constant a string literal reduces to is read from the environment (`String.ofList`, or
+  `String.mk` for a Lean built before the UTF-8 `String`) instead of being hardcoded, so
+  `rfl` proofs about string literals check on older toolchains too. Found by checking Lean 4.20.
+
+### Changed
+- Helpers of Lean's old code generator (`_cstage`, `_spec_`, `_elambda`, gone since about Lean
+  4.20) are skipped and counted rather than reported as failures: they reference constants the
+  generator never stored, so no kernel can check them from module data. Lean's own replay never
+  meets them because it skips every unsafe constant.
+- An `unknown constant` failure says so when no loaded module stores the constant.
+- `tenet show FILE.olean NAME...` prints declarations from a compiled module and its imports.
+
 ## [0.3.1] - 2026-09-08
 
 Hardening and adoption: a corruption-proof `.olean` reader, the classic attacks as tests, one

@@ -21,6 +21,9 @@ public abstract class Name : IEquatable<Name>, IComparable<Name>
 
     public bool IsAnonymous => ReferenceEquals(this, Anonymous);
 
+    /// <summary>The final string component, or null when the name is anonymous or ends in a numeric component.</summary>
+    public string? LastString => this is StrName s ? s.Value : null;
+
     /// <summary>Append a string component.</summary>
     public Name Str(string s) => new StrName(this, s);
 

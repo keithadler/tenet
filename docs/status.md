@@ -56,6 +56,38 @@ Measured on a 12-core Apple M-series laptop with 17 GB, .NET 10, server GC. The 
 parses about 145 MB/s and runs concurrently with checking, so wall time is close to the
 larger of the two.
 
+## Lean versions
+
+The tests and the tables above pin Lean 4.34.0-rc2, but the `.olean` reader and the kernel are
+checked against several toolchains in CI (the `olean-compat` matrix): each job installs a
+toolchain and checks its whole `Init` library in place.
+
+| Toolchain | Declarations in `Init` | Result |
+| --- | --- | --- |
+| 4.34.0-rc2 | 64,814 | 0 failures |
+| 4.33.1 | 64,656 | 0 failures |
+| 4.28.0 | 56,236 | 0 failures |
+| 4.20.0 | 38,631 | 5 not checkable, see below |
+
+Reading Lean 4.20.0 found two things worth recording, and one real gap in the kernel.
+
+- **The string literal constant is version dependent.** A string literal reduces to an
+  application of one hardcoded constant, and that constant changed with `String`'s
+  representation: `String.mk` while `String` was a structure over `List Char`,
+  `String.ofList` since the UTF-8 representation. Tenet had 4.34's name hardcoded like the
+  reference kernel does, so seven `rfl` proofs about string literals (`String.length_empty`
+  and friends) were rejected. It now reads the name from the environment.
+- **Old code generator helpers cannot be checked and are skipped.** Up to about 4.20 the old
+  code generator wrote `_cstage`, `_spec_` and `_elambda` helpers into the module, and those
+  reference constants such as `_neutral` that it added straight to the kernel environment
+  without storing them. Lean's own `Environment.replay` never meets them because it skips
+  every unsafe constant; Tenet checks unsafe constants, so it recognizes these by name the
+  way Lean's `looksLikeOldCodegenName` does and reports how many it skipped (25,485 in `Init`).
+- **Five declarations cannot be checked from the files at all.** `Array.eraseIdx.induct` and
+  four like it mention names Lean realizes on demand (`.induct`, `.splitter`) and never
+  wrote to any `.olean`. Tenet reports them as failures and says no loaded module stores the
+  constant. The CI matrix therefore covers 4.28.0 and later.
+
 ## Parallel checking
 
 `tenet check` uses all cores by default (`--jobs 1` for the sequential mode). In parallel

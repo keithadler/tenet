@@ -20,7 +20,22 @@ public static class Replay
             Constants = constants;
         }
         public IEnumerable<Name> Names => Constants.Select(c => c.Name);
+
+        /// <summary>
+        /// True when this unit is a helper of Lean's old code generator (present up to about Lean 4.20, gone since).
+        /// Those helpers reference constants such as <c>_neutral</c> that the generator added straight to the kernel
+        /// environment without storing them, so they cannot be checked from module data by any kernel. Lean's own
+        /// <c>Environment.replay</c> never meets them because it skips every unsafe constant; Tenet checks unsafe
+        /// constants, so it has to recognize these by name, exactly as Lean's <c>looksLikeOldCodegenName</c> does.
+        /// </summary>
+        public bool IsOldCodegenHelper => Constants.Any(c => LooksLikeOldCodegenName(c.Name));
     }
+
+    /// <summary>Lean's <c>looksLikeOldCodegenName</c>: a helper the old code generator emitted.</summary>
+    public static bool LooksLikeOldCodegenName(Name n) =>
+        n.LastString is string s && (s.StartsWith("_cstage", StringComparison.Ordinal)
+                                     || s.StartsWith("_spec_", StringComparison.Ordinal)
+                                     || s.StartsWith("_elambda", StringComparison.Ordinal));
 
     /// <summary>
     /// Group constants into units. Constructors and recursors join the block of their inductive type; the four quotient

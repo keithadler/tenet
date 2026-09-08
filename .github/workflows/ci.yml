@@ -68,6 +68,33 @@ jobs:
             --oracle tools/leancheck/.lake/build/bin/leancheck \
             --variants 15 --mutations 10 --seed ${{ github.run_number }}
 
+  olean-compat:
+    # The .olean reader and the kernel against several Lean toolchains, not only the one the tests pin.
+    # Each job installs a toolchain and checks its whole Init library in place.
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [v4.34.0-rc2, v4.33.1, v4.28.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Install Lean ${{ matrix.toolchain }}
+        run: elan toolchain install "leanprover/lean4:${{ matrix.toolchain }}"
+      - run: dotnet build -c Release
+      - name: Check all of Init from ${{ matrix.toolchain }}
+        run: |
+          LIB="$HOME/.elan/toolchains/leanprover--lean4---${{ matrix.toolchain }}/lib/lean"
+          dotnet run --no-build -c Release --project src/Tenet.Cli -- info "$LIB/Init.olean"
+          dotnet run --no-build -c Release --project src/Tenet.Cli -- check "$LIB/Init.olean" --all --quiet
+
   action:
     # The GitHub Action (action.yml) end to end: build a small Lake project, then check it with the released tenet.
     runs-on: ubuntu-latest

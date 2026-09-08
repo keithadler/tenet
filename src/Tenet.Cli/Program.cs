@@ -18,6 +18,7 @@ internal static class Program
           tenet check <project dir> [options]     check every module of a built Lake project (.lake/build/lib/lean)
           tenet info  <file.ndjson>               print the export's metadata and counts
           tenet show  <file.ndjson> <name>...     print declarations from an export (type, value, metadata)
+          tenet show  <Module.olean> <name>...    print declarations from a compiled module or its imports
           tenet version
 
         options for check:
@@ -178,15 +179,19 @@ internal static class Program
         {
             return Fail("show needs a file and at least one name");
         }
+        var names = args[1..].Select(Name.Parse).ToList();
+        if (args[0].EndsWith(".olean", StringComparison.Ordinal))
+        {
+            return ShowOlean(args[0], names);
+        }
         ExportFile file = NdjsonReader.ReadFile(args[0]);
-        var wanted = new HashSet<Name>(args[1..].Select(Name.Parse));
         var env = new Environment();
         foreach (ExportDecl d in file.Decls)
         {
             ExportChecker.AddUnchecked(env, d);
         }
         int missing = 0;
-        foreach (Name n in args[1..].Select(Name.Parse))
+        foreach (Name n in names)
         {
             ConstantInfo? c = env.Find(n);
             if (c is null)
@@ -228,6 +233,38 @@ internal static class Program
             }
         }
         return missing == 0 ? 0 : 1;
+    }
+
+    /// <summary>Print declarations from a compiled module and the modules it imports.</summary>
+    private static int ShowOlean(string path, List<Name> names)
+    {
+        var search = new Tenet.Olean.LeanSearchPath();
+        search.AddFromEnvironment();
+        search.AddAroundOleanFile(path);
+        using var checker = new Tenet.Olean.OleanChecker(search);
+        Name module = search.ModuleNameOf(path);
+        checker.Load([(module, path)]);
+        search.AddToolchainFor(checker.Modules[module].LeanVersion);
+        checker.Load([(module, path)]);
+        int missing = 0;
+        foreach (Name n in names)
+        {
+            ConstantInfo? c = checker.Resolve(n);
+            if (c is null)
+            {
+                Console.WriteLine($"{n}: not in {module} or its imports");
+                missing++;
+                continue;
+            }
+            PrintConstant(c);
+        }
+        return missing == 0 ? 0 : 1;
+    }
+
+    private static void PrintConstant(ConstantInfo c)
+    {
+        string lps = c.LevelParams.Length == 0 ? "" : ".{" + string.Join(", ", c.LevelParams.Select(l => l.ToString())) + "}";
+        Console.WriteLine($"{c.KindName} {c.Name}{lps} : {c.Type}");
     }
 
     private static int OleanInfo(string path)
@@ -583,7 +620,8 @@ internal static class Program
             Console.WriteLine("most unfolded definitions:");
             foreach (var (name, count) in TypeChecker.Stats.TopUnfolds(25)) Console.WriteLine($"  {count,9}  {name}");
         }
-        Console.WriteLine($"{(result.Success ? "OK" : "FAILED")}: {result.Checked} checked in {result.ModulesChecked} module{(result.ModulesChecked == 1 ? "" : "s")}, {result.Failures.Count} failed, {result.ModulesLoaded} modules mapped, {result.Elapsed.TotalSeconds:F1}s, {jobs} job{(jobs == 1 ? "" : "s")}");
+        string skipped = result.SkippedOldCodegen > 0 ? $", {result.SkippedOldCodegen} old-codegen helpers skipped" : "";
+        Console.WriteLine($"{(result.Success ? "OK" : "FAILED")}: {result.Checked} checked in {result.ModulesChecked} module{(result.ModulesChecked == 1 ? "" : "s")}, {result.Failures.Count} failed{skipped}, {result.ModulesLoaded} modules mapped, {result.Elapsed.TotalSeconds:F1}s, {jobs} job{(jobs == 1 ? "" : "s")}");
         if (report is not null)
         {
             var doc = new
@@ -598,6 +636,7 @@ internal static class Program
                 modulesMapped = result.ModulesLoaded,
                 @checked = result.Checked,
                 failed = result.Failures.Count,
+                skippedOldCodegen = result.SkippedOldCodegen,
                 jobs,
                 seconds = Math.Round(result.Elapsed.TotalSeconds, 2),
                 failures = result.Failures.Select(f => new { name = f.Name.ToString(), module = f.Module.ToString(), kind = f.Kind, message = f.Message, seconds = Math.Round(f.Elapsed.TotalSeconds, 3) }).ToArray(),

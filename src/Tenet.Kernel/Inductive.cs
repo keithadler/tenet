@@ -12,7 +12,6 @@ public static class Inductive
     private static readonly Name NatSucc = Name.Of("Nat", "succ");
     private static readonly Expr NatZeroExpr = Expr.Const(NatZero, []);
     private static readonly Expr NatSuccExpr = Expr.Const(NatSucc, []);
-    private static readonly Expr StringOfListExpr = Expr.Const(Name.Of("String", "ofList"), []);
     private static readonly Expr CharType = Expr.Const(Name.Of("Char"), []);
     private static readonly Expr ListConsChar = Expr.App(Expr.Const(Name.Of("List", "cons"), [Level.Zero]), CharType);
     private static readonly Expr ListNilChar = Expr.App(Expr.Const(Name.Of("List", "nil"), [Level.Zero]), CharType);
@@ -109,8 +108,9 @@ public static class Inductive
         return v.IsZero ? NatZeroExpr : Expr.App(NatSuccExpr, Expr.NatLit(v - 1));
     }
 
-    /// <summary>Expand a string literal to <c>String.ofList [Char.ofNat c₁, ...]</c>.</summary>
-    public static Expr StringLitToConstructor(Expr e)
+    /// <summary>Expand a string literal to <c>String.ofList [Char.ofNat c₁, ...]</c> (or to the older <c>String.mk</c>;
+    /// see <see cref="Environment.StringLiteralConstructor"/>).</summary>
+    public static Expr StringLitToConstructor(Environment env, Expr e)
     {
         string s = ((StrLiteral)((LitExpr)e).Value).Value;
         var codes = new List<int>();
@@ -123,7 +123,7 @@ public static class Inductive
         {
             result = Expr.MkApp(ListConsChar, Expr.App(CharOfNat, Expr.NatLit(codes[i])), result);
         }
-        return Expr.App(StringOfListExpr, result);
+        return Expr.App(Expr.Const(env.StringLiteralConstructor, []), result);
     }
 
     /// <summary>Iota reduction: reduce a recursor applied to a constructor application.</summary>
@@ -151,7 +151,7 @@ public static class Inductive
         }
         else if (major.IsStrLit)
         {
-            major = whnf(StringLitToConstructor(major));
+            major = whnf(StringLitToConstructor(env, major));
         }
         else
         {
