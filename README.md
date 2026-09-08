@@ -23,9 +23,9 @@ OK: 179215 checked, 0 failed, 0 skipped, 186458 constants, 9.8s, 12 jobs
 ## Status
 
 Version 0.1. Every rule of the reference kernel has a counterpart here. Tenet checks the
-whole Lean 4 core library (`Init`, 58,135 declarations) and Mathlib up to the construction
-of the real numbers (179,215 declarations) with zero failures, deriving the recursors
-itself and comparing them field for field against Lean's own. It checks in parallel; all
+whole Lean 4 core library (`Init`, 58,135 declarations) and 657,351 declarations of
+Mathlib (everything the exporter managed to write on a laptop) with zero failures,
+deriving the recursors itself and comparing them field for field against Lean's own. It checks in parallel; all
 of `Init` takes about six seconds on a laptop. See [docs/status.md](docs/status.md) for
 what has been run, and for the evidence that the checks are not vacuous.
 

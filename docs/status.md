@@ -10,6 +10,14 @@ Updated 2026-09-08.
 | `Init.Core` (Lean 4.34.0-rc2) | 3,468 | 0 failures, 0.4 s |
 | `Init`, the whole core library (Lean 4.34.0-rc2) | 58,135 (59,591 constants) | 0 failures, 7 s wall clock including parsing (12 jobs); 21 s of checking with 1 job |
 | `Mathlib.Data.Real.Basic` and everything it imports (Mathlib master, 2026-09-08) | 179,215 (186,458 constants) | 0 failures, 9.8 s with 12 jobs, 4.2 GB peak |
+| Mathlib, first 5.9 GB of the export (Mathlib master, 2026-09-08; see note) | 657,351 (673,865 constants) | 0 failures, 16 min with `--low-memory` and 8 jobs, 8.4 GB peak |
+
+Note on the Mathlib row: the exporter, not Tenet, ran out of memory on the 17 GB laptop
+after writing 5.9 GB; the file ends mid-line. Tenet checked every complete declaration
+(reported as INCOMPLETE, exit 3) and rejected none. A complete run needs a machine with
+more memory for lean4export. The slowest single declarations took 30 to 88 seconds
+(`PresheafOfModules.freeObj._proof_2`, `AlgebraicGeometry.Proj.awayι_comp_map`), which is
+where kernel performance work would start.
 
 Measured on a 12-core Apple M-series laptop with 17 GB, .NET 10, server GC. The reader
 parses about 145 MB/s and runs concurrently with checking, so wall time is close to the

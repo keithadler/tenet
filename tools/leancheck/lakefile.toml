@@ -1,0 +1,12 @@
+name = "leancheck"
+defaultTargets = ["leancheck"]
+
+[[require]]
+name = "lean4export"
+git = "https://github.com/leanprover/lean4export"
+rev = "411dce7"
+
+[[lean_exe]]
+name = "leancheck"
+root = "Main"
+supportInterpreter = true

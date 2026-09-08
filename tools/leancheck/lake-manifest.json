@@ -1,0 +1,16 @@
+{"version": "1.2.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"url": "https://github.com/leanprover/lean4export",
+   "type": "git",
+   "subDir": null,
+   "scope": "",
+   "rev": "411dce7db58a3afc60ecab2d211acd1042b593dc",
+   "name": "lean4export",
+   "manifestFile": "lake-manifest.json",
+   "inputRev": "411dce7",
+   "inherited": false,
+   "configFile": "lakefile.toml"}],
+ "name": "leancheck",
+ "lakeDir": ".lake",
+ "fixedToolchain": false}

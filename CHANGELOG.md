@@ -22,6 +22,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - Negative `bvar` and `proj` indices are kernel errors rather than crashes.
+- A truncated or malformed export is checked up to the problem and reported as INCOMPLETE
+  (exit status 3) instead of aborting with a parse error.
 
 ## [0.1.0] - 2026-09-08
 
