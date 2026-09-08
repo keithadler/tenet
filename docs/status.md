@@ -33,11 +33,24 @@ the cache off so verdicts are unchanged (docs/design.md, "The failure cache"). T
 declaration went from 9.3 s to 0.5 s (Lean: 0.23 s), and the whole of Mathlib from 6.5 min
 to 6.1 min (the slow declarations were a small share of the total); 1,039 of the 765,497 declarations needed the faithful re-check.
 
-The slowest declarations now take 5 to 13 seconds (`CategoryTheory.instIsIsoIndCoimageImageComparison`,
-`AlgebraicGeometry.Proj.awayι_comp_map`, the `MayerVietorisSquare` lemmas in
-`Mathlib.CategoryTheory.Sites.SheafCohomology`), and the failure cache makes no difference
-to them: they unfold 4 to 10 million definitions in both modes. Whether Lean's kernel does
-the same work on them is the next thing to measure.
+The slowest declarations now take 5 to 13 seconds in the parallel Mathlib run, and the
+failure cache makes no difference to them. Measured against Lean's own kernel on the same
+exports (`LEANCHECK_TIMES=1`, see docs/testing.md), one declaration at a time and one
+thread each:
+
+| Declaration | Lean's kernel | Tenet |
+| --- | --- | --- |
+| `CategoryTheory.instIsIsoIndCoimageImageComparison` | 15.0 s | 11.4 s |
+| `CategoryTheory.instAbelianInd` | 1.7 s | 1.1 s |
+| `MayerVietorisSquare.biprodAddEquiv_symm_biprodIsoProd_hom_toBiprod_apply` | 7.0 s | 4.4 s |
+| `MayerVietorisSquare.sequenceIso._proof_2` | 5.4 s | 3.8 s |
+| whole export up to `Mathlib.CategoryTheory.Abelian.Indization`, 220,649 declarations | 116.5 s of kernel time | 88 s wall with 1 job (parse bound), 28 s with 12 |
+| whole export up to `...SheafCohomology.MayerVietoris`, 300,181 declarations | 226.0 s of kernel time | 42 s wall with 12 jobs |
+
+So these declarations are inherently expensive and Tenet's kernel is now somewhat faster than
+the reference on them single-threaded. In the 12-job runs the same declarations take two to
+three times longer than alone (memory bandwidth and the shared garbage collector), which is
+where the remaining wall-clock time on Mathlib goes.
 
 Measured on a 12-core Apple M-series laptop with 17 GB, .NET 10, server GC. The reader
 parses about 145 MB/s and runs concurrently with checking, so wall time is close to the
