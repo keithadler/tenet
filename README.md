@@ -53,6 +53,48 @@ headline theorems rests on nothing but the three standard axioms, with no `sorry
 same run on `NavierStokes.Comparator.navier_stokes_breakdown_R3` and
 `navier_stokes_breakdown_periodic` gives the same three axioms.
 
+### Reproduce it
+
+You need [elan](https://github.com/leanprover/elan) for the Lean toolchain, the .NET 10 SDK,
+about 25 GB of disk, and roughly 40 minutes for the build. Nothing here is specific to my
+machine.
+
+```bash
+# 1. Get the formalization and build it. Lean's own kernel checks it as it goes.
+git clone https://github.com/openai/NavierStokesAndEuler
+cd NavierStokesAndEuler
+git checkout 8937a8f          # the commit checked below; omit for the latest
+lake exe cache get            # downloads Mathlib's prebuilt .olean files
+lake build                    # about 37 minutes on a 12-core laptop
+
+# 2. Install Tenet and re-check the same build with a different kernel.
+dotnet tool install -g tenet
+tenet check .                 # every module the project built, in place
+
+# 3. Ask what the headline theorems actually rest on.
+tenet axioms .lake/build/lib/lean/Euler/Solution.olean   Euler.euler_breakdown_R3 Euler.exists_compact_smooth_euler_singularity
+tenet axioms .lake/build/lib/lean/NavierStokes/ComparatorSolution.olean   NavierStokes.Comparator.navier_stokes_breakdown_R3   NavierStokes.Comparator.navier_stokes_breakdown_periodic
+```
+
+Expected output from step 2, give or take timing:
+
+```
+OK: 91178 checked in 2486 modules, 0 failed, 13068 modules mapped, 211.8s, 12 jobs
+```
+
+and from step 3, for each of the four theorems, `propext`, `Classical.choice` and
+`Quot.sound` and nothing else.
+
+Two ways to go further. `tenet check . --all` also re-checks every imported module, so
+Mathlib and Lean's core are covered in the same run rather than trusted; it takes several
+times longer and about 10 GB of memory. And `tenet show <module.olean> <name>` prints the
+exact statement of any theorem, which is the thing worth reading before believing any of
+this.
+
+If you get a different answer from the one above, I want to know: open an issue. A
+disagreement is far more likely to be a bug in Tenet than a problem with the proof, and
+that is exactly why a second checker is worth running.
+
 Be precise about what that is worth. It says one more kernel, written from the type theory
 rather than translated from Lean's code, follows every step of those proofs and agrees.
 It says nothing about whether the theorem statements are the ones the
