@@ -56,6 +56,29 @@ Measured on a 12-core Apple M-series laptop with 17 GB, .NET 10, server GC. The 
 parses about 145 MB/s and runs concurrently with checking, so wall time is close to the
 larger of the two.
 
+## Re-checking a published formalization
+
+OpenAI's [NavierStokesAndEuler](https://github.com/openai/NavierStokesAndEuler) (commit
+`8937a8f`, Lean 4.34.0-rc2, built against Mathlib with `lake build`) formalizes finite-time
+blowup for the three-dimensional Navier-Stokes and Euler equations.
+
+| | |
+| --- | --- |
+| `tenet check <project dir>` | 91,178 declarations in 2,486 modules, 0 failures, 212 s, 13,068 modules mapped |
+| `Euler.euler_breakdown_R3` | 89,915 constants, axioms `propext`, `Classical.choice`, `Quot.sound` |
+| `Euler.exists_compact_smooth_euler_singularity` | 94,404 constants, same three axioms |
+| `NavierStokes.Comparator.navier_stokes_breakdown_R3` | 93,446 constants, same three axioms |
+| `NavierStokes.Comparator.navier_stokes_breakdown_periodic` | 89,881 constants, same three axioms |
+
+The axiom lists agree with what Lean itself printed during the build. Mathlib, which those
+proofs rest on, is checked separately (the row above); this run checked the project's own
+modules against it.
+
+What the run establishes is narrow: a kernel written from the type theory rather than
+translated from Lean's code follows every step of those proofs and accepts them, and no
+`sorryAx` or extra axiom appears. Whether the formal statements match the informal problem
+is a separate question that no kernel can answer.
+
 ## Lean versions
 
 The tests and the tables above pin Lean 4.34.0-rc2, but the `.olean` reader and the kernel are

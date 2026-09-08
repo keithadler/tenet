@@ -21,13 +21,44 @@ OK: 765497 checked in 10726 modules, 0 failed, 10726 modules mapped, 390.5s, 12 
 
 ## Status
 
-Version 0.2. Every rule of the reference kernel has a counterpart here. Tenet checks all
+Version 0.4. Every rule of the reference kernel has a counterpart here. Tenet checks all
 of Mathlib and its dependencies, 765,497 declarations in 10,726 modules, directly from the
-compiled `.olean` files in six and a half minutes on a laptop, with zero failures, deriving
+compiled `.olean` files in about six minutes on a laptop, with zero failures, deriving
 the recursors itself and comparing them field for field against Lean's own. Its verdicts
-have been compared with Lean's kernel on about 100,000 deliberately damaged declarations.
+have been compared with Lean's kernel on about 130,000 deliberately damaged declarations.
 See [docs/status.md](docs/status.md) for what has been run and how the checks were shown
 not to be vacuous.
+
+## Re-checking a published formalization
+
+OpenAI's [NavierStokesAndEuler](https://github.com/openai/NavierStokesAndEuler)
+formalizes finite-time blowup for the three-dimensional Navier-Stokes and Euler equations
+in Lean 4. Tenet re-checked it, on commit `8937a8f`:
+
+```
+$ tenet check nse --quiet
+OK: 91178 checked in 2486 modules, 0 failed, 13068 modules mapped, 211.8s, 12 jobs
+
+$ tenet axioms nse/.lake/build/lib/lean/Euler/Solution.olean Euler.euler_breakdown_R3
+Euler.euler_breakdown_R3 depends on 89915 constants and these axioms:
+  propext
+  Classical.choice
+  Quot.sound
+```
+
+Every declaration in the project's own 2,486 modules was accepted, and each of its four
+headline theorems rests on nothing but the three standard axioms, with no `sorryAx`. The
+same run on `NavierStokes.Comparator.navier_stokes_breakdown_R3` and
+`navier_stokes_breakdown_periodic` gives the same three axioms.
+
+Be precise about what that is worth. It says a second kernel, written from the type theory
+rather than translated from Lean's code, follows every step of those proofs and agrees.
+It says nothing about whether the theorem statements are the ones the
+[Clay problem](https://www.claymath.org/millennium/navier-stokes-equation/) asks for;
+reading a formal statement against an informal one is work for people, and it is where the
+scrutiny of any formalization belongs. Tenet did not prove anything here, and finding a
+disagreement would most likely have meant a bug in Tenet, which is how its last four were
+found.
 
 Tenet is not affiliated with the Lean FRO or Microsoft. "Lean" is the name of their
 prover; this project only reads its export format.

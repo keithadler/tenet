@@ -3,7 +3,11 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0] - 2026-09-08
+
+Checked against several Lean toolchains, and used to re-check a published formalization:
+OpenAI's NavierStokesAndEuler (91,178 declarations in 2,486 modules, 0 failures; its four
+headline theorems depend on `propext`, `Classical.choice` and `Quot.sound` only).
 
 ### Added
 - CI checks the `.olean` reader and the kernel against several Lean toolchains, not only the
