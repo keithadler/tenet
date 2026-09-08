@@ -53,7 +53,23 @@ A checker that accepts everything would also produce the table above, so:
   are compared field by field with Lean's for all 615 inductive blocks in `Init`,
   including the nested inductive `Lean.Syntax`.
 
-Results for the large exports are kept current by the `check-prelude` CI job.
+## Agreement with Lean's kernel
+
+`tools/leancheck` replays an export through Lean's own kernel and `tools/Tenet.DiffTest`
+mutates exports and compares the two verdict sets (see `docs/testing.md`). Campaigns so far:
+
+| Export | Variants x mutations | Agreed rejections | Disagreements |
+| --- | --- | --- | --- |
+| Init.Prelude (seed 1) | 40 x 12 | 8,409 | 0 after the WhnfCore fix (7 STRICT before it) |
+| Init.Prelude (seed 2026) | 100 x 10 | 27,048 | 0 |
+| Init.Core (seed 7) | 40 x 12 | 30,156 | 0 real; the flagged items were a harness parsing artifact and a recovery-policy difference after a broken quotient block, both fixed in the tools |
+
+Two Lean-side observations from the same runs, reported for completeness: Lean's kernel
+segfaults (exit 139) on one mutated Init.Core variant and aborted mid-line on another, both
+with ill-formed constants installed unchecked; Tenet reports errors on the same files.
+
+Results for the large exports are kept current by the `check-prelude` CI job, which also
+runs a 15-variant differential test on every push.
 
 ## Implemented
 
