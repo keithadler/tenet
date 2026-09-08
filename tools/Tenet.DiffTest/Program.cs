@@ -67,6 +67,17 @@ internal static class Program
         Console.WriteLine("baseline...");
         Verdicts bt = RunTenet(tenet, export, outDir, "baseline");
         Verdicts bo = RunOracle(oracle, export, outDir, "baseline");
+        if (bo.Incomplete || bo.All.Count == 0)
+        {
+            Console.WriteLine("the oracle produced no verdicts; is `lean` on PATH? (leancheck needs it to find the Lean sysroot)");
+            Console.WriteLine(bo.Raw.Length > 600 ? bo.Raw[..600] : bo.Raw);
+            return 2;
+        }
+        if (bt.Incomplete)
+        {
+            Console.WriteLine("tenet could not read the export");
+            return 2;
+        }
         if (bt.Failed.Count > 0 || bo.Failed.Count > 0)
         {
             Console.WriteLine($"baseline disagreement or failure: tenet failed {bt.Failed.Count}, lean failed {bo.Failed.Count}");
@@ -92,6 +103,11 @@ internal static class Program
             File.WriteAllLines(path, mutated);
             Verdicts t = RunTenet(tenet, path, outDir, $"variant-{v:D3}");
             Verdicts o = RunOracle(oracle, path, outDir, $"variant-{v:D3}");
+            if (o.Incomplete || t.Incomplete)
+            {
+                Console.WriteLine($"variant {v:D3}: mutations [{string.Join(", ", applied)}]; a checker could not read the variant (tenet incomplete: {t.Incomplete}, lean incomplete: {o.Incomplete}); kept for inspection");
+                continue;
+            }
             var tenetAcceptsLeanRejects = o.Failed.Where(n => !t.Failed.Contains(n)).ToList();
             var tenetRejectsLeanAccepts = t.Failed.Where(n => !o.Failed.Contains(n) && o.All.Contains(n)).ToList();
             int agreed = t.Failed.Count(o.Failed.Contains);
@@ -178,7 +194,8 @@ internal static class Program
                 incomplete = true;
             }
         }
-        if (code == 2 || (all.Count == 0 && failed.Count == 0)) incomplete = true;
+        // The oracle ends every complete run with a SUMMARY line; anything else means Lean crashed or aborted.
+        if (code == 2 || (all.Count == 0 && failed.Count == 0) || !output.Contains("SUMMARY ok=", StringComparison.Ordinal)) incomplete = true;
         return new Verdicts(failed, all, incomplete, output);
     }
 

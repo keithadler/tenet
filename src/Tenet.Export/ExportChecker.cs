@@ -5,7 +5,7 @@ using Environment = Tenet.Kernel.Environment;
 namespace Tenet.Export;
 
 /// <summary>A declaration that failed to check, with the kernel's message.</summary>
-public sealed record CheckFailure(Name Name, string Kind, string Message, TimeSpan Elapsed);
+public sealed record CheckFailure(Name Name, string Kind, string Message, TimeSpan Elapsed, string? RaisedAt = null);
 
 /// <summary>Progress callback data.</summary>
 public sealed record CheckProgress(int Index, int Total, Name Current, int Failed, TimeSpan Elapsed);
@@ -97,7 +97,7 @@ public static class ExportChecker
                 }
                 catch (KernelException e)
                 {
-                    result.Failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed));
+                    result.Failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed, e.RaisedAt));
                     if (!options.ContinueOnError)
                     {
                         break;
@@ -395,7 +395,7 @@ public static class ExportChecker
             {
                 lock (tally.Sync)
                 {
-                    tally.Failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed));
+                    tally.Failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed, e.RaisedAt));
                 }
                 if (!options.ContinueOnError)
                 {

@@ -622,8 +622,9 @@ public sealed class TypeChecker
                         Expr inst = ExprOps.Instantiate(body, 0, revArgs.AsSpan(numArgs - m, m).ToArray());
                         r = WhnfCore(Expr.MkRevApp(inst, revArgs.AsSpan(0, numArgs - m)), cheapRec, cheapProj);
                     }
-                    else if (ReferenceEquals(f, f0))
+                    else if (f.Equals(f0))
                     {
+                        // Structural, as in the reference (`f == f0`): a cache hit may hand back an equal but distinct object.
                         Expr? red = ReduceRecursor(e, cheapRec, cheapProj);
                         if (red is not null)
                         {

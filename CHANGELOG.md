@@ -21,6 +21,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 - Expression metadata is packed into one word; constants' universe arrays are interned.
 
 ### Fixed
+- `WhnfCore` compared the reduced head of an application by reference instead of
+  structurally; with a cache hit this could reject declarations Lean accepts. Found by
+  differential testing against Lean's kernel (`tools/leancheck`, `tools/Tenet.DiffTest`).
 - Negative `bvar` and `proj` indices are kernel errors rather than crashes.
 - A truncated or malformed export is checked up to the problem and reported as INCOMPLETE
   (exit status 3) instead of aborting with a parse error.

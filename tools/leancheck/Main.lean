@@ -15,9 +15,10 @@ open Lean
 
 deriving instance BEq for Lean.QuotKind
 
-/-- Raw insertion of a constant, bypassing the kernel. Bound to the symbol Lean exports for its own use. -/
+/-- Raw insertion of a constant, bypassing the kernel. Bound to the symbol Lean exports for its own use;
+both arguments are owned, matching `Lean.Kernel.Environment.add`. -/
 @[extern "lean_environment_add"]
-opaque kernelEnvAdd (env : Kernel.Environment) (cinfo : @& ConstantInfo) : Kernel.Environment
+opaque kernelEnvAdd (env : Kernel.Environment) (cinfo : ConstantInfo) : Kernel.Environment
 
 structure St where
   env : Kernel.Environment
@@ -92,7 +93,7 @@ def checkInductiveBlock (consts : Std.HashMap Name ConstantInfo) (first : Induct
     let mut allCis : List ConstantInfo := []
     for n in blockNames do
       let some (.inductInfo iv) := consts[n]? | return .error s!"block member {n} is not an exported inductive"
-      allCis := allCis ++ [.inductInfo iv]
+      allCis := allCis ++ [ConstantInfo.inductInfo iv]
       let mut ctors : List Constructor := []
       for c in iv.ctors do
         let some (.ctorInfo cv) := consts[c]? | return .error s!"constructor {c} is not exported"
@@ -130,21 +131,30 @@ def checkInductiveBlock (consts : Std.HashMap Name ConstantInfo) (first : Induct
     installRaw cis
   report first.name r
 
-def checkQuot (consts : Std.HashMap Name ConstantInfo) (q : QuotVal) : M Unit := do
-  let r ← (do
-    match ← addChecked .quotDecl with
-    | .error msg => return .error msg
-    | .ok () =>
-      let env := (← get).env
-      for n in [``Quot, ``Quot.mk, ``Quot.lift, ``Quot.ind] do
-        let some (.quotInfo eq) := consts[n]? | continue
-        let some (.quotInfo dq) := env.find? n | return .error s!"kernel did not produce {n}"
-        if !(eq.type == dq.type && eq.levelParams == dq.levelParams && eq.kind == dq.kind) then
-          return .error s!"exported {n} does not match the kernel's"
-      return .ok ())
-  if let .error _ := r then
-    installRaw ([``Quot, ``Quot.mk, ``Quot.lift, ``Quot.ind].filterMap consts.get?)
-  report q.name r
+/-- The quotient block: add it once, then report each of the four constants separately (Tenet reports per constant). -/
+def checkQuot (consts : Std.HashMap Name ConstantInfo) : M Unit := do
+  let names := [``Quot, ``Quot.mk, ``Quot.lift, ``Quot.ind]
+  let exported := names.filter fun n => (consts[n]?).isSome
+  match ← addChecked .quotDecl with
+  | .error msg =>
+    installRaw (exported.filterMap consts.get?)
+    for n in exported do
+      report n (.error msg)
+  | .ok () =>
+    let env := (← get).env
+    let mut anyBad := false
+    for n in exported do
+      let some (.quotInfo eq) := consts[n]? | continue
+      let r : Except String Unit :=
+        match env.find? n with
+        | some (.quotInfo dq) =>
+          if eq.type == dq.type && eq.levelParams == dq.levelParams && eq.kind == dq.kind then .ok ()
+          else .error s!"exported {n} does not match the kernel's"
+        | _ => .error s!"kernel did not produce {n}"
+      if let .error _ := r then anyBad := true
+      report n r
+    if anyBad then
+      installRaw (exported.filterMap consts.get?)
 
 def run (path : String) : IO UInt32 := do
   let handle ← IO.FS.Handle.mk path .read
@@ -169,10 +179,10 @@ def run (path : String) : IO UInt32 := do
         let r ← addChecked (.opaqueDecl v)
         if let .error _ := r then installRaw [ci]
         report name r
-      | .quotInfo v =>
+      | .quotInfo _ =>
         if !quotDone then
           quotDone := true
-          checkQuot consts v
+          checkQuot consts
       | .inductInfo v =>
         -- the block is handled when its first member is reached
         if v.all.head? == some name then

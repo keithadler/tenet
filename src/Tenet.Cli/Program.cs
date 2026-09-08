@@ -360,6 +360,14 @@ internal static class Program
             {
                 Console.WriteLine("    " + line);
             }
+            if (f.RaisedAt is not null)
+            {
+                Console.WriteLine("    raised at:");
+                foreach (string line in f.RaisedAt.Split('\n').Where(l => l.Contains("Tenet.", StringComparison.Ordinal)).Take(25))
+                {
+                    Console.WriteLine("      " + line.Trim());
+                }
+            }
         }
         if (result.Slow.Count > 0 && !quiet)
         {
