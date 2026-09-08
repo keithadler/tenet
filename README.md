@@ -57,6 +57,18 @@ lake env .lake/build/bin/lean4export MyProject.Main -- MyProject.mainTheorem > m
 
 Tenet reads export format 3.x (NDJSON), both the current 3.1 layout and the 3.0 layout.
 
+## Commands
+
+| | |
+| --- | --- |
+| `tenet check FILE` | check every declaration; `--jobs N` (default: all cores), `--only a,b`, `--fail-fast`, `--stats`, `--slow SECONDS`, `--quiet` |
+| `tenet info FILE` | metadata and counts |
+| `tenet show FILE NAME...` | print declarations: type, value, hints, constructor and recursor data |
+
+Checking streams: one thread parses while the others check, so all of `Init` takes about
+seven seconds wall clock including parsing, and a declaration may only refer to constants
+that precede it in the export, exactly as when Lean checked it.
+
 ## Use the kernel as a library
 
 `Tenet.Kernel` has no dependency on the export format. You build expressions, add
