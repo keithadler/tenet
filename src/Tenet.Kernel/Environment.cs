@@ -12,6 +12,7 @@ public sealed class Environment
     private readonly Environment? _parent;
     private readonly HashSet<Name>? _hidden;
     private bool _quotInitialized;
+    private Func<Name, ConstantInfo?>? _resolver;
 
     public Environment() { }
 
@@ -35,6 +36,25 @@ public sealed class Environment
     /// <summary>Record that the quotient constants are present (used when they are added unchecked).</summary>
     public void MarkQuotInitialized() => _quotInitialized = true;
 
+    /// <summary>
+    /// Install a fallback that materializes constants on demand (for example by decoding them from a memory-mapped
+    /// <c>.olean</c> file). A resolved constant is cached as if added unchecked; <see cref="EvictResolved"/> drops the cache.
+    /// The resolver may be called concurrently.
+    /// </summary>
+    public void SetResolver(Func<Name, ConstantInfo?>? resolver) => _resolver = resolver;
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Name, byte> _resolved = new();
+
+    /// <summary>Forget every constant that came from the resolver, so it is decoded again when next needed.</summary>
+    public void EvictResolved()
+    {
+        foreach (Name n in _resolved.Keys)
+        {
+            _constants.TryRemove(n, out _);
+        }
+        _resolved.Clear();
+    }
+
     /// <summary>Constants added to this environment (not its parents), in order of addition.</summary>
     public IReadOnlyList<ConstantInfo> OwnConstants => _order;
 
@@ -51,6 +71,16 @@ public sealed class Environment
             if (env._hidden is not null && env._hidden.Contains(n))
             {
                 return null;
+            }
+            if (env._resolver is Func<Name, ConstantInfo?> resolve)
+            {
+                ConstantInfo? r = resolve(n);
+                if (r is not null)
+                {
+                    r = env._constants.GetOrAdd(n, r);
+                    env._resolved[n] = 0;
+                    return r;
+                }
             }
         }
         return null;

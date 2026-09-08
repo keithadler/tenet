@@ -1192,7 +1192,7 @@ public sealed class TypeChecker
             }
             else
             {
-                if (tn is AppExpr && sn is AppExpr && ReferenceEquals(dt, ds) && HintsOf(dt!).IsRegular)
+                if (tn is AppExpr && sn is AppExpr && dt!.Name.Equals(ds!.Name) && HintsOf(dt).IsRegular)
                 {
                     // Same head with the same height: if the arguments agree we are done without unfolding.
                     if (!FailedBefore(tn, sn))

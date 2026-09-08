@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Reader for Lean 4 .olean files: memory-maps a compiled module and decodes its constants into Tenet kernel objects on demand.</Description>
+    <IsPackable>true</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Tenet.Kernel/Tenet.Kernel.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+</Project>

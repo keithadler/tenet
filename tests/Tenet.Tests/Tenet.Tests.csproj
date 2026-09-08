@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Tenet.Kernel/Tenet.Kernel.csproj" />
     <ProjectReference Include="../../src/Tenet.Export/Tenet.Export.csproj" />
+    <ProjectReference Include="../../src/Tenet.Olean/Tenet.Olean.csproj" />
   </ItemGroup>
 
   <ItemGroup>

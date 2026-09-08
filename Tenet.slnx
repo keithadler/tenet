@@ -3,6 +3,7 @@
     <Project Path="src/Tenet.Cli/Tenet.Cli.csproj" />
     <Project Path="src/Tenet.Export/Tenet.Export.csproj" />
     <Project Path="src/Tenet.Kernel/Tenet.Kernel.csproj" />
+    <Project Path="src/Tenet.Olean/Tenet.Olean.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Tenet.Tests/Tenet.Tests.csproj" />
