@@ -109,8 +109,13 @@ public class DepthTests
                     body = Expr.Lam(Name.Of("x"), Expr.Prop, body);
                 }
                 Expr type = tc.Check(body, []);
-                Assert.True(type is PiExpr);
-                Assert.Equal(depth, type.ToString().Split('→').Length);
+                int pis = 0;
+                for (Expr t = type; t is PiExpr pi; t = pi.Body)
+                {
+                    pis++;
+                }
+                Assert.Equal(depth, pis);
+                Assert.Equal(Expr.Sort(Level.One), tc.Check(type, []));
             }
             catch (Exception e)
             {
