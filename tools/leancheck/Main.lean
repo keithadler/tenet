@@ -29,10 +29,16 @@ structure St where
   env : Kernel.Environment
   ok : Nat := 0
   failed : Nat := 0
+  /-- Wall-clock nanoseconds spent in the kernel by the most recent `addChecked`. -/
+  lastNanos : Nat := 0
+  /-- When set (environment variable `LEANCHECK_TIMES`), print `TIME name microseconds` to stderr per declaration. -/
+  times : Bool := false
 
 abbrev M := StateRefT St IO
 
 def report (name : Name) (r : Except String Unit) : M Unit := do
+  if (← get).times then
+    IO.eprintln s!"TIME {name} {(← get).lastNanos / 1000}"
   match r with
   | .ok () =>
     modify fun s => { s with ok := s.ok + 1 }
@@ -42,7 +48,11 @@ def report (name : Name) (r : Except String Unit) : M Unit := do
     IO.println s!"FAIL {name}: {msg.replace "\n" " "}"
 
 def addChecked (d : Declaration) : M (Except String Unit) := do
-  match (← get).env.addDeclCore 0 0 d (cancelTk? := none) with
+  let t0 ← IO.monoNanosNow
+  let r := (← get).env.addDeclCore 0 0 d (cancelTk? := none)
+  let t1 ← IO.monoNanosNow
+  modify fun s => { s with lastNanos := t1 - t0 }
+  match r with
   | .ok env => modify fun s => { s with env := env }; return .ok ()
   | .error ex =>
     let opts : Options := ({} : Options).setBool `pp.universes true
@@ -170,7 +180,8 @@ def run (path : String) : IO UInt32 := do
   let exported ← Export.parseStream (IO.FS.Stream.ofHandle handle)
   let kenv := (← mkEmptyEnvironment).toKernelEnv
   let consts := exported.constMap
-  let (_, st) ← (StateRefT'.run (s := { env := kenv : St }) do
+  let times := (← IO.getEnv "LEANCHECK_TIMES").isSome
+  let (_, st) ← (StateRefT'.run (s := { env := kenv, times : St }) do
     let mut quotDone := false
     for name in exported.constOrder do
       let some ci := consts[name]? | continue

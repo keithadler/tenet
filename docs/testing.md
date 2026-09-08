@@ -85,6 +85,11 @@ parser and replays it through `Lean.Kernel.Environment.addDeclCore`, printing `O
 the export exactly as Tenet does, and installing a failed declaration unchecked so later
 ones can still be judged, again as Tenet does.
 
+With `LEANCHECK_TIMES=1` in the environment, leancheck also prints `TIME name microseconds`
+to stderr for every declaration, the wall-clock time Lean's kernel spent in `addDeclCore`.
+This is the ground truth for Tenet's performance work: the same export checked by both,
+declaration by declaration.
+
 `tools/Tenet.DiffTest` produces mutated copies of an export (swapped proofs, off-by-one
 de Bruijn indices, permuted universe arguments, swapped recursor rules, wrong constructor
 metadata, and semantically neutral edits such as binder annotations and reducibility
