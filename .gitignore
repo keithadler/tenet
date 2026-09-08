@@ -18,3 +18,6 @@ artifacts/
 # Large Lean exports are generated, never committed (see docs/testing.md)
 tests/exports/*.ndjson
 !tests/fixtures/*.ndjson
+
+# Lake build outputs and downloaded Lean packages (tools/leancheck)
+.lake/

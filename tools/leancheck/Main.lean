@@ -13,6 +13,8 @@ import Export.Parse
 
 open Lean
 
+deriving instance BEq for Lean.QuotKind
+
 /-- Raw insertion of a constant, bypassing the kernel. Bound to the symbol Lean exports for its own use. -/
 @[extern "lean_environment_add"]
 opaque kernelEnvAdd (env : Kernel.Environment) (cinfo : @& ConstantInfo) : Kernel.Environment

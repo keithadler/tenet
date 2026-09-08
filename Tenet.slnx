@@ -7,4 +7,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Tenet.Tests/Tenet.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Tenet.DiffTest/Tenet.DiffTest.csproj" />
+  </Folder>
 </Solution>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <Description>Differential tester: mutates an export and compares Tenet's verdicts with Lean's kernel, declaration by declaration.</Description>
+  </PropertyGroup>
+
+</Project>

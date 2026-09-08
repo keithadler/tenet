@@ -1,9 +1,0 @@
-{"plugins": [],
- "package": "leancheck",
- "options": {},
- "name": "Main",
- "isModule": false,
- "importArts":
- {"Export.Parse":
-  [["/Users/admin/tenet/tools/leancheck/.lake/packages/lean4export/.lake/build/lib/lean/Export/Parse.olean"]]},
- "dynlibs": []}
