@@ -57,13 +57,16 @@ everything else unchecked, which is the quick way to iterate on one failure.
 
 The checker keeps every expression of the export in memory (later declarations refer to
 earlier ones by table index, and the environment needs every constant's type and value
-for unfolding). Expect roughly 5 bytes of resident memory per byte of export with the
-default server garbage collector, and about a third of that with the workstation
-collector, which is slower but frugal:
+for unfolding). Measured on `Init` (347 MB export): 3.7 GB peak with the default server garbage
+collector, 0.8 GB with the workstation collector, which is about 3.5 times slower on
+twelve cores:
 
 ```bash
-DOTNET_gcServer=0 tenet check Mathlib.ndjson --jobs 4
+tenet check Mathlib.ndjson --low-memory
 ```
+
+`--low-memory` relaunches the checker with the workstation collector; the equivalent by
+hand is `DOTNET_gcServer=0`.
 
 Intermediate settings keep server GC but cap its appetite:
 

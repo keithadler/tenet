@@ -26,6 +26,7 @@ internal static class Program
           --jobs <n>                  check n declarations concurrently (default: number of cores; 1 = sequential)
           --slow <seconds>            report declarations slower than this (default 1)
           --stack-mb <n>              stack size for each checking thread, in MB (default 512)
+          --low-memory                use the workstation garbage collector (about a third of the memory, slower)
 
         exit status: 0 all declarations checked, 1 some failed, 2 usage or file error
         """;
@@ -36,6 +37,11 @@ internal static class Program
         {
             Console.WriteLine(Usage);
             return args.Length == 0 ? 2 : 0;
+        }
+        if (Array.IndexOf(args, "--low-memory") >= 0 && System.Environment.GetEnvironmentVariable("TENET_LOW_MEMORY") is null)
+        {
+            // The GC flavor is fixed at startup: relaunch ourselves with the workstation collector.
+            return Relaunch(args);
         }
         try
         {
@@ -58,6 +64,27 @@ internal static class Program
             Console.Error.WriteLine("error: " + e.Message);
             return 2;
         }
+    }
+
+    private static int Relaunch(string[] args)
+    {
+        string? exe = System.Environment.ProcessPath;
+        if (exe is null)
+        {
+            return Fail("--low-memory: cannot determine the executable to relaunch; set DOTNET_gcServer=0 instead");
+        }
+        var psi = new ProcessStartInfo(exe) { UseShellExecute = false };
+        foreach (string a in args)
+        {
+            psi.ArgumentList.Add(a);
+        }
+        psi.Environment["TENET_LOW_MEMORY"] = "1";
+        psi.Environment["DOTNET_gcServer"] = "0";
+        psi.Environment["DOTNET_gcConcurrent"] = "0";
+        psi.Environment["DOTNET_GCConserveMemory"] = "5";
+        using Process p = Process.Start(psi) ?? throw new InvalidOperationException("failed to relaunch");
+        p.WaitForExit();
+        return p.ExitCode;
     }
 
     private static int Fail(string msg)
@@ -248,6 +275,8 @@ internal static class Program
                     break;
                 case "--stack-mb":
                     i++;
+                    break;
+                case "--low-memory":
                     break;
                 default:
                     return Fail($"unknown option '{args[i]}'\n\n{Usage}");
