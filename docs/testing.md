@@ -52,3 +52,21 @@ default settings the checker keeps going after a failure, installing the exporte
 view of the failed declaration so that later ones can still be checked; use `--fail-fast`
 to stop at the first one. `--only Foo.bar,Foo.baz` checks just those declarations and adds
 everything else unchecked, which is the quick way to iterate on one failure.
+
+## Memory on very large exports
+
+The checker keeps every expression of the export in memory (later declarations refer to
+earlier ones by table index, and the environment needs every constant's type and value
+for unfolding). Expect roughly 5 bytes of resident memory per byte of export with the
+default server garbage collector, and about a third of that with the workstation
+collector, which is slower but frugal:
+
+```bash
+DOTNET_gcServer=0 tenet check Mathlib.ndjson --jobs 4
+```
+
+Intermediate settings keep server GC but cap its appetite:
+
+```bash
+DOTNET_GCHeapCount=4 DOTNET_GCConserveMemory=7 tenet check Mathlib.ndjson
+```

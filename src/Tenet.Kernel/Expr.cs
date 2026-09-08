@@ -80,23 +80,33 @@ public sealed class StrLiteral : Literal
 /// </summary>
 public abstract class Expr : IEquatable<Expr>
 {
-    public readonly ExprKind Kind;
     public readonly int Hash;
-    /// <summary>One more than the largest loose bound variable index, or zero if the expression is closed.</summary>
-    public readonly int LooseBVarRange;
-    public readonly bool HasFVar;
-    public readonly bool HasLevelParam;
+    // kind (4 bits) | hasFVar | hasLevelParam | loose bvar range (26 bits): one word of metadata per node,
+    // because an export of all of Mathlib holds over a hundred million nodes.
+    private readonly uint _meta;
+    private const int RangeBits = 26;
+    private const uint RangeMask = (1u << RangeBits) - 1;
+    private const uint FVarBit = 1u << RangeBits;
+    private const uint LevelParamBit = 1u << (RangeBits + 1);
+    private const int KindShift = RangeBits + 2;
 
     private protected Expr(ExprKind kind, int hash, int looseBVarRange, bool hasFVar, bool hasLevelParam)
     {
-        Kind = kind;
+        if ((uint)looseBVarRange > RangeMask)
+        {
+            throw new KernelException("expression has too many loose bound variables");
+        }
         Hash = hash;
-        LooseBVarRange = looseBVarRange;
-        HasFVar = hasFVar;
-        HasLevelParam = hasLevelParam;
+        _meta = (uint)looseBVarRange | (hasFVar ? FVarBit : 0) | (hasLevelParam ? LevelParamBit : 0) | ((uint)kind << KindShift);
     }
 
-    public bool HasLooseBVars => LooseBVarRange > 0;
+    public ExprKind Kind => (ExprKind)(_meta >> KindShift);
+    /// <summary>One more than the largest loose bound variable index, or zero if the expression is closed.</summary>
+    public int LooseBVarRange => (int)(_meta & RangeMask);
+    public bool HasFVar => (_meta & FVarBit) != 0;
+    public bool HasLevelParam => (_meta & LevelParamBit) != 0;
+
+    public bool HasLooseBVars => (_meta & RangeMask) != 0;
 
     // ---- well-known constants ----
 
