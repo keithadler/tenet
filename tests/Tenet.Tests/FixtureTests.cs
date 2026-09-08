@@ -145,3 +145,46 @@ public class FixtureTests
         Assert.Contains("rule 0 rhs", ex.Message, StringComparison.Ordinal);
     }
 }
+
+public class ReaderRobustnessTests
+{
+    private static string Fixture(string name) => Path.Combine(AppContext.BaseDirectory, "fixtures", name);
+
+    [Fact]
+    public void TruncatedFileIsAFormatError()
+    {
+        byte[] bytes = File.ReadAllBytes(Fixture("Nat.add_succ.ndjson"));
+        using var ms = new MemoryStream(bytes, 0, bytes.Length - 40);
+        var ex = Assert.Throws<ExportFormatException>(() => NdjsonReader.Read(ms));
+        Assert.True(ex.Line > 0);
+    }
+
+    [Fact]
+    public void OutOfSequenceIndexIsAFormatError()
+    {
+        string text = "{\"meta\":{\"exporter\":{\"name\":\"x\",\"version\":\"3.1.0\"},\"lean\":{\"githash\":\"\",\"version\":\"\"},\"format\":{\"version\":\"3.1.0\"}}}\n"
+                    + "{\"in\":2,\"str\":{\"pre\":0,\"str\":\"Nat\"}}\n";
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text));
+        var ex = Assert.Throws<ExportFormatException>(() => NdjsonReader.Read(ms));
+        Assert.Contains("out of sequence", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UnsupportedFormatVersionIsRejected()
+    {
+        string text = "{\"meta\":{\"exporter\":{\"name\":\"x\",\"version\":\"9.0.0\"},\"lean\":{\"githash\":\"\",\"version\":\"\"},\"format\":{\"version\":\"9.0.0\"}}}\n";
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text));
+        var ex = Assert.Throws<ExportFormatException>(() => NdjsonReader.Read(ms));
+        Assert.Contains("unsupported export format", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ForwardReferenceInsideTablesIsAFormatError()
+    {
+        string text = "{\"meta\":{\"exporter\":{\"name\":\"x\",\"version\":\"3.1.0\"},\"lean\":{\"githash\":\"\",\"version\":\"\"},\"format\":{\"version\":\"3.1.0\"}}}\n"
+                    + "{\"ie\":0,\"app\":{\"fn\":5,\"arg\":6}}\n";
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text));
+        var ex = Assert.Throws<ExportFormatException>(() => NdjsonReader.Read(ms));
+        Assert.Contains("undefined expression", ex.Message, StringComparison.Ordinal);
+    }
+}
