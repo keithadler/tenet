@@ -220,9 +220,14 @@ A checker that accepted everything would produce the same clean output, so:
   proof: at least 95% must be rejected, with no collateral damage. Recursor rules and
   theorem statements are tampered with in the fixtures too.
 - **Its verdicts are compared with Lean's own kernel**, declaration by declaration, on about
-  130,000 deliberately damaged declarations. That comparison has found five real bugs, all of
-  them in Tenet, including a head comparison that used reference equality where the reference
-  compares structurally, and a recursor walk that accepted only one binder shape.
+  130,000 deliberately damaged declarations. That comparison has found two real kernel bugs,
+  both in Tenet: a head comparison that used reference equality where the reference compares
+  structurally, and a recursor walk that accepted only one binder shape.
+- **Other methods found three more, also all in Tenet**: checking older toolchains found a
+  hardcoded string-literal constant that is actually version dependent, fuzzing the `.olean`
+  reader found a corruption path that threw the wrong exception, and profiling found an
+  unbounded printer that could exhaust memory while formatting an error. No bug in Lean's
+  kernel has been found.
 - **It derives rather than trusts.** Recursors and constructor metadata are re-derived from
   the types and constructors alone and compared field by field with what Lean wrote.
 
