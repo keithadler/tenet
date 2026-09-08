@@ -32,6 +32,34 @@ public class FixtureTests
         Assert.IsType<TheoremInfo>(result.Environment.Get(Name.Of("Nat", "add_succ")));
     }
 
+    [Theory]
+    [InlineData("Nat.add_succ.ndjson")]
+    [InlineData("Nat.add_succ.v3.0.ndjson")]
+    public void ParallelModeAgreesWithSequential(string fixture)
+    {
+        ExportFile file = NdjsonReader.ReadFile(Fixture(fixture));
+        CheckResult seq = ExportChecker.Check(file, new CheckOptions { Jobs = 1 });
+        CheckResult par = ExportChecker.Check(file, new CheckOptions { Jobs = 4 });
+        Assert.True(par.Success, string.Join("\n", par.Failures.Select(f => f.Name + ": " + f.Message)));
+        Assert.Equal(seq.Checked, par.Checked);
+        Assert.Equal(seq.Environment.Count, par.Environment.Count);
+    }
+
+    [Fact]
+    public void ParallelModeRejectsForwardReferences()
+    {
+        ExportFile file = NdjsonReader.ReadFile(Fixture("Nat.add_succ.ndjson"));
+        // Move the theorem to the front: it now refers to constants declared after it.
+        var reordered = new ExportFile();
+        ExportDecl thm = file.Decls.First(d => d is ExportTheorem);
+        reordered.Decls.Add(thm);
+        reordered.Decls.AddRange(file.Decls.Where(d => !ReferenceEquals(d, thm)));
+        CheckResult par = ExportChecker.Check(reordered, new CheckOptions { Jobs = 4 });
+        Assert.Contains(par.Failures, f => f.Name.Equals(thm.DisplayName) && f.Message.Contains("declared later", StringComparison.Ordinal));
+        CheckResult seq = ExportChecker.Check(reordered, new CheckOptions { Jobs = 1 });
+        Assert.Contains(seq.Failures, f => f.Name.Equals(thm.DisplayName));
+    }
+
     [Fact]
     public void DerivedRecursorMatchesLeanExactly()
     {

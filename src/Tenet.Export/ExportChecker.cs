@@ -25,6 +25,13 @@ public sealed class CheckOptions
     public TimeSpan SlowThreshold { get; init; } = TimeSpan.FromSeconds(1);
 
     public Action<CheckProgress>? Progress { get; init; }
+
+    /// <summary>
+    /// Number of declarations to check concurrently. With more than one job, every constant is first added
+    /// unchecked, then each declaration is checked against that environment; a declaration may still only refer
+    /// to constants that precede it in the export, exactly as in sequential mode.
+    /// </summary>
+    public int Jobs { get; init; } = 1;
 }
 
 public sealed class CheckResult
@@ -44,6 +51,10 @@ public static class ExportChecker
     public static CheckResult Check(ExportFile file, CheckOptions? options = null)
     {
         options ??= new CheckOptions();
+        if (options.Jobs > 1)
+        {
+            return CheckParallel(file, options);
+        }
         var result = new CheckResult();
         var env = new Environment();
         result.Environment = env;
@@ -329,4 +340,251 @@ public static class ExportChecker
     }
 
     private static string Fmt(Name[] ns) => "[" + string.Join(", ", ns.Select(n => n.ToString())) + "]";
+
+    // ------------------------------------------------------------------ parallel mode
+
+    private static CheckResult CheckParallel(ExportFile file, CheckOptions options)
+    {
+        var result = new CheckResult();
+        var env = new Environment();
+        result.Environment = env;
+        var total = Stopwatch.StartNew();
+        var failures = new List<CheckFailure>();
+        var slow = new List<(Name, TimeSpan)>();
+        var sync = new object();
+
+        // Phase 1: every constant, unchecked, and the position of each name in the export.
+        var position = new Dictionary<Name, int>();
+        var duplicates = new HashSet<int>();
+        for (int i = 0; i < file.Decls.Count; i++)
+        {
+            ExportDecl decl = file.Decls[i];
+            bool dup = false;
+            foreach (Name n in NamesOf(decl))
+            {
+                if (!position.TryAdd(n, i))
+                {
+                    dup = true;
+                }
+            }
+            if (dup)
+            {
+                duplicates.Add(i);
+                failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, $"'{decl.DisplayName}' has already been declared", TimeSpan.Zero));
+                continue;
+            }
+            AddUnchecked(env, decl);
+        }
+
+        // Phase 2: check each declaration against the complete environment.
+        int done = 0;
+        int checkedCount = 0;
+        int skipped = 0;
+        using var cts = new CancellationTokenSource();
+        var po = new ParallelOptions { MaxDegreeOfParallelism = options.Jobs, CancellationToken = cts.Token };
+        try
+        {
+            Parallel.For(0, file.Decls.Count, po, i =>
+            {
+                ExportDecl decl = file.Decls[i];
+                if (duplicates.Contains(i))
+                {
+                    return;
+                }
+                bool check = options.Only is null || ShouldCheck(decl, options.Only);
+                var sw = Stopwatch.StartNew();
+                if (!check)
+                {
+                    Interlocked.Increment(ref skipped);
+                }
+                else
+                {
+                    try
+                    {
+                        CheckOrder(decl, i, position);
+                        ValidateDecl(env, decl, options.CompareInductive);
+                        Interlocked.Increment(ref checkedCount);
+                    }
+                    catch (KernelException e)
+                    {
+                        lock (sync)
+                        {
+                            failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed));
+                        }
+                        if (!options.ContinueOnError)
+                        {
+                            cts.Cancel();
+                        }
+                    }
+                    sw.Stop();
+                    if (sw.Elapsed >= options.SlowThreshold)
+                    {
+                        lock (sync)
+                        {
+                            slow.Add((decl.DisplayName, sw.Elapsed));
+                        }
+                    }
+                }
+                int n = Interlocked.Increment(ref done);
+                if (options.Progress is not null)
+                {
+                    int failed;
+                    lock (sync)
+                    {
+                        failed = failures.Count;
+                    }
+                    options.Progress(new CheckProgress(n, file.Decls.Count, decl.DisplayName, failed, total.Elapsed));
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // fail-fast requested
+        }
+        result.Checked = checkedCount;
+        result.Skipped = skipped;
+        result.Failures.AddRange(failures.OrderBy(f => position.TryGetValue(f.Name, out int p) ? p : int.MaxValue));
+        result.Slow.AddRange(slow);
+        result.Elapsed = total.Elapsed;
+        return result;
+    }
+
+    private static IEnumerable<Name> NamesOf(ExportDecl decl)
+    {
+        switch (decl)
+        {
+            case ExportInductive ind:
+                foreach (ExportInductiveVal t in ind.Types)
+                {
+                    yield return t.Name;
+                }
+                foreach (ExportConstructorVal c in ind.Ctors)
+                {
+                    yield return c.Name;
+                }
+                foreach (ExportRecursorVal r in ind.Recs)
+                {
+                    yield return r.Name;
+                }
+                break;
+            case ExportMutualDefinition m:
+                foreach (ExportDefinition d in m.Definitions)
+                {
+                    yield return d.Name;
+                }
+                break;
+            default:
+                yield return decl.DisplayName;
+                break;
+        }
+    }
+
+    private static IEnumerable<Expr> ExprsOf(ExportDecl decl)
+    {
+        switch (decl)
+        {
+            case ExportAxiom a:
+                yield return a.Type;
+                break;
+            case ExportDefinition d:
+                yield return d.Type;
+                yield return d.Value;
+                break;
+            case ExportTheorem t:
+                yield return t.Type;
+                yield return t.Value;
+                break;
+            case ExportOpaque o:
+                yield return o.Type;
+                yield return o.Value;
+                break;
+            case ExportQuot q:
+                yield return q.Type;
+                break;
+            case ExportMutualDefinition m:
+                foreach (ExportDefinition d in m.Definitions)
+                {
+                    yield return d.Type;
+                    yield return d.Value;
+                }
+                break;
+            case ExportInductive ind:
+                foreach (ExportInductiveVal t in ind.Types)
+                {
+                    yield return t.Type;
+                }
+                foreach (ExportConstructorVal c in ind.Ctors)
+                {
+                    yield return c.Type;
+                }
+                foreach (ExportRecursorVal r in ind.Recs)
+                {
+                    yield return r.Type;
+                    foreach (ExportRecursorRule rule in r.Rules)
+                    {
+                        yield return rule.Rhs;
+                    }
+                }
+                break;
+        }
+    }
+
+    /// <summary>A declaration may only refer to constants that precede it (or belong to its own block).</summary>
+    private static void CheckOrder(ExportDecl decl, int index, Dictionary<Name, int> position)
+    {
+        foreach (Expr e in ExprsOf(decl))
+        {
+            ExprOps.ForEach(e, (t, _) =>
+            {
+                if (t is ConstExpr c && position.TryGetValue(c.Name, out int p) && p > index)
+                {
+                    throw new KernelException($"'{decl.DisplayName}' refers to '{c.Name}', which is declared later in the export");
+                }
+                return true;
+            });
+        }
+    }
+
+    /// <summary>Check one declaration whose constants are already present in <paramref name="env"/>.</summary>
+    public static void ValidateDecl(Environment env, ExportDecl decl, bool compareInductive = true)
+    {
+        switch (decl)
+        {
+            case ExportAxiom a:
+                env.Validate(new AxiomDecl(a.Name, a.LevelParams, a.Type, a.IsUnsafe));
+                break;
+            case ExportDefinition d:
+                env.Validate(new DefinitionDecl(d.Name, d.LevelParams, d.Type, d.Value, d.Hints, d.Safety, d.All));
+                break;
+            case ExportTheorem t:
+                env.Validate(new TheoremDecl(t.Name, t.LevelParams, t.Type, t.Value, t.All));
+                break;
+            case ExportOpaque o:
+                env.Validate(new OpaqueDecl(o.Name, o.LevelParams, o.Type, o.Value, o.IsUnsafe, o.All));
+                break;
+            case ExportMutualDefinition m:
+                env.Validate(new MutualDefinitionDecl(m.Definitions.Select(d => new DefinitionDecl(d.Name, d.LevelParams, d.Type, d.Value, d.Hints, d.Safety, d.All)).ToArray()));
+                break;
+            case ExportQuot q:
+                {
+                    // Re-derive the quotient constants with the exporter's versions hidden, then compare.
+                    Environment scratch = env.CreateChild([Quot.QuotName, Quot.QuotMk, Quot.QuotLift, Quot.QuotInd]);
+                    scratch.Add(new QuotDecl());
+                    CompareQuot(scratch, q);
+                    break;
+                }
+            case ExportInductive ind:
+                {
+                    Environment scratch = env.CreateChild(NamesOf(ind));
+                    scratch.Add(ToInductiveDecl(ind));
+                    if (compareInductive)
+                    {
+                        CompareInductive(scratch, ind);
+                    }
+                    break;
+                }
+            default:
+                throw new KernelException("unknown exported declaration kind " + decl.Kind);
+        }
+    }
 }

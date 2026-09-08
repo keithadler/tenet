@@ -28,9 +28,19 @@ public enum BinderInfo : byte
 /// <summary>Identity of a free variable. Fresh identities are globally unique within a process.</summary>
 public readonly record struct FVarId(ulong Value)
 {
-    private static long s_next;
+    private static int s_nextThread;
+    [ThreadStatic] private static ulong t_prefix;
+    [ThreadStatic] private static ulong t_next;
 
-    public static FVarId Fresh() => new((ulong)Interlocked.Increment(ref s_next));
+    /// <summary>Globally unique without contention: each thread owns a block of identifiers.</summary>
+    public static FVarId Fresh()
+    {
+        if (t_prefix == 0)
+        {
+            t_prefix = (ulong)Interlocked.Increment(ref s_nextThread) << 40;
+        }
+        return new(t_prefix | ++t_next);
+    }
 
     public override string ToString() => "_fvar." + Value;
 }

@@ -14,19 +14,20 @@ from it, and it shares no code with Lean. That is the point: a proof that surviv
 independent kernels is a proof you can trust a little more.
 
 ```
-$ tenet check Init.ndjson
-Init.ndjson: 58135 declarations, 6128566 expressions, 295965 names, 577 levels (parsed in 6.3s)
+$ tenet check Mathlib.Data.Real.Basic.ndjson
+Mathlib.Data.Real.Basic.ndjson: 179215 declarations, 12858402 expressions, 1004563 names, 2230 levels (parsed in 11.1s)
   exported by lean4export 3.1.0, format 3.1.0, Lean 4.34.0-rc2 (6a10ac8c2)
-OK: 58135 checked, 0 failed, 0 skipped, 59591 constants, 36.9s
+OK: 179215 checked, 0 failed, 0 skipped, 186458 constants, 9.8s, 12 jobs
 ```
 
 ## Status
 
-Version 0.1. Every rule of the reference kernel has a counterpart here, and Tenet checks
-the whole Lean 4 core library (`Init`, 58,135 declarations) with zero failures, deriving
-the recursors itself and comparing them field for field against Lean's own. See
-[docs/status.md](docs/status.md) for what has been run, and for the evidence that the
-checks are not vacuous.
+Version 0.1. Every rule of the reference kernel has a counterpart here. Tenet checks the
+whole Lean 4 core library (`Init`, 58,135 declarations) and Mathlib up to the construction
+of the real numbers (179,215 declarations) with zero failures, deriving the recursors
+itself and comparing them field for field against Lean's own. It checks in parallel; all
+of `Init` takes about six seconds on a laptop. See [docs/status.md](docs/status.md) for
+what has been run, and for the evidence that the checks are not vacuous.
 
 Tenet is not affiliated with the Lean FRO or Microsoft. "Lean" is the name of their
 prover; this project only reads its export format.

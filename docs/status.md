@@ -8,10 +8,25 @@ Updated 2026-09-08.
 | `tests/fixtures/Nat.add_succ.v3.0.ndjson` (format 3.0.0, Lean 4.27.0-rc1) | 20 | checks |
 | `Init.Prelude` (Lean 4.34.0-rc2) | 1,824 | 0 failures, 0.2 s |
 | `Init.Core` (Lean 4.34.0-rc2) | 3,468 | 0 failures, 0.4 s |
-| `Init`, the whole core library (Lean 4.34.0-rc2) | 58,135 (59,591 constants) | 0 failures, 36.9 s |
+| `Init`, the whole core library (Lean 4.34.0-rc2) | 58,135 (59,591 constants) | 0 failures, 6.3 s with 12 jobs, 21 s with 1 job |
+| `Mathlib.Data.Real.Basic` and everything it imports (Mathlib master, 2026-09-08) | 179,215 (186,458 constants) | 0 failures, 9.8 s with 12 jobs, 4.2 GB peak |
 
-Times are check time only (parsing the 347 MB `Init` export adds about 6 s) on an Apple
-M-series laptop, single-threaded, .NET 10.
+Times are check time only (parsing adds about 6 s for the 347 MB `Init` export and 11 s
+for the 794 MB Mathlib one) on a 12-core Apple M-series laptop with 17 GB, .NET 10, server GC.
+
+## Parallel checking
+
+`tenet check` uses all cores by default (`--jobs 1` for the sequential mode). In parallel
+mode every constant is first installed unchecked, then each declaration is checked against
+that environment on its own thread, with two extra rules that recover exactly the
+sequential semantics: a declaration may only refer to constants that precede it in the
+export, and duplicate names are reported. Inductive and quotient blocks are re-derived in
+a child environment that hides the exporter's versions of their constants, then compared.
+The unit tests check that parallel and sequential mode agree and that a forward reference
+is rejected in both.
+
+The speedup comes almost entirely from the .NET server garbage collector; with the
+workstation collector the checker is allocation-bound and twelve threads gain nothing.
 
 ## Evidence the checks are real
 

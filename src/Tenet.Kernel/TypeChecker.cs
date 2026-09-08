@@ -27,6 +27,9 @@ public sealed class TypeChecker
     /// <summary>Process-wide counters of kernel work, for diagnostics and for proving a run was not vacuous.</summary>
     public static class Stats
     {
+        /// <summary>Counting is off by default: atomic increments on hot paths serialize parallel checking.</summary>
+        public static bool Enabled { get; set; }
+
         private static long s_infer, s_whnf, s_whnfCore, s_defEq, s_unfold, s_iota, s_natLit;
         public static long Infer => s_infer;
         public static long Whnf => s_whnf;
@@ -35,13 +38,55 @@ public sealed class TypeChecker
         public static long Unfold => s_unfold;
         public static long Iota => s_iota;
         public static long NatLit => s_natLit;
-        internal static void CountInfer() => Interlocked.Increment(ref s_infer);
-        internal static void CountWhnf() => Interlocked.Increment(ref s_whnf);
-        internal static void CountWhnfCore() => Interlocked.Increment(ref s_whnfCore);
-        internal static void CountDefEq() => Interlocked.Increment(ref s_defEq);
-        internal static void CountUnfold() => Interlocked.Increment(ref s_unfold);
-        internal static void CountIota() => Interlocked.Increment(ref s_iota);
-        internal static void CountNatLit() => Interlocked.Increment(ref s_natLit);
+        internal static void CountInfer()
+        {
+            if (Enabled)
+            {
+                Interlocked.Increment(ref s_infer);
+            }
+        }
+        internal static void CountWhnf()
+        {
+            if (Enabled)
+            {
+                Interlocked.Increment(ref s_whnf);
+            }
+        }
+        internal static void CountWhnfCore()
+        {
+            if (Enabled)
+            {
+                Interlocked.Increment(ref s_whnfCore);
+            }
+        }
+        internal static void CountDefEq()
+        {
+            if (Enabled)
+            {
+                Interlocked.Increment(ref s_defEq);
+            }
+        }
+        internal static void CountUnfold()
+        {
+            if (Enabled)
+            {
+                Interlocked.Increment(ref s_unfold);
+            }
+        }
+        internal static void CountIota()
+        {
+            if (Enabled)
+            {
+                Interlocked.Increment(ref s_iota);
+            }
+        }
+        internal static void CountNatLit()
+        {
+            if (Enabled)
+            {
+                Interlocked.Increment(ref s_natLit);
+            }
+        }
         public static void Reset()
         {
             s_infer = s_whnf = s_whnfCore = s_defEq = s_unfold = s_iota = s_natLit = 0;

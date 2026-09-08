@@ -93,4 +93,16 @@ public class LargeExportTests
 
     [Fact]
     public void InitCore() => CheckExport("Init.Core.ndjson");
+
+    [Fact]
+    public void InitCoreParallel()
+    {
+        string? path = Find("Init.Core.ndjson");
+        if (path is null)
+        {
+            return;
+        }
+        CheckResult result = RunOnBigStack(() => ExportChecker.Check(NdjsonReader.ReadFile(path), new CheckOptions { Jobs = 8 }));
+        Assert.True(result.Success, string.Join("\n", result.Failures.Take(10).Select(f => f.Name + ": " + f.Message)));
+    }
 }

@@ -10,18 +10,26 @@ public sealed class Environment
     private readonly Dictionary<Name, ConstantInfo> _constants = new();
     private readonly List<ConstantInfo> _order = new();
     private readonly Environment? _parent;
+    private readonly HashSet<Name>? _hidden;
     private bool _quotInitialized;
 
     public Environment() { }
 
-    private Environment(Environment parent)
+    private Environment(Environment parent, HashSet<Name>? hidden)
     {
         _parent = parent;
-        _quotInitialized = parent._quotInitialized;
+        _hidden = hidden;
+        _quotInitialized = parent._quotInitialized && (hidden is null || !hidden.Contains(Quot.QuotName));
     }
 
     /// <summary>A child environment that layers new constants over this one.</summary>
-    public Environment CreateChild() => new(this);
+    public Environment CreateChild() => new(this, null);
+
+    /// <summary>
+    /// A child environment in which the parent's <paramref name="hidden"/> constants are invisible, so a declaration
+    /// already present in the parent can be re-derived and checked as if it were new.
+    /// </summary>
+    public Environment CreateChild(IEnumerable<Name> hidden) => new(this, new HashSet<Name>(hidden));
 
     public bool QuotInitialized => _quotInitialized;
     /// <summary>Record that the quotient constants are present (used when they are added unchecked).</summary>
@@ -39,6 +47,10 @@ public sealed class Environment
             if (env._constants.TryGetValue(n, out ConstantInfo? c))
             {
                 return c;
+            }
+            if (env._hidden is not null && env._hidden.Contains(n))
+            {
+                return null;
             }
         }
         return null;
@@ -85,9 +97,12 @@ public sealed class Environment
         }
     }
 
-    private void CheckConstantVal(Name name, Name[] lparams, Expr type, TypeChecker checker)
+    private void CheckConstantVal(Name name, Name[] lparams, Expr type, TypeChecker checker, bool checkName = true)
     {
-        CheckName(name);
+        if (checkName)
+        {
+            CheckName(name);
+        }
         CheckDuplicatedUnivParams(lparams);
         CheckNoFVar(name, type);
         Expr sort = checker.Check(type, lparams);
@@ -95,24 +110,40 @@ public sealed class Environment
     }
 
     /// <summary>Check a declaration and add the resulting constants.</summary>
-    public void Add(Declaration d, bool check = true)
+    public void Add(Declaration d, bool check = true) => AddCore(d, check, add: true);
+
+    /// <summary>
+    /// Run every check <see cref="Add"/> would run on a constant-like declaration whose constants are already present
+    /// (added unchecked), without adding anything. Used for checking declarations out of order or in parallel.
+    /// Inductive and quotient declarations are re-derived in a child environment instead; see <see cref="CreateChild(IEnumerable{Name})"/>.
+    /// </summary>
+    public void Validate(Declaration d)
+    {
+        if (d is InductiveDecl or QuotDecl)
+        {
+            throw new KernelException("Validate does not apply to inductive or quotient declarations");
+        }
+        AddCore(d, check: true, add: false);
+    }
+
+    private void AddCore(Declaration d, bool check, bool add)
     {
         switch (d)
         {
             case AxiomDecl a:
-                AddAxiom(a, check);
+                AddAxiom(a, check, add);
                 break;
             case DefinitionDecl def:
-                AddDefinition(def, check);
+                AddDefinition(def, check, add);
                 break;
             case TheoremDecl t:
-                AddTheorem(t, check);
+                AddTheorem(t, check, add);
                 break;
             case OpaqueDecl o:
-                AddOpaque(o, check);
+                AddOpaque(o, check, add);
                 break;
             case MutualDefinitionDecl m:
-                AddMutual(m, check);
+                AddMutual(m, check, add);
                 break;
             case QuotDecl:
                 Quot.AddQuot(this);
@@ -125,17 +156,20 @@ public sealed class Environment
         }
     }
 
-    private void AddAxiom(AxiomDecl d, bool check)
+    private void AddAxiom(AxiomDecl d, bool check, bool add)
     {
         if (check)
         {
             var checker = new TypeChecker(this, safety: d.IsUnsafe ? DefinitionSafety.Unsafe : DefinitionSafety.Safe);
-            CheckConstantVal(d.Name, d.LevelParams, d.Type, checker);
+            CheckConstantVal(d.Name, d.LevelParams, d.Type, checker, checkName: add);
         }
-        AddCore(d.ToInfo());
+        if (add)
+        {
+            AddCore(d.ToInfo());
+        }
     }
 
-    private void AddDefinition(DefinitionDecl d, bool check)
+    private void AddDefinition(DefinitionDecl d, bool check, bool add)
     {
         if (d.Safety == DefinitionSafety.Unsafe)
         {
@@ -143,9 +177,12 @@ public sealed class Environment
             if (check)
             {
                 var checker = new TypeChecker(this, safety: DefinitionSafety.Unsafe);
-                CheckConstantVal(d.Name, d.LevelParams, d.Type, checker);
+                CheckConstantVal(d.Name, d.LevelParams, d.Type, checker, checkName: add);
             }
-            AddCore(d.ToInfo());
+            if (add)
+            {
+                AddCore(d.ToInfo());
+            }
             if (check)
             {
                 var checker = new TypeChecker(this, safety: DefinitionSafety.Unsafe);
@@ -163,7 +200,7 @@ public sealed class Environment
             // The reference checks safe and partial definitions with a safe checker: a partial
             // definition may not depend on another partial one.
             var checker = new TypeChecker(this);
-            CheckConstantVal(d.Name, d.LevelParams, d.Type, checker);
+            CheckConstantVal(d.Name, d.LevelParams, d.Type, checker, checkName: add);
             CheckNoFVar(d.Name, d.Value);
             Expr valType = checker.Check(d.Value, d.LevelParams);
             if (!checker.IsDefEq(valType, d.Type))
@@ -171,15 +208,18 @@ public sealed class Environment
                 throw TypeMismatch(d.Name, d.Type, valType);
             }
         }
-        AddCore(d.ToInfo());
+        if (add)
+        {
+            AddCore(d.ToInfo());
+        }
     }
 
-    private void AddTheorem(TheoremDecl d, bool check)
+    private void AddTheorem(TheoremDecl d, bool check, bool add)
     {
         if (check)
         {
             var checker = new TypeChecker(this);
-            CheckConstantVal(d.Name, d.LevelParams, d.Type, checker);
+            CheckConstantVal(d.Name, d.LevelParams, d.Type, checker, checkName: add);
             if (!checker.IsProp(d.Type))
             {
                 throw new KernelException($"type of theorem '{d.Name}' is not a proposition: {d.Type}");
@@ -191,16 +231,19 @@ public sealed class Environment
                 throw TypeMismatch(d.Name, d.Type, valType);
             }
         }
-        AddCore(d.ToInfo());
+        if (add)
+        {
+            AddCore(d.ToInfo());
+        }
     }
 
-    private void AddOpaque(OpaqueDecl d, bool check)
+    private void AddOpaque(OpaqueDecl d, bool check, bool add)
     {
         if (check)
         {
             // The reference checks opaque values with a safe checker regardless of the unsafe flag.
             var checker = new TypeChecker(this);
-            CheckConstantVal(d.Name, d.LevelParams, d.Type, checker);
+            CheckConstantVal(d.Name, d.LevelParams, d.Type, checker, checkName: add);
             CheckNoFVar(d.Name, d.Value);
             Expr valType = checker.Check(d.Value, d.LevelParams);
             if (!checker.IsDefEq(valType, d.Type))
@@ -208,10 +251,13 @@ public sealed class Environment
                 throw TypeMismatch(d.Name, d.Type, valType);
             }
         }
-        AddCore(d.ToInfo());
+        if (add)
+        {
+            AddCore(d.ToInfo());
+        }
     }
 
-    private void AddMutual(MutualDefinitionDecl m, bool check)
+    private void AddMutual(MutualDefinitionDecl m, bool check, bool add)
     {
         if (m.Definitions.Length == 0)
         {
@@ -241,12 +287,15 @@ public sealed class Environment
                 {
                     throw new KernelException($"invalid mutual definition, duplicate declaration name '{v.Name}'");
                 }
-                CheckConstantVal(v.Name, v.LevelParams, v.Type, checker);
+                CheckConstantVal(v.Name, v.LevelParams, v.Type, checker, checkName: add);
             }
         }
-        foreach (DefinitionDecl v in m.Definitions)
+        if (add)
         {
-            AddCore(v.ToInfo());
+            foreach (DefinitionDecl v in m.Definitions)
+            {
+                AddCore(v.ToInfo());
+            }
         }
         if (check)
         {

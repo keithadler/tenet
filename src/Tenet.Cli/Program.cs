@@ -21,6 +21,7 @@ internal static class Program
           --no-compare                do not compare derived constructors/recursors with the exporter's
           --quiet                     no progress output
           --stats                     print kernel work counters at the end
+          --jobs <n>                  check n declarations concurrently (default: number of cores; 1 = sequential)
           --slow <seconds>            report declarations slower than this (default 1)
           --stack-mb <n>              stack size for the checking thread (default 1024)
 
@@ -148,6 +149,7 @@ internal static class Program
         bool quiet = false;
         bool stats = false;
         double slow = 1.0;
+        int jobs = System.Environment.ProcessorCount;
         for (int i = 1; i < args.Length; i++)
         {
             switch (args[i])
@@ -171,6 +173,12 @@ internal static class Program
                 case "--stats":
                     stats = true;
                     break;
+                case "--jobs":
+                    if (++i >= args.Length || !int.TryParse(args[i], out jobs) || jobs < 1)
+                    {
+                        return Fail("--jobs needs a positive number");
+                    }
+                    break;
                 case "--slow":
                     if (++i >= args.Length || !double.TryParse(args[i], NumberStyles.Float, CultureInfo.InvariantCulture, out slow))
                     {
@@ -185,6 +193,7 @@ internal static class Program
             }
         }
 
+        TypeChecker.Stats.Enabled = stats;
         var sw = Stopwatch.StartNew();
         ExportFile file = NdjsonReader.ReadFile(path);
         sw.Stop();
@@ -194,6 +203,7 @@ internal static class Program
         }
 
         var lastReport = Stopwatch.StartNew();
+        var reportLock = new object();
         bool isTty = !Console.IsErrorRedirected;
         var options = new CheckOptions
         {
@@ -201,21 +211,25 @@ internal static class Program
             ContinueOnError = !failFast,
             CompareInductive = compare,
             SlowThreshold = TimeSpan.FromSeconds(slow),
+            Jobs = jobs,
             Progress = quiet ? null : p =>
             {
-                if (lastReport.ElapsedMilliseconds < 250 && p.Index != p.Total)
+                lock (reportLock)
                 {
-                    return;
-                }
-                lastReport.Restart();
-                string line = $"  {p.Index}/{p.Total}  {p.Elapsed.TotalSeconds,7:F1}s  failed {p.Failed}  {Truncate(p.Current.ToString(), 60)}";
-                if (isTty)
-                {
-                    Console.Error.Write("\r" + line.PadRight(100));
-                }
-                else
-                {
-                    Console.Error.WriteLine(line);
+                    if (lastReport.ElapsedMilliseconds < 250 && p.Index != p.Total)
+                    {
+                        return;
+                    }
+                    lastReport.Restart();
+                    string line = $"  {p.Index}/{p.Total}  {p.Elapsed.TotalSeconds,7:F1}s  failed {p.Failed}  {Truncate(p.Current.ToString(), 60)}";
+                    if (isTty)
+                    {
+                        Console.Error.Write("\r" + line.PadRight(100));
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine(line);
+                    }
                 }
             },
         };
@@ -245,7 +259,7 @@ internal static class Program
         {
             Console.WriteLine("kernel work: " + TypeChecker.Stats.Summary);
         }
-        Console.WriteLine($"{(result.Success ? "OK" : "FAILED")}: {result.Checked} checked, {result.Failures.Count} failed, {result.Skipped} skipped, {result.Environment.Count} constants, {result.Elapsed.TotalSeconds:F1}s");
+        Console.WriteLine($"{(result.Success ? "OK" : "FAILED")}: {result.Checked} checked, {result.Failures.Count} failed, {result.Skipped} skipped, {result.Environment.Count} constants, {result.Elapsed.TotalSeconds:F1}s, {jobs} job{(jobs == 1 ? "" : "s")}");
         return result.Success ? 0 : 1;
     }
 
