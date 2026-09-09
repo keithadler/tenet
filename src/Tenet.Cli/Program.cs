@@ -21,6 +21,7 @@ internal static class Program
           tenet show  <Module.olean> <name>...    print declarations from a compiled module or its imports
           tenet axioms <file> <name>...           print the axioms a declaration depends on, transitively
           tenet statement <Module.olean> <name>...  which constants a theorem's statement is built from, and who defines them
+          tenet audit <project dir>               which of a project's declarations are complete and which rest on sorry
           tenet version
 
         options for check:
@@ -66,6 +67,7 @@ internal static class Program
                 "show" => Show(args[1..]),
                 "axioms" => Axioms(args[1..]),
                 "statement" => Statement(args[1..]),
+                "audit" => Audit(args[1..]),
                 "version" => Version(),
                 _ => Fail($"unknown command '{args[0]}'\n\n{Usage}"),
             };
@@ -237,6 +239,97 @@ internal static class Program
             }
         }
         return missing == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// For every declaration a project defines, say whether it rests on <c>sorryAx</c>. A formalization in progress
+    /// compiles cleanly with holes in it: <c>sorry</c> is a real term of any type, so the build is green and the
+    /// theorems are vacuous. This separates what is actually proved from what is still assumed, and names the
+    /// declarations that introduce the holes rather than the far larger set that merely inherits them.
+    /// </summary>
+    private static int Audit(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            return Fail("audit needs a Lake project directory or an .olean file");
+        }
+        List<string> files = Directory.Exists(args[0]) ? OleanFilesUnder(args[0]) : [args[0]];
+        if (files.Count == 0)
+        {
+            return Fail($"no .olean files under {args[0]} (is the project built?)");
+        }
+        int limit = 40;
+        for (int i = 1; i < args.Length; i++)
+        {
+            if (args[i] == "--limit" && i + 1 < args.Length && int.TryParse(args[++i], out int l))
+            {
+                limit = l;
+            }
+        }
+
+        var search = new Tenet.Olean.LeanSearchPath();
+        search.AddFromEnvironment();
+        search.AddAroundOleanFile(files[0]);
+        using var checker = new Tenet.Olean.OleanChecker(search);
+        var targets = files.Select(f => (Module: search.ModuleNameOf(f), Path: f)).ToList();
+        checker.Load(targets);
+        search.AddToolchainFor(checker.Modules[targets[0].Module].LeanVersion);
+        checker.Load(targets);
+
+        // Every constant the project itself defines, in the project's own modules only.
+        var own = new List<(Name Module, ConstantInfo Info)>();
+        var ownNames = new HashSet<Name>();
+        foreach ((Name m, string _) in targets)
+        {
+            if (!checker.Modules.TryGetValue(m, out Tenet.Olean.OleanModule? om))
+            {
+                continue;
+            }
+            foreach (Name cn in om.ConstantNames)
+            {
+                if (ownNames.Add(cn) && checker.Resolve(cn) is ConstantInfo ci)
+                {
+                    own.Add((m, ci));
+                }
+            }
+        }
+
+        var sorryAx = Name.Of("sorryAx");
+        HashSet<Name> tainted = Replay.DependentsOf(sorryAx, own.Select(o => o.Info).ToList());
+
+        var holes = new List<Name>();   // declarations whose own body mentions sorryAx
+        int clean = 0, dirty = 0;
+        foreach ((Name _, ConstantInfo ci) in own)
+        {
+            if (tainted.Contains(ci.Name))
+            {
+                dirty++;
+                if (Replay.UsedConstants(ci).Contains(sorryAx))
+                {
+                    holes.Add(ci.Name);
+                }
+            }
+            else
+            {
+                clean++;
+            }
+        }
+
+        int total = clean + dirty;
+        Console.WriteLine($"{args[0]}: {total} declarations defined by this project in {targets.Count} modules");
+        Console.WriteLine($"  complete (no sorry anywhere below): {clean} ({(total == 0 ? 0 : 100.0 * clean / total):F1}%)");
+        Console.WriteLine($"  resting on sorry:                   {dirty} ({(total == 0 ? 0 : 100.0 * dirty / total):F1}%)");
+        Console.WriteLine($"  of those, declarations that introduce a hole themselves: {holes.Count}");
+        if (holes.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"  the holes ({Math.Min(limit, holes.Count)} of {holes.Count} shown, --limit N for more):");
+            foreach (Name h in holes.OrderBy(h => h.ToString(), StringComparer.Ordinal).Take(limit))
+            {
+                Console.WriteLine($"    {h}");
+            }
+        }
+        return 0;
     }
 
     /// <summary>

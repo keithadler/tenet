@@ -316,6 +316,57 @@ public static class Replay
 
     /// <summary>Every constant name referenced by the constant's type, value, and rules.</summary>
     /// <summary>
+    /// Which declarations in <paramref name="scope"/> transitively depend on <paramref name="axiom"/>.
+    /// Only edges inside the scope are followed. That is sound when the scope is everything a project defines and
+    /// the axiom is one the project introduces, because imports form a one-way graph: a library constant cannot
+    /// reference a constant of the project that imports it, so no path can leave the scope and come back.
+    /// </summary>
+    public static HashSet<Name> DependentsOf(Name axiom, IReadOnlyCollection<ConstantInfo> scope)
+    {
+        var names = new HashSet<Name>(scope.Select(c => c.Name));
+        var users = new Dictionary<Name, List<Name>>();
+        var work = new Queue<Name>();
+        var hit = new HashSet<Name>();
+        foreach (ConstantInfo c in scope)
+        {
+            foreach (Name u in UsedConstants(c))
+            {
+                if (u.Equals(axiom))
+                {
+                    if (hit.Add(c.Name))
+                    {
+                        work.Enqueue(c.Name);
+                    }
+                }
+                else if (names.Contains(u))
+                {
+                    if (!users.TryGetValue(u, out List<Name>? list))
+                    {
+                        users[u] = list = new List<Name>();
+                    }
+                    list.Add(c.Name);
+                }
+            }
+        }
+        while (work.Count > 0)
+        {
+            Name n = work.Dequeue();
+            if (!users.TryGetValue(n, out List<Name>? ups))
+            {
+                continue;
+            }
+            foreach (Name up in ups)
+            {
+                if (hit.Add(up))
+                {
+                    work.Enqueue(up);
+                }
+            }
+        }
+        return hit;
+    }
+
+    /// <summary>
     /// The axioms a declaration depends on, transitively, as Lean's <c>#print axioms</c> reports them, together with
     /// the number of constants reached. A proof resting on nothing but <c>propext</c>, <c>Classical.choice</c> and
     /// <c>Quot.sound</c> is complete in Lean's logic; <c>sorryAx</c> marks a hole. Constants the lookup cannot find

@@ -11,6 +11,10 @@ versions follow [Semantic Versioning](https://semver.org/).
   libraries. A kernel cannot tell whether a statement means what its prose claims, and the
   usual way that goes wrong is a definition written for the occasion; this says where to
   look. It does not decide whether the statement is right.
+- `tenet audit <project dir>` separates the declarations a project has actually proved from
+  those still resting on `sorry`, and names the ones that introduce a hole rather than the
+  larger set that merely inherits one. A formalization in progress compiles green with holes
+  in it, because `sorry` is a real term of any type.
 
 ### Fixed
 - Four lookups used `Find` where Lean's kernel uses `get`: the structure test behind eta for

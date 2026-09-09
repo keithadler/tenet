@@ -162,4 +162,28 @@ public class SemanticsTests
         Assert.Empty(Replay.AxiomsOf(env.Find, Name.Of("clean")).Axioms);
         Assert.Equal([Name.Of("ax")], Replay.AxiomsOf(env.Find, Name.Of("ax")).Axioms);
     }
+
+    [Fact]
+    public void DependentsOfFindsEverythingRestingOnAnAxiom()
+    {
+        var env = new Environment();
+        // sorryAx-like hole, one theorem using it, one using that, and one clean chain alongside
+        env.Add(new AxiomDecl(Name.Of("hole"), [], Expr.Prop, false));
+        env.Add(new AxiomDecl(Name.Of("honest"), [], Expr.Prop, false));
+        Expr P(string n) => Expr.Const(Name.Of(n), []);
+        env.Add(new DefinitionDecl(Name.Of("usesHole"), [], Expr.Prop, P("hole"), ReducibilityHints.Regular(1), DefinitionSafety.Safe));
+        env.Add(new DefinitionDecl(Name.Of("usesUsesHole"), [], Expr.Prop, P("usesHole"), ReducibilityHints.Regular(2), DefinitionSafety.Safe));
+        env.Add(new DefinitionDecl(Name.Of("clean"), [], Expr.Prop, P("honest"), ReducibilityHints.Regular(1), DefinitionSafety.Safe));
+        env.Add(new DefinitionDecl(Name.Of("alsoClean"), [], Expr.Prop, P("clean"), ReducibilityHints.Regular(2), DefinitionSafety.Safe));
+
+        var scope = env.OwnConstants.ToList();
+        HashSet<Name> hit = Replay.DependentsOf(Name.Of("hole"), scope);
+
+        Assert.Contains(Name.Of("usesHole"), hit);
+        Assert.Contains(Name.Of("usesUsesHole"), hit);
+        Assert.DoesNotContain(Name.Of("clean"), hit);
+        Assert.DoesNotContain(Name.Of("alsoClean"), hit);
+        Assert.DoesNotContain(Name.Of("honest"), hit);
+        Assert.Equal(2, hit.Count);
+    }
 }
