@@ -65,7 +65,50 @@ rather than re-deriving them, so it is the weaker statement. Note that Mathlib i
 project: a separate run over some other Mathlib checkout does not cover the one these proofs
 actually rest on.
 
-### Reproduce it
+#### The other answer: a formalization in progress
+
+A green build does not mean a finished proof. `sorry` is a real term of any type, so a
+project full of holes compiles perfectly. Kevin Buzzard's
+[Fermat's Last Theorem](https://github.com/ImperialCollegeLondon/FLT) is the honest example:
+it says so in its own source, and expects to for years. `tenet audit` says the same thing
+mechanically, on commit `81d8bee`:
+
+```
+$ tenet audit flt
+flt: 9821 declarations defined by this project in 262 modules
+  unconditional (nothing beyond propext, Classical.choice, Quot.sound): 9630 (98.1%)
+  resting on an assumption: 191 (1.9%)
+
+  assumptions carried, and how many declarations rest on each:
+    knownin1980s                106 declarations   (a named axiom this project introduces)
+    sorryAx                      90 declarations   (an unfinished proof)
+    Mazur_statement               1 declarations   (a named axiom this project introduces)
+    Odlyzko_statement             1 declarations   (a named axiom this project introduces)
+```
+
+Note which one is largest. `knownin1980s` is a deliberate, documented axiom Buzzard uses for
+results he is confident can be proved on paper from pre-1990 mathematics. It behaves exactly
+like `sorry` and carries more of the project than `sorry` does. An audit that grepped for
+`sorry` would have reported a rosier number and missed the bigger assumption; the first
+version of this command did precisely that, and reported 99.1%.
+
+The headline theorem is in the 1.9%, as the project says it is:
+
+```
+$ tenet axioms flt/.lake/build/lib/lean/FermatsLastTheorem.olean PNat.pow_add_pow_ne_pow
+PNat.pow_add_pow_ne_pow depends on 68902 constants and these axioms:
+  knownin1980s
+  propext
+  sorryAx   <-- an incomplete proof
+  Classical.choice
+  Quot.sound
+```
+
+That is the contrast worth drawing. Both projects compile. One rests on the three standard
+axioms and nothing else; the other carries four named assumptions and says so plainly. A
+kernel can tell you which, in seconds, without reading a word of prose.
+
+## Reproduce it
 
 You need [elan](https://github.com/leanprover/elan) for the Lean toolchain, the .NET 10 SDK,
 about 25 GB of disk, and roughly 40 minutes for the build. Nothing here is specific to my

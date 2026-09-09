@@ -294,37 +294,82 @@ internal static class Program
             }
         }
 
-        var sorryAx = Name.Of("sorryAx");
-        HashSet<Name> tainted = Replay.DependentsOf(sorryAx, own.Select(o => o.Info).ToList());
+        // Anything beyond Lean's three standard axioms is an assumption the project is carrying, whether it is
+        // `sorry` or a deliberate named axiom. Both make a theorem conditional; only the first is obvious.
+        var standard = new HashSet<Name> { Name.Of("propext"), Name.Of("Classical", "choice"), Name.Of("Quot", "sound") };
+        List<ConstantInfo> scope = own.Select(o => o.Info).ToList();
 
-        var holes = new List<Name>();   // declarations whose own body mentions sorryAx
-        int clean = 0, dirty = 0;
-        foreach ((Name _, ConstantInfo ci) in own)
+        var assumptions = new SortedDictionary<string, Name>(StringComparer.Ordinal);
+        foreach (ConstantInfo ci in scope)
         {
-            if (tainted.Contains(ci.Name))
+            if (ci is AxiomInfo && !standard.Contains(ci.Name))
             {
-                dirty++;
-                if (Replay.UsedConstants(ci).Contains(sorryAx))
-                {
-                    holes.Add(ci.Name);
-                }
+                assumptions[ci.Name.ToString()] = ci.Name;
             }
-            else
+            foreach (Name u in Replay.UsedConstants(ci))
             {
-                clean++;
+                if (!standard.Contains(u) && checker.Resolve(u) is AxiomInfo)
+                {
+                    assumptions[u.ToString()] = u;
+                }
             }
         }
 
-        int total = clean + dirty;
+        var restsOn = new Dictionary<string, HashSet<Name>>(StringComparer.Ordinal);
+        var anyAssumption = new HashSet<Name>();
+        foreach ((string label, Name ax) in assumptions.Select(kv => (kv.Key, kv.Value)))
+        {
+            HashSet<Name> hit = Replay.DependentsOf(ax, scope);
+            foreach (ConstantInfo ci in scope)
+            {
+                if (ci.Name.Equals(ax))
+                {
+                    hit.Add(ci.Name);
+                }
+            }
+            restsOn[label] = hit;
+            anyAssumption.UnionWith(hit);
+        }
+
+        int total = scope.Count;
+        int clean = total - anyAssumption.Count;
         Console.WriteLine($"{args[0]}: {total} declarations defined by this project in {targets.Count} modules");
-        Console.WriteLine($"  complete (no sorry anywhere below): {clean} ({(total == 0 ? 0 : 100.0 * clean / total):F1}%)");
-        Console.WriteLine($"  resting on sorry:                   {dirty} ({(total == 0 ? 0 : 100.0 * dirty / total):F1}%)");
-        Console.WriteLine($"  of those, declarations that introduce a hole themselves: {holes.Count}");
-        if (holes.Count > 0)
+        Console.WriteLine($"  unconditional (nothing beyond propext, Classical.choice, Quot.sound): {clean} ({(total == 0 ? 0 : 100.0 * clean / total):F1}%)");
+        Console.WriteLine($"  resting on an assumption: {anyAssumption.Count} ({(total == 0 ? 0 : 100.0 * anyAssumption.Count / total):F1}%)");
+        if (assumptions.Count == 0)
+        {
+            Console.WriteLine("  no assumptions: this project introduces no axioms and no sorry");
+            return 0;
+        }
+        Console.WriteLine();
+        Console.WriteLine("  assumptions carried, and how many declarations rest on each:");
+        foreach ((string label, HashSet<Name> hit) in restsOn.OrderByDescending(kv => kv.Value.Count))
+        {
+            string note = label == "sorryAx" ? "   (an unfinished proof)" : "   (a named axiom this project introduces)";
+            Console.WriteLine($"    {label,-24} {hit.Count,6} declarations{note}");
+        }
+
+        // The declarations that introduce a hole, as opposed to the larger set that merely inherits one.
+        var introducers = new SortedDictionary<string, List<Name>>(StringComparer.Ordinal);
+        foreach (ConstantInfo ci in scope)
+        {
+            foreach (Name u in Replay.UsedConstants(ci))
+            {
+                if (assumptions.ContainsKey(u.ToString()))
+                {
+                    if (!introducers.TryGetValue(u.ToString(), out List<Name>? l))
+                    {
+                        introducers[u.ToString()] = l = new List<Name>();
+                    }
+                    l.Add(ci.Name);
+                }
+            }
+        }
+        foreach ((string label, List<Name> list) in introducers)
         {
             Console.WriteLine();
-            Console.WriteLine($"  the holes ({Math.Min(limit, holes.Count)} of {holes.Count} shown, --limit N for more):");
-            foreach (Name h in holes.OrderBy(h => h.ToString(), StringComparer.Ordinal).Take(limit))
+            Console.WriteLine($"  declarations that invoke {label} directly ({Math.Min(limit, list.Count)} of {list.Count} shown, --limit N for more):");
+            foreach (Name h in list.OrderBy(h => h.ToString(), StringComparer.Ordinal).Take(limit))
             {
                 Console.WriteLine($"    {h}");
             }
