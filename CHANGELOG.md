@@ -3,6 +3,15 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `tenet statement FILE.olean NAME...` lists the constants a theorem's statement is built
+  from, split into those the project under test defines and those coming from established
+  libraries. A kernel cannot tell whether a statement means what its prose claims, and the
+  usual way that goes wrong is a definition written for the occasion; this says where to
+  look. It does not decide whether the statement is right.
+
 ## [0.4.0] - 2026-09-08
 
 Checked against several Lean toolchains, and used to re-check a published formalization:

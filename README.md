@@ -165,6 +165,7 @@ Tenet reads export format 3.x (NDJSON), both the current 3.1 layout and the 3.0 
 | --- | --- |
 | `tenet check FILE` | check every declaration of an export, a `.olean` module, or a built Lake project directory; `--jobs N` (default: all cores), `--only a,b`, `--fail-fast`, `--low-memory`, `--report out.json`, `--stats`, `--slow SECONDS`, `--verbose`, `--quiet` |
 | `tenet info FILE` | metadata and counts |
+| `tenet statement FILE.olean NAME...` | which constants a theorem's statement is built from, and which of them the project defines itself |
 | `tenet axioms FILE NAME...` | print the axioms a declaration depends on, transitively, as Lean's `#print axioms` does |
 | `tenet show FILE NAME...` | print declarations from an export or a compiled module: type, value, hints, constructor and recursor data |
 

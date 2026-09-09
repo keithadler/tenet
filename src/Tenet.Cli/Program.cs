@@ -20,6 +20,7 @@ internal static class Program
           tenet show  <file.ndjson> <name>...     print declarations from an export (type, value, metadata)
           tenet show  <Module.olean> <name>...    print declarations from a compiled module or its imports
           tenet axioms <file> <name>...           print the axioms a declaration depends on, transitively
+          tenet statement <Module.olean> <name>...  which constants a theorem's statement is built from, and who defines them
           tenet version
 
         options for check:
@@ -64,6 +65,7 @@ internal static class Program
                 "info" => Info(args[1..]),
                 "show" => Show(args[1..]),
                 "axioms" => Axioms(args[1..]),
+                "statement" => Statement(args[1..]),
                 "version" => Version(),
                 _ => Fail($"unknown command '{args[0]}'\n\n{Usage}"),
             };
@@ -235,6 +237,102 @@ internal static class Program
             }
         }
         return missing == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Print the constants a theorem's *statement* is built from, grouped by the module that defines them.
+    /// A kernel cannot tell whether a statement says what its prose comment claims; the usual way that goes wrong
+    /// is a definition written for the occasion that reads plausibly and means something weaker. Those definitions
+    /// are the ones defined by the project under test rather than by an established library, so this lists them
+    /// first: it says where to look, not whether the statement is right.
+    /// </summary>
+    private static int Statement(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Fail("statement needs an .olean file and at least one theorem name");
+        }
+        var search = new Tenet.Olean.LeanSearchPath();
+        search.AddFromEnvironment();
+        search.AddAroundOleanFile(args[0]);
+        using var checker = new Tenet.Olean.OleanChecker(search);
+        Name module = search.ModuleNameOf(args[0]);
+        checker.Load([(module, args[0])]);
+        search.AddToolchainFor(checker.Modules[module].LeanVersion);
+        checker.Load([(module, args[0])]);
+
+        // Which module defines each constant, and which of those modules belong to the project rather than a library.
+        var definedIn = new Dictionary<Name, Name>();
+        foreach ((Name m, Tenet.Olean.OleanModule om) in checker.Modules)
+        {
+            foreach (Name c in om.ConstantNames)
+            {
+                definedIn.TryAdd(c, m);
+            }
+        }
+        string root = module.ToString().Split('.')[0];
+        static bool IsLibrary(Name m)
+        {
+            string top = m.ToString().Split('.')[0];
+            return top is "Init" or "Lean" or "Std" or "Mathlib" or "Batteries" or "Aesop" or "Qq"
+                       or "ImportGraph" or "Plausible" or "ProofWidgets" or "LeanSearchClient" or "Cli";
+        }
+
+        foreach (Name n in args[1..].Select(Name.Parse))
+        {
+            ConstantInfo? c = checker.Resolve(n);
+            if (c is null)
+            {
+                Console.WriteLine($"{n}: not in {module} or its imports");
+                continue;
+            }
+            var used = new HashSet<Name>();
+            ExprOps.ForEach(c.Type, (t, _) =>
+            {
+                if (t is ConstExpr k)
+                {
+                    used.Add(k.Name);
+                }
+                return true;
+            });
+            var local = new SortedSet<string>();
+            var library = new SortedDictionary<string, int>();
+            var unknown = new SortedSet<string>();
+            foreach (Name u in used)
+            {
+                if (!definedIn.TryGetValue(u, out Name? m))
+                {
+                    unknown.Add(u.ToString());
+                }
+                else if (IsLibrary(m))
+                {
+                    string top = m.ToString().Split('.')[0];
+                    library[top] = library.GetValueOrDefault(top) + 1;
+                }
+                else
+                {
+                    local.Add($"{u}   ({m})");
+                }
+            }
+            Console.WriteLine($"{n}");
+            Console.WriteLine($"  statement built from {used.Count} constants");
+            Console.WriteLine($"  defined by this project ({local.Count}) - audit these, a wrong definition hides here:");
+            foreach (string l in local)
+            {
+                Console.WriteLine($"    {l}");
+            }
+            if (local.Count == 0)
+            {
+                Console.WriteLine("    (none: the statement uses only established libraries)");
+            }
+            Console.WriteLine($"  from established libraries: {(library.Count == 0 ? "none" : string.Join(", ", library.Select(kv => $"{kv.Key} {kv.Value}")))}");
+            if (unknown.Count > 0)
+            {
+                Console.WriteLine($"  not found in any loaded module: {string.Join(", ", unknown)}");
+            }
+            Console.WriteLine();
+        }
+        return 0;
     }
 
     /// <summary>
