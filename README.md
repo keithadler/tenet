@@ -11,7 +11,11 @@ declaration from scratch and reports the first thing it cannot accept.
 
 It is written from the type theory and the reference kernel's behavior, not translated
 from it, and it shares no code with Lean. That is the point: a proof that survives two
-independent kernels is a proof you can trust a little more. Tenet is not the first
+independent kernels is a proof you can trust a little more. Be precise about the
+independence, though. The code is independent; the algorithm is not, because matching the
+reference kernel's behavior was the goal and its structure was followed deliberately. So a
+defect in Lean's kernel *design*, as opposed to its code, is one Tenet would likely
+reproduce rather than catch. Tenet is not the first
 independent kernel and does not claim to be; it is the one on .NET. See
 [Other checkers](#other-checkers).
 
@@ -38,8 +42,8 @@ formalizes finite-time blowup for the three-dimensional Navier-Stokes and Euler 
 in Lean 4. Tenet re-checked it, on commit `8937a8f`:
 
 ```
-$ tenet check nse --quiet
-OK: 91178 checked in 2486 modules, 0 failed, 13068 modules mapped, 211.8s, 12 jobs
+$ tenet check nse --all --quiet
+OK: 850211 checked in 13068 modules, 0 failed, 13068 modules mapped, 679.5s, 12 jobs
 
 $ tenet axioms nse/.lake/build/lib/lean/Euler/Solution.olean Euler.euler_breakdown_R3
 Euler.euler_breakdown_R3 depends on 89915 constants and these axioms:
@@ -48,10 +52,18 @@ Euler.euler_breakdown_R3 depends on 89915 constants and these axioms:
   Quot.sound
 ```
 
-Every declaration in the project's own 2,486 modules was accepted, and each of its four
-headline theorems rests on nothing but the three standard axioms, with no `sorryAx`. The
-same run on `NavierStokes.Comparator.navier_stokes_breakdown_R3` and
-`navier_stokes_breakdown_periodic` gives the same three axioms.
+`--all` is the claim worth making. It re-checks the entire import closure in one pass:
+Lean's core library, Batteries, Aesop, Qq, the exact Mathlib the project pins, and then
+Euler and Navier-Stokes on top. 850,211 declarations, nothing trusted in the middle, no
+failures. Each of the four headline theorems rests on nothing but the three standard
+axioms, with no `sorryAx`; the same holds for
+`NavierStokes.Comparator.navier_stokes_breakdown_R3` and `navier_stokes_breakdown_periodic`.
+
+Checking the project's own modules alone (`tenet check nse`, without `--all`) is 91,178
+declarations in 2,486 modules and takes 212 seconds, but it trusts the imported constants
+rather than re-deriving them, so it is the weaker statement. Note that Mathlib is pinned per
+project: a separate run over some other Mathlib checkout does not cover the one these proofs
+actually rest on.
 
 ### Reproduce it
 
@@ -69,27 +81,26 @@ lake build                    # about 37 minutes on a 12-core laptop
 
 # 2. Install Tenet and re-check the same build with a different kernel.
 dotnet tool install -g tenet
-tenet check .                 # every module the project built, in place
+tenet check . --all           # the whole closure: Mathlib, then Euler and Navier-Stokes
 
 # 3. Ask what the headline theorems actually rest on.
 tenet axioms .lake/build/lib/lean/Euler/Solution.olean   Euler.euler_breakdown_R3 Euler.exists_compact_smooth_euler_singularity
 tenet axioms .lake/build/lib/lean/NavierStokes/ComparatorSolution.olean   NavierStokes.Comparator.navier_stokes_breakdown_R3   NavierStokes.Comparator.navier_stokes_breakdown_periodic
 ```
 
-Expected output from step 2, give or take timing:
+Expected output from step 2, give or take timing. It needs about 10 GB of memory:
 
 ```
-OK: 91178 checked in 2486 modules, 0 failed, 13068 modules mapped, 211.8s, 12 jobs
+OK: 850211 checked in 13068 modules, 0 failed, 13068 modules mapped, 679.5s, 12 jobs
 ```
 
 and from step 3, for each of the four theorems, `propext`, `Classical.choice` and
 `Quot.sound` and nothing else.
 
-Two ways to go further. `tenet check . --all` also re-checks every imported module, so
-Mathlib and Lean's core are covered in the same run rather than trusted; it takes several
-times longer and about 10 GB of memory. And `tenet show <module.olean> <name>` prints the
-exact statement of any theorem, which is the thing worth reading before believing any of
-this.
+Drop `--all` for a faster run over the project's own modules only (91,178 declarations,
+about 3.5 minutes), which trusts the imported constants instead of re-deriving them. And
+`tenet show <module.olean> <name>` prints the exact statement of any theorem, which is the
+thing worth reading before believing any of this.
 
 If you get a different answer from the one above, I want to know: open an issue. A
 disagreement is far more likely to be a bug in Tenet than a problem with the proof, and

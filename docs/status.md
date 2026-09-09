@@ -64,15 +64,17 @@ blowup for the three-dimensional Navier-Stokes and Euler equations.
 
 | | |
 | --- | --- |
-| `tenet check <project dir>` | 91,178 declarations in 2,486 modules, 0 failures, 212 s, 13,068 modules mapped |
+| `tenet check <project dir> --all` | **850,211 declarations in 13,068 modules, 0 failures, 680 s** (the whole closure: Lean core, Batteries, Aesop, Qq, the pinned Mathlib, then Euler and Navier-Stokes) |
+| `tenet check <project dir>` | 91,178 declarations in 2,486 modules, 0 failures, 212 s (the project's own modules only, imports trusted) |
 | `Euler.euler_breakdown_R3` | 89,915 constants, axioms `propext`, `Classical.choice`, `Quot.sound` |
 | `Euler.exists_compact_smooth_euler_singularity` | 94,404 constants, same three axioms |
 | `NavierStokes.Comparator.navier_stokes_breakdown_R3` | 93,446 constants, same three axioms |
 | `NavierStokes.Comparator.navier_stokes_breakdown_periodic` | 89,881 constants, same three axioms |
 
-The axiom lists agree with what Lean itself printed during the build. Mathlib, which those
-proofs rest on, is checked separately (the row above); this run checked the project's own
-modules against it.
+The axiom lists agree with what Lean itself printed during the build. Mathlib is pinned per
+project, and the copy these proofs depend on (`85e3a25e00`) is not the one in the standalone
+Mathlib row above (`9b46e33`), so only the `--all` run covers the chain these theorems
+actually rest on.
 
 What the run establishes is narrow: a kernel written from the type theory rather than
 translated from Lean's code follows every step of those proofs and accepts them, and no

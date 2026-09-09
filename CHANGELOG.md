@@ -6,8 +6,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [0.4.0] - 2026-09-08
 
 Checked against several Lean toolchains, and used to re-check a published formalization:
-OpenAI's NavierStokesAndEuler (91,178 declarations in 2,486 modules, 0 failures; its four
-headline theorems depend on `propext`, `Classical.choice` and `Quot.sound` only).
+OpenAI's NavierStokesAndEuler. The whole import closure re-checked in one pass, 850,211
+declarations in 13,068 modules with 0 failures, and its four headline theorems depend on
+`propext`, `Classical.choice` and `Quot.sound` only.
 
 ### Added
 - CI checks the `.olean` reader and the kernel against several Lean toolchains, not only the
