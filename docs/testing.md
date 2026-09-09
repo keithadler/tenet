@@ -151,6 +151,19 @@ walked the recursor's type accepting only pis, while the reference's `binding_bo
 lambdas too, so after a mutation turned the major premise's binder into a lambda Tenet
 rejected `Substring.Raw.noConfusion` and Lean did not. Fixed by walking both binders.
 
+### Lookups on declarations installed unchecked
+
+After a failure both tools install the failed declaration unchecked, so from then on a
+constant can name something that does not exist. Verdicts on those variants depend on how a
+lookup answers for an unknown name: Lean's kernel uses `env().get`, which throws "unknown
+constant", in `infer_constant`, `infer_proj`, `reduce_proj_core`, `try_eta_struct_core`,
+`is_def_eq_unit_like`, `is_non_rec_structure` and `get_first_cnstr`, and `env().find`, which
+answers "no", in `is_delta`, `is_constructor_app` and the recursor lookup of
+`inductive_reduce_rec`. Tenet uses `Get` and `Find` at the same places. Seed 59 found the
+cost of getting one wrong: with `Eq.refl`'s type renamed to a bare `refl`, a `Find` in the
+structure test let K-like reduction be skipped and the reduction succeed by another route,
+and twenty `noConfusion` declarations were accepted that Lean rejected.
+
 ### Triage: disagreements that are not Tenet bugs
 
 Differential testing on mutated inputs can produce disagreements that are artifacts of

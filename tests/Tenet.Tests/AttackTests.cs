@@ -118,4 +118,52 @@ public class AttackTests
         var ex = Assert.Throws<KernelException>(() => new Environment().Add(decl));
         Assert.Contains("type mismatch", ex.Message, StringComparison.Ordinal);
     }
+
+    // A declaration installed unchecked can name a constant that does not exist. Lean looks such a name up with
+    // `get` in `is_non_rec_structure`, `get_first_cnstr`, `reduce_proj_core` and `try_eta_struct_core`, so the
+    // check fails with "unknown constant"; a `find` that answered "not a structure" would let the check go on and
+    // succeed by another route. Differential seed 59, variant 013: with `Eq.refl`'s type renamed to a bare `refl`,
+    // Lean rejected twenty `noConfusion` declarations that Tenet accepted.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReducingARecursorWhoseMajorTypeIsUnknownIsARejection(bool kLike)
+    {
+        var env = new Environment();
+        Name bogus = Name.Of("Bogus");
+        Name u = Name.Of("u");
+        Expr bogusT = Expr.Const(bogus, []);
+        // T.rec : ∀ (motive : Bogus → Sort u) (t : Bogus), motive t   (no parameters or minors: the major premise is argument 1)
+        Expr recType = Expr.Pi(Name.Of("motive"), Expr.Pi(Anon, bogusT, Expr.Sort(Level.Param(u))),
+                               Expr.Pi(Name.Of("t"), bogusT, Expr.App(Expr.BVar(1), Expr.BVar(0))));
+        env.AddCore(new RecursorInfo(Name.Of("T", "rec"), [u], recType, [Name.Of("T")], numParams: 0, numIndices: 0, numMotives: 1, numMinors: 0,
+                                     rules: [], k: kLike, isUnsafe: false));
+        var tc = new TypeChecker(env);
+        Expr motive = tc.Lctx.MkLocalDecl(Name.Of("motive"), Expr.Pi(Anon, bogusT, Expr.Sort(Level.One)));
+        Expr t = tc.Lctx.MkLocalDecl(Name.Of("t"), bogusT);
+        Expr e = Expr.MkApp(Expr.Const(Name.Of("T", "rec"), [Level.One]), motive, t);
+        var ex = Assert.Throws<KernelException>(() => tc.Whnf(e));
+        Assert.Contains("unknown constant 'Bogus'", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProjectingFromATermHeadedByAnUnknownConstantIsARejection()
+    {
+        var tc = new TypeChecker(new Environment());
+        Expr e = Expr.Proj(Name.Of("S"), 0, Expr.App(Expr.Const(Name.Of("Bogus"), []), Expr.NatLit(0)));
+        var ex = Assert.Throws<KernelException>(() => tc.Whnf(e));
+        Assert.Contains("unknown constant 'Bogus'", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ComparingWithATermHeadedByAnUnknownConstantIsARejection()
+    {
+        var env = new Environment();
+        env.Add(new AxiomDecl(Name.Of("S"), [], Expr.Type0, false));
+        var tc = new TypeChecker(env);
+        Expr x = tc.Lctx.MkLocalDecl(Name.Of("x"), Expr.Const(Name.Of("S"), []));
+        Expr y = Expr.App(Expr.Const(Name.Of("Bogus"), []), x);
+        var ex = Assert.Throws<KernelException>(() => tc.IsDefEq(x, y));
+        Assert.Contains("unknown constant 'Bogus'", ex.Message, StringComparison.Ordinal);
+    }
 }

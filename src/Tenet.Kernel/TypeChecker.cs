@@ -579,7 +579,7 @@ public sealed class TypeChecker
             c = Whnf(Inductive.StringLitToConstructor(Env, c));
         }
         Expr mk = c.GetAppArgs(out Expr[] args);
-        if (mk is not ConstExpr mkc || Env.Find(mkc.Name) is not ConstructorInfo mkVal)
+        if (mk is not ConstExpr mkc || Env.Get(mkc.Name) is not ConstructorInfo mkVal)   // `get`, as in Lean's reduce_proj_core
         {
             return null;
         }
@@ -1092,7 +1092,9 @@ public sealed class TypeChecker
     /// <summary>Check whether <paramref name="s"/> is <c>mk t.1 ... t.n</c> for a structure constructor <c>mk</c>.</summary>
     private bool TryEtaStructCore(Expr t, Expr s)
     {
-        if (s.GetAppFn() is not ConstExpr f || Env.Find(f.Name) is not ConstructorInfo fVal)
+        // Lean fetches the head with `env().get`, which throws for an unknown constant; `Find` would turn that
+        // rejection into a quiet "no eta" and let the comparison go on to succeed by another route.
+        if (s.GetAppFn() is not ConstExpr f || Env.Get(f.Name) is not ConstructorInfo fVal)
         {
             return false;
         }

@@ -12,6 +12,16 @@ versions follow [Semantic Versioning](https://semver.org/).
   usual way that goes wrong is a definition written for the occasion; this says where to
   look. It does not decide whether the statement is right.
 
+### Fixed
+- Four lookups used `Find` where Lean's kernel uses `get`: the structure test behind eta for
+  structures and K-like reduction (`is_non_rec_structure`), the first-constructor lookup
+  (`get_first_cnstr`), projection reduction (`reduce_proj_core`) and the eta-struct head
+  (`try_eta_struct_core`). Lean rejects an unknown name there with "unknown constant"; Tenet
+  answered "not a structure" and went on, and could accept a declaration Lean rejects. Only
+  reachable when a declaration was installed unchecked, which the differential harness does
+  after a failure: seed 59, variant 013 renamed `Eq.refl`'s type to a bare `refl`, and twenty
+  `noConfusion` declarations were accepted that Lean rejected.
+
 ## [0.4.0] - 2026-09-08
 
 Checked against several Lean toolchains, and used to re-check a published formalization:

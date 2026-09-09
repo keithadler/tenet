@@ -21,14 +21,17 @@ public static class Inductive
     public static Name MkRecName(Name inductName) => inductName.Str("rec");
 
     /// <summary>An inductive type with one constructor, no indices, and no recursion: a structure.</summary>
+    /// <remarks>Like Lean's <c>is_non_rec_structure</c>, this looks the name up with <c>get</c>, so an unknown name
+    /// is a rejection rather than a "not a structure"; the two differ only when a declaration was installed unchecked.</remarks>
     public static bool IsNonRecStructure(Environment env, Name declName) =>
-        env.Find(declName) is InductiveInfo i && i.Ctors.Length == 1 && i.NumIndices == 0 && !i.IsRec;
+        env.Get(declName) is InductiveInfo i && i.Ctors.Length == 1 && i.NumIndices == 0 && !i.IsRec;
 
     public static Name? IsConstructorApp(Environment env, Expr e) =>
         e.GetAppFn() is ConstExpr c && env.Find(c.Name) is ConstructorInfo ? c.Name : null;
 
+    /// <summary>Lean's <c>get_first_cnstr</c>: an unknown name is a rejection, not "no constructor".</summary>
     private static Name? GetFirstCtor(Environment env, Name dName) =>
-        env.Find(dName) is InductiveInfo i && i.Ctors.Length > 0 ? i.Ctors[0] : null;
+        env.Get(dName) is InductiveInfo i && i.Ctors.Length > 0 ? i.Ctors[0] : null;
 
     /// <summary>For a type <c>I params</c>, the application <c>I.ctor params</c> of its first constructor.</summary>
     private static Expr? MkNullaryCtor(Environment env, Expr type, int numParams)
