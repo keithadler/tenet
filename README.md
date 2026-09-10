@@ -104,6 +104,31 @@ PNat.pow_add_pow_ne_pow depends on 68902 constants and these axioms:
   Quot.sound
 ```
 
+An axiom list names the assumption but not the lemma that brought it in. `tenet why` walks
+the chain, and on FLT it traces straight through the project's own reduction structure:
+
+```
+$ tenet why flt/.lake/build/lib/lean/FermatsLastTheorem.olean PNat.pow_add_pow_ne_pow
+
+PNat.pow_add_pow_ne_pow
+  rests on knownin1980s by this chain:
+       PNat.pow_add_pow_ne_pow   [FermatsLastTheorem]
+    -> flt   [FLT.Proof]
+    -> FLT.Bosses.B1_proof   [FLT.Proof]
+    -> FLT.Bosses.B2_proof   [FLT.Proof]
+    -> FLT.Bosses.B3_proof   [FLT.Proof]
+    -> FLT.Bosses.B4_implies_B3   [FLT.Proof]
+    -> FreyPackage.mazur   [FLT.FreyCurve.Mazur]
+    -> knownin1980s   [FLT.Assumptions.KnownIn1980s]
+  rests on sorryAx by this chain:
+       ... -> FLT.Bosses.B3_proof -> FLT.Bosses.B4_proof -> sorryAx
+```
+
+Eight and a half seconds, and it names the two places the work actually stands: Mazur's
+theorem, cited as known before 1990 rather than formalized, and the fourth reduction step,
+still unproved. The path is a shortest one, so it names one route to each assumption rather
+than the whole subgraph.
+
 That is the contrast worth drawing. Both projects compile. One rests on the three standard
 axioms and nothing else; the other carries four named assumptions and says so plainly. A
 kernel can tell you which, in seconds, without reading a word of prose.
