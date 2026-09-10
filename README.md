@@ -354,7 +354,7 @@ A checker that accepted everything would produce the same clean output, so:
   both in Tenet: a head comparison that used reference equality where the reference compares
   structurally, and a recursor walk that accepted only one binder shape.
 - **The `.olean` reader is checked against Lean's own exporter**, constant by constant, over all
-  648 modules of `Init`: 59,720 compared, zero substantive differences. That is the one path the
+  648 modules of `Init` and a Mathlib slice: 98,463 compared, zero substantive differences. That is the one path the
   kernel comparison cannot reach, since a reader that drops a hypothesis yields a weaker theorem
   both kernels would accept.
 - **Other methods found three more, also all in Tenet**: checking older toolchains found a

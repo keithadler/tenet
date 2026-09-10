@@ -10,7 +10,8 @@ versions follow [Semantic Versioning](https://semver.org/).
   against what Lean's own exporter wrote for the same declarations, and classifies each
   difference. Comparing verdicts with Lean's kernel cannot find a reader bug, because a reader
   that drops a hypothesis yields a weaker theorem both kernels accept; this covers that path.
-  Over all 648 modules of `Init`: 59,720 constants compared, 0 substantive differences.
+  Over all 648 modules of `Init` and a Mathlib slice: 98,463 constants compared, 0 substantive
+  differences.
 
 ## [0.5.0] - 2026-09-10
 

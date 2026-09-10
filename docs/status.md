@@ -88,16 +88,16 @@ drops a hypothesis produces a different, weaker theorem, and both kernels then a
 path is covered by `tenet crosscheck`, which compares every constant Tenet decodes from the
 binary format against the same constant as `lean4export` wrote it from Lean's own environment.
 
-Over the whole of `Init`, 648 modules:
+Over the whole of `Init` (648 modules) and a Mathlib slice (the closure of
+`Mathlib.Data.Real.Basic`, compared across all 8,488 Mathlib modules):
 
-| | |
-| --- | --- |
-| Constants compared | 59,720 |
-| Identical in every field | 59,663 |
-| Differing in binder names or implicitness only | 41 |
-| Same auxiliary declaration realized in a different module | 16 |
-| **Substantive differences** | **0** |
-| Not in the export | 6,562 (the exporter omits unsafe and some compiler-generated declarations) |
+| | `Init` | Mathlib slice | Total |
+| --- | --- | --- | --- |
+| Constants compared | 59,720 | 38,743 | 98,463 |
+| Identical in every field | 59,663 | 38,712 | 98,375 |
+| Differing in binder names or implicitness only | 41 | 31 | 72 |
+| Same auxiliary declaration realized in a different module | 16 | 0 | 16 |
+| **Substantive differences** | **0** | **0** | **0** |
 
 The 41 are elaboration metadata. A binder's name and its implicit or explicit marking are
 display and elaboration information that the kernel ignores, so they cannot change a verdict;
