@@ -22,6 +22,7 @@ internal static class Program
           tenet axioms <file> <name>...           print the axioms a declaration depends on, transitively
           tenet statement <Module.olean> <name>...  which constants a theorem's statement is built from, and who defines them
           tenet audit <project dir>               which of a project's declarations are complete and which rest on sorry
+          tenet why <Module.olean> <name>         the chain from a declaration to each assumption it rests on
           tenet version
 
         options for check:
@@ -68,6 +69,7 @@ internal static class Program
                 "axioms" => Axioms(args[1..]),
                 "statement" => Statement(args[1..]),
                 "audit" => Audit(args[1..]),
+                "why" => Why(args[1..]),
                 "version" => Version(),
                 _ => Fail($"unknown command '{args[0]}'\n\n{Usage}"),
             };
@@ -239,6 +241,76 @@ internal static class Program
             }
         }
         return missing == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Show a shortest chain from a declaration to each assumption it rests on. An axiom list says what a theorem
+    /// depends on; this says which lemma brought the dependency in, which is the part you can act on.
+    /// Credit where due: <see href="https://github.com/vince-gonzalez/gonzalgo">gonzalgo</see> did this first, and
+    /// goes further by asking whether the statement itself required the axiom.
+    /// </summary>
+    private static int Why(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Fail("why needs an .olean file and a declaration name");
+        }
+        var search = new Tenet.Olean.LeanSearchPath();
+        search.AddFromEnvironment();
+        search.AddAroundOleanFile(args[0]);
+        using var checker = new Tenet.Olean.OleanChecker(search);
+        Name module = search.ModuleNameOf(args[0]);
+        checker.Load([(module, args[0])]);
+        search.AddToolchainFor(checker.Modules[module].LeanVersion);
+        checker.Load([(module, args[0])]);
+
+        // Which module defines what, so each step of the chain can say where to look.
+        var definedIn = new Dictionary<Name, Name>();
+        foreach ((Name m, Tenet.Olean.OleanModule om) in checker.Modules)
+        {
+            foreach (Name c in om.ConstantNames)
+            {
+                definedIn.TryAdd(c, m);
+            }
+        }
+        var standard = new HashSet<Name> { Name.Of("propext"), Name.Of("Classical", "choice"), Name.Of("Quot", "sound") };
+
+        foreach (Name n in args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(Name.Parse))
+        {
+            if (checker.Resolve(n) is null)
+            {
+                Console.WriteLine($"{n}: not in {module} or its imports");
+                continue;
+            }
+            var (axioms, _) = Replay.AxiomsOf(checker.Resolve, n);
+            var interesting = axioms.Where(a => !standard.Contains(a)).ToList();
+            Console.WriteLine(n.ToString());
+            if (interesting.Count == 0)
+            {
+                Console.WriteLine("  rests on nothing beyond propext, Classical.choice and Quot.sound");
+                Console.WriteLine();
+                continue;
+            }
+            foreach (Name ax in interesting)
+            {
+                List<Name>? path = Replay.PathTo(checker.Resolve, n, ax);
+                Console.WriteLine($"  rests on {ax} by this chain:");
+                if (path is null)
+                {
+                    Console.WriteLine("    (no chain found, which should not happen)");
+                    continue;
+                }
+                for (int i = 0; i < path.Count; i++)
+                {
+                    string where = definedIn.TryGetValue(path[i], out Name? m) ? $"   [{m}]" : "";
+                    string arrow = i == 0 ? "   " : "-> ";
+                    Console.WriteLine($"    {arrow}{path[i]}{where}");
+                }
+                Console.WriteLine($"    ({path.Count - 1} steps; the last named declaration is the one that invokes it)");
+            }
+            Console.WriteLine();
+        }
+        return 0;
     }
 
     /// <summary>

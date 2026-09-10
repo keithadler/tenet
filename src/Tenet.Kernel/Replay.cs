@@ -316,6 +316,55 @@ public static class Replay
 
     /// <summary>Every constant name referenced by the constant's type, value, and rules.</summary>
     /// <summary>
+    /// A shortest chain of constants from <paramref name="start"/> to <paramref name="target"/>, each step using the
+    /// next, or null when none exists. Answers "why does this rest on that", which an axiom list alone cannot: the
+    /// list names the assumption, the chain names the lemma that brought it in.
+    /// </summary>
+    public static List<Name>? PathTo(Func<Name, ConstantInfo?> find, Name start, Name target)
+    {
+        if (start.Equals(target))
+        {
+            return [start];
+        }
+        var cameFrom = new Dictionary<Name, Name>();
+        var seen = new HashSet<Name> { start };
+        var queue = new Queue<Name>();
+        queue.Enqueue(start);
+        while (queue.Count > 0)
+        {
+            Name cur = queue.Dequeue();
+            if (find(cur) is not ConstantInfo ci)
+            {
+                continue;
+            }
+            foreach (Name next in UsedConstants(ci).OrderBy(n => n.ToString(), StringComparer.Ordinal))
+            {
+                if (!seen.Add(next))
+                {
+                    continue;
+                }
+                cameFrom[next] = cur;
+                if (next.Equals(target))
+                {
+                    var path = new List<Name> { next };
+                    for (Name at = cur; ; at = cameFrom[at])
+                    {
+                        path.Add(at);
+                        if (at.Equals(start))
+                        {
+                            break;
+                        }
+                    }
+                    path.Reverse();
+                    return path;
+                }
+                queue.Enqueue(next);
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Which declarations in <paramref name="scope"/> transitively depend on <paramref name="axiom"/>.
     /// Only edges inside the scope are followed. That is sound when the scope is everything a project defines and
     /// the axiom is one the project introduces, because imports form a one-way graph: a library constant cannot

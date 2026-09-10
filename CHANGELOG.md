@@ -6,6 +6,11 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `tenet why FILE.olean NAME` shows a shortest chain from a declaration to each assumption it
+  rests on, naming the module at every step. An axiom list says what a theorem depends on;
+  the chain says which lemma brought the dependency in.
+  [gonzalgo](https://github.com/vince-gonzalez/gonzalgo) did this first and goes further,
+  asking whether the statement itself required the axiom.
 - `tenet statement FILE.olean NAME...` lists the constants a theorem's statement is built
   from, split into those the project under test defines and those coming from established
   libraries. A kernel cannot tell whether a statement means what its prose claims, and the

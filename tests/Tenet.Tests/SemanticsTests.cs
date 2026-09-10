@@ -186,4 +186,25 @@ public class SemanticsTests
         Assert.DoesNotContain(Name.Of("honest"), hit);
         Assert.Equal(2, hit.Count);
     }
+
+    [Fact]
+    public void PathToNamesTheChainThatBroughtAnAxiomIn()
+    {
+        var env = new Environment();
+        Expr P(string n) => Expr.Const(Name.Of(n), []);
+        env.Add(new AxiomDecl(Name.Of("hole"), [], Expr.Prop, false));
+        env.Add(new DefinitionDecl(Name.Of("lemma1"), [], Expr.Prop, P("hole"), ReducibilityHints.Regular(1), DefinitionSafety.Safe));
+        env.Add(new DefinitionDecl(Name.Of("lemma2"), [], Expr.Prop, P("lemma1"), ReducibilityHints.Regular(2), DefinitionSafety.Safe));
+        env.Add(new DefinitionDecl(Name.Of("theorem3"), [], Expr.Prop, P("lemma2"), ReducibilityHints.Regular(3), DefinitionSafety.Safe));
+        env.Add(new DefinitionDecl(Name.Of("unrelated"), [], Expr.Prop, Expr.Pi(Name.Of("p"), Expr.Prop, Expr.BVar(0)), ReducibilityHints.Regular(1), DefinitionSafety.Safe));
+
+        List<Name>? path = Replay.PathTo(env.Find, Name.Of("theorem3"), Name.Of("hole"));
+        Assert.NotNull(path);
+        Assert.Equal(
+            [Name.Of("theorem3"), Name.Of("lemma2"), Name.Of("lemma1"), Name.Of("hole")],
+            path);
+
+        Assert.Null(Replay.PathTo(env.Find, Name.Of("unrelated"), Name.Of("hole")));
+        Assert.Equal([Name.Of("hole")], Replay.PathTo(env.Find, Name.Of("hole"), Name.Of("hole")));
+    }
 }
