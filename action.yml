@@ -35,7 +35,20 @@ runs:
         set -euo pipefail
         dir="$RUNNER_TEMP/tenet-nupkg"
         mkdir -p "$dir"
-        curl -sSfL "https://github.com/keithadler/tenet/releases/download/v${{ inputs.version }}/tenet.${{ inputs.version }}.nupkg" -o "$dir/tenet.${{ inputs.version }}.nupkg"
+        url="https://github.com/keithadler/tenet/releases/download/v${{ inputs.version }}/tenet.${{ inputs.version }}.nupkg"
+        # A release's packages are attached by a workflow that runs after the tag appears, so for a
+        # few minutes the tag exists and the asset does not. Wait rather than fail the caller's build.
+        for attempt in 1 2 3 4 5 6; do
+          if curl -sSfL "$url" -o "$dir/tenet.${{ inputs.version }}.nupkg"; then
+            break
+          fi
+          if [ "$attempt" = 6 ]; then
+            echo "::error::could not download $url after $attempt attempts"
+            exit 1
+          fi
+          echo "attempt $attempt: not published yet, waiting 30s"
+          sleep 30
+        done
         dotnet tool install --global tenet --version "${{ inputs.version }}" --add-source "$dir" --ignore-failed-sources
         echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
     - name: tenet check
