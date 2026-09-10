@@ -306,7 +306,8 @@ internal static class Program
                     string arrow = i == 0 ? "   " : "-> ";
                     Console.WriteLine($"    {arrow}{path[i]}{where}");
                 }
-                Console.WriteLine($"    ({path.Count - 1} steps; the last named declaration is the one that invokes it)");
+                int steps = path.Count - 1;
+                Console.WriteLine($"    ({steps} step{(steps == 1 ? "" : "s")}; the last named declaration above the assumption is the one that invokes it)");
             }
             Console.WriteLine();
         }
