@@ -273,11 +273,16 @@ Tenet is another entry, not a first.
 | [nanoda](https://github.com/ammkrn/nanoda_lib) | An independent kernel in Rust; the checker [Comparator](https://github.com/leanprover/comparator) drives it | Yes |
 | [trepplein](https://github.com/gebner/trepplein) | An independent kernel in Scala | Yes |
 | Tenet | An independent kernel in C# on .NET | Yes |
+| [gonzalgo](https://github.com/vince-gonzalez/gonzalgo) | Axiom provenance for Lean 4 and Metamath: which step introduced an axiom, and whether the statement required it | Not its job; it explains rather than re-checks |
 
 What Tenet adds is a second *implementation* on a different runtime, checked against Lean's
 own kernel declaration by declaration on damaged inputs, plus two things aimed at using it
 routinely: it reads compiled `.olean` files directly, so a project can be checked in place
 without producing an export first, and it runs the whole of Mathlib in about six minutes.
+
+`tenet why` overlaps with gonzalgo and arrived after it. Gonzalgo is the more complete answer
+to that particular question: it covers Metamath as well as Lean, and it asks whether the
+statement itself required the axiom, which Tenet does not.
 
 Diversity is the point of all of these. Independent implementations only help if they are
 genuinely independent, so the sensible thing is to run more than one.
