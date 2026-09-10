@@ -3,7 +3,12 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-09-10
+
+Four questions a kernel can answer about a finished build, beyond "does it check": which
+axioms a theorem rests on, which lemma brought each one in, what a statement is built from
+and who wrote those definitions, and how much of a whole project stands unconditionally.
+Demonstrated on OpenAI's NavierStokesAndEuler and on the FLT project.
 
 ### Added
 - `tenet why FILE.olean NAME` shows a shortest chain from a declaration to each assumption it

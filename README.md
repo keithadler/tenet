@@ -27,7 +27,7 @@ OK: 765497 checked in 10726 modules, 0 failed, 10726 modules mapped, 390.5s, 12 
 
 ## Status
 
-Version 0.4. Every rule of the reference kernel has a counterpart here. Tenet checks all
+Version 0.5. Every rule of the reference kernel has a counterpart here. Tenet checks all
 of Mathlib and its dependencies, 765,497 declarations in 10,726 modules, directly from the
 compiled `.olean` files in about six minutes on a laptop, with zero failures, deriving
 the recursors itself and comparing them field for field against Lean's own. Its verdicts
