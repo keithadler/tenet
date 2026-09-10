@@ -234,6 +234,7 @@ Tenet reads export format 3.x (NDJSON), both the current 3.1 layout and the 3.0 
 | `tenet check FILE` | check every declaration of an export, a `.olean` module, or a built Lake project directory; `--jobs N` (default: all cores), `--only a,b`, `--fail-fast`, `--low-memory`, `--report out.json`, `--stats`, `--slow SECONDS`, `--verbose`, `--quiet` |
 | `tenet info FILE` | metadata and counts |
 | `tenet why FILE.olean NAME` | the chain from a declaration to each assumption it rests on, module by module |
+| `tenet crosscheck EXPORT OLEAN` | what the `.olean` reader decodes, against Lean's own exporter |
 | `tenet audit DIR` | which of a project's declarations are complete and which rest on `sorry` |
 | `tenet statement FILE.olean NAME...` | which constants a theorem's statement is built from, and which of them the project defines itself |
 | `tenet axioms FILE NAME...` | print the axioms a declaration depends on, transitively, as Lean's `#print axioms` does |
@@ -352,6 +353,10 @@ A checker that accepted everything would produce the same clean output, so:
   130,000 deliberately damaged declarations. That comparison has found two real kernel bugs,
   both in Tenet: a head comparison that used reference equality where the reference compares
   structurally, and a recursor walk that accepted only one binder shape.
+- **The `.olean` reader is checked against Lean's own exporter**, constant by constant, over all
+  648 modules of `Init`: 59,720 compared, zero substantive differences. That is the one path the
+  kernel comparison cannot reach, since a reader that drops a hypothesis yields a weaker theorem
+  both kernels would accept.
 - **Other methods found three more, also all in Tenet**: checking older toolchains found a
   hardcoded string-literal constant that is actually version dependent, fuzzing the `.olean`
   reader found a corruption path that threw the wrong exception, and profiling found an

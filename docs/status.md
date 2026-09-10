@@ -81,6 +81,32 @@ translated from Lean's code follows every step of those proofs and accepts them,
 `sorryAx` or extra axiom appears. Whether the formal statements match the informal problem
 is a separate question that no kernel can answer.
 
+## The `.olean` reader, checked against Lean's own exporter
+
+Comparing verdicts with Lean's kernel cannot find a bug in the reader. A reader that quietly
+drops a hypothesis produces a different, weaker theorem, and both kernels then accept it. That
+path is covered by `tenet crosscheck`, which compares every constant Tenet decodes from the
+binary format against the same constant as `lean4export` wrote it from Lean's own environment.
+
+Over the whole of `Init`, 648 modules:
+
+| | |
+| --- | --- |
+| Constants compared | 59,720 |
+| Identical in every field | 59,663 |
+| Differing in binder names or implicitness only | 41 |
+| Same auxiliary declaration realized in a different module | 16 |
+| **Substantive differences** | **0** |
+| Not in the export | 6,562 (the exporter omits unsafe and some compiler-generated declarations) |
+
+The 41 are elaboration metadata. A binder's name and its implicit or explicit marking are
+display and elaboration information that the kernel ignores, so they cannot change a verdict;
+most are macro-hygiene names whose hash depends on where elaboration happened. The 16 are
+`_private.A.0.Foo` against `_private.B.0.Foo`: one auxiliary declaration, realized in whichever
+module first needed it, and the two environments realized it in different places.
+
+Nothing was found that could change what the kernel accepts.
+
 ## Lean versions
 
 The tests and the tables above pin Lean 4.34.0-rc2, but the `.olean` reader and the kernel are

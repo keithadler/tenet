@@ -247,6 +247,94 @@ public static class Replay
         _ => throw new KernelException($"cannot replay '{c.Name}' ({c.KindName}) on its own"),
     };
 
+    /// <summary>
+    /// Every field of two versions of the same constant, compared, or null when they agree. Unlike
+    /// <see cref="Compare"/> this also compares values, reducibility hints and safety, because it is meant for
+    /// checking one *reading* of a constant against another rather than a derived constant against a stored one.
+    /// </summary>
+    public static string? Difference(ConstantInfo a, ConstantInfo b)
+    {
+        if (a.KindName != b.KindName)
+        {
+            return $"kind: {a.KindName} vs {b.KindName}";
+        }
+        if (!Name.ListEquals(a.LevelParams, b.LevelParams))
+        {
+            return $"universe parameters: {Fmt(a.LevelParams)} vs {Fmt(b.LevelParams)}";
+        }
+        string d = ExprOps.FirstDifference(a.Type, b.Type);
+        if (d != "(equal)")
+        {
+            return "type" + d;
+        }
+        if ((a.Value is null) != (b.Value is null))
+        {
+            return "one has a value and the other does not";
+        }
+        if (a.Value is not null && b.Value is not null)
+        {
+            d = ExprOps.FirstDifference(a.Value, b.Value);
+            if (d != "(equal)")
+            {
+                return "value" + d;
+            }
+        }
+        switch (a)
+        {
+            case DefinitionInfo x when b is DefinitionInfo y:
+                if (!Equals(x.Hints, y.Hints))
+                {
+                    return $"reducibility hints: {x.Hints} vs {y.Hints}";
+                }
+                if (x.Safety != y.Safety)
+                {
+                    return $"safety: {x.Safety} vs {y.Safety}";
+                }
+                break;
+            case InductiveInfo x when b is InductiveInfo y:
+                if ((x.NumParams, x.NumIndices, x.NumNested, x.IsRec, x.IsUnsafe, x.IsReflexive)
+                    != (y.NumParams, y.NumIndices, y.NumNested, y.IsRec, y.IsUnsafe, y.IsReflexive))
+                {
+                    return "inductive metadata differs";
+                }
+                if (!Name.ListEquals(x.All, y.All) || !Name.ListEquals(x.Ctors, y.Ctors))
+                {
+                    return "inductive block members or constructors differ";
+                }
+                break;
+            case ConstructorInfo x when b is ConstructorInfo y:
+                if (!x.Induct.Equals(y.Induct) || (x.Cidx, x.NumParams, x.NumFields, x.IsUnsafe) != (y.Cidx, y.NumParams, y.NumFields, y.IsUnsafe))
+                {
+                    return "constructor metadata differs";
+                }
+                break;
+            case RecursorInfo x when b is RecursorInfo y:
+                if ((x.NumParams, x.NumIndices, x.NumMotives, x.NumMinors, x.K, x.IsUnsafe)
+                    != (y.NumParams, y.NumIndices, y.NumMotives, y.NumMinors, y.K, y.IsUnsafe))
+                {
+                    return "recursor metadata differs";
+                }
+                if (!Name.ListEquals(x.All, y.All) || x.Rules.Length != y.Rules.Length)
+                {
+                    return "recursor block members or rule count differ";
+                }
+                for (int i = 0; i < x.Rules.Length; i++)
+                {
+                    if (!x.Rules[i].Ctor.Equals(y.Rules[i].Ctor) || x.Rules[i].NumFields != y.Rules[i].NumFields)
+                    {
+                        return $"rule {i} header differs";
+                    }
+                    d = ExprOps.FirstDifference(x.Rules[i].Rhs, y.Rules[i].Rhs);
+                    if (d != "(equal)")
+                    {
+                        return $"rule {i} rhs" + d;
+                    }
+                }
+                break;
+        }
+        return null;
+    }
+
     /// <summary>Every stored field must agree with what the kernel derived.</summary>
     public static void Compare(ConstantInfo stored, ConstantInfo derived)
     {

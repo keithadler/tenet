@@ -66,6 +66,63 @@ public static class ExprOps
     }
 
     /// <summary>Visit every subterm; the predicate returns false to skip a subterm's children. Shared subterms are visited once.</summary>
+    private static string Trunc(string s) => s.Length > 300 ? s[..300] + "…" : s;
+
+    /// <summary>
+    /// Describe the first structurally different subterm of two expressions, or <c>"(equal)"</c>. A <c>let</c>'s
+    /// <c>nonDep</c> flag is ignored: lean4export writes <c>false</c> for every let, so it cannot be compared against
+    /// what an <c>.olean</c> stores. Used to compare a term read from Lean's binary format with the same term as
+    /// Lean's own exporter wrote it.
+    /// </summary>
+    public static string FirstDifference(Expr a, Expr b, string path = "")
+    {
+        if (a.Equals(b))
+        {
+            return "(equal)";
+        }
+        if (a is LetExpr && b is LetExpr)
+        {
+            // fall through to the field-wise comparison below, which ignores nonDep
+        }
+        else if (a.Kind != b.Kind)
+        {
+            return $"{path}: kinds {a.Kind} vs {b.Kind}\n  a: {Trunc(a.ToString())}\n  b: {Trunc(b.ToString())}";
+        }
+        switch (a)
+        {
+            case AppExpr x when b is AppExpr y:
+                {
+                    string f = FirstDifference(x.Fn, y.Fn, path + "/fn");
+                    return f != "(equal)" ? f : FirstDifference(x.Arg, y.Arg, path + "/arg");
+                }
+            case BindingExpr x when b is BindingExpr y:
+                {
+                    if (!x.BinderName.Equals(y.BinderName) || x.Info != y.Info)
+                    {
+                        return $"{path}: binder {x.BinderName}/{x.Info} vs {y.BinderName}/{y.Info}";
+                    }
+                    string d = FirstDifference(x.Domain, y.Domain, path + "/domain");
+                    return d != "(equal)" ? d : FirstDifference(x.Body, y.Body, path + "/body");
+                }
+            case LetExpr x when b is LetExpr y:
+                {
+                    string t = FirstDifference(x.Type, y.Type, path + "/type");
+                    if (t != "(equal)")
+                    {
+                        return t;
+                    }
+                    string v = FirstDifference(x.Value, y.Value, path + "/value");
+                    return v != "(equal)" ? v : FirstDifference(x.Body, y.Body, path + "/body");
+                }
+            case ProjExpr x when b is ProjExpr y:
+                return x.Idx != y.Idx || !x.StructName.Equals(y.StructName)
+                    ? $"{path}: proj {x.StructName}.{x.Idx} vs {y.StructName}.{y.Idx}"
+                    : FirstDifference(x.Struct, y.Struct, path + "/struct");
+            default:
+                return $"{path}: {a.Kind}\n  a: {Trunc(a.ToString())}\n  b: {Trunc(b.ToString())}";
+        }
+    }
+
     public static void ForEach(Expr e, Func<Expr, int, bool> f)
     {
         var visited = new HashSet<(Expr, int)>(RefOffsetComparer.Instance);

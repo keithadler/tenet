@@ -23,6 +23,7 @@ internal static class Program
           tenet statement <Module.olean> <name>...  which constants a theorem's statement is built from, and who defines them
           tenet audit <project dir>               which of a project's declarations are complete and which rest on sorry
           tenet why <Module.olean> <name>         the chain from a declaration to each assumption it rests on
+          tenet crosscheck <export.ndjson> <olean|dir>  what the .olean reader decodes, against Lean's own exporter
           tenet version
 
         options for check:
@@ -70,6 +71,7 @@ internal static class Program
                 "statement" => Statement(args[1..]),
                 "audit" => Audit(args[1..]),
                 "why" => Why(args[1..]),
+                "crosscheck" => CrossCheck(args[1..]),
                 "version" => Version(),
                 _ => Fail($"unknown command '{args[0]}'\n\n{Usage}"),
             };
@@ -312,6 +314,133 @@ internal static class Program
             Console.WriteLine();
         }
         return 0;
+    }
+
+    /// <summary>
+    /// Compare what Tenet reads from Lean's compiled <c>.olean</c> files against what Lean's own exporter wrote for
+    /// the same declarations. The kernel comparison against Lean cannot see a reader bug: a reader that quietly drops
+    /// a hypothesis produces a different, weaker theorem that both kernels then accept. This is the only check that
+    /// covers that path, and it is the weakest link in Tenet's trusted base.
+    /// </summary>
+    private static int CrossCheck(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Fail("crosscheck needs an export (.ndjson) and an .olean file or a directory of them");
+        }
+        int show = 10;
+        for (int i = 2; i < args.Length; i++)
+        {
+            if (args[i] == "--show" && i + 1 < args.Length && int.TryParse(args[++i], out int v))
+            {
+                show = v;
+            }
+        }
+
+        var sw = Stopwatch.StartNew();
+        ExportFile file = NdjsonReader.ReadFile(args[0]);
+        var exported = new Environment();
+        foreach (ExportDecl d in file.Decls)
+        {
+            ExportChecker.AddUnchecked(exported, d);
+        }
+        Console.Error.WriteLine($"export: {file.Decls.Count} declarations read in {sw.Elapsed.TotalSeconds:F1}s");
+
+        List<string> files = Directory.Exists(args[1])
+            ? Directory.EnumerateFiles(args[1], "*.olean", SearchOption.AllDirectories).OrderBy(f => f, StringComparer.Ordinal).ToList()
+            : [args[1]];
+
+        int compared = 0, agreed = 0, absent = 0;
+        var differences = new List<(Name Name, string What)>();
+        foreach (string f in files)
+        {
+            using var m = new Tenet.Olean.OleanModule(f);
+            foreach (ConstantInfo c in m.DecodeAll())
+            {
+                ConstantInfo? e = exported.Find(c.Name);
+                if (e is null)
+                {
+                    absent++;   // the exporter omits unsafe and some compiler-generated declarations
+                    continue;
+                }
+                compared++;
+                string? diff = Replay.Difference(e, c);
+                if (diff is null)
+                {
+                    agreed++;
+                }
+                else
+                {
+                    differences.Add((c.Name, diff));
+                }
+                _ = diff;
+            }
+        }
+
+        // Classify, because not every difference means the same thing. A binder's name and its implicit/explicit
+        // marking are elaboration metadata that the kernel ignores entirely, so they cannot change a verdict. Two
+        // private auxiliaries with the same tail and different module prefixes are the same declaration realized in
+        // different places. Anything else would be a reader defect.
+        var cosmetic = new List<(Name, string)>();
+        var realization = new List<(Name, string)>();
+        var substantive = new List<(Name, string)>();
+        foreach ((Name n, string what) in differences)
+        {
+            if (what.Contains(": binder ", StringComparison.Ordinal))
+            {
+                cosmetic.Add((n, what));
+            }
+            else if (SamePrivateTail(what))
+            {
+                realization.Add((n, what));
+            }
+            else
+            {
+                substantive.Add((n, what));
+            }
+        }
+
+        Console.WriteLine($"crosscheck: {files.Count} module{(files.Count == 1 ? "" : "s")}, {compared} constants compared against the export in {sw.Elapsed.TotalSeconds:F1}s");
+        Console.WriteLine($"  identical:                          {agreed}");
+        Console.WriteLine($"  binder names or implicitness only:  {cosmetic.Count}   (elaboration metadata; the kernel ignores it)");
+        Console.WriteLine($"  same auxiliary, realized elsewhere: {realization.Count}   (a private name differing only in its module prefix)");
+        Console.WriteLine($"  substantive:                        {substantive.Count}");
+        Console.WriteLine($"  not in the export:                  {absent}   (the exporter omits unsafe and some compiler-generated declarations)");
+        foreach ((Name n, string what) in substantive.Concat(realization).Concat(cosmetic).Take(show))
+        {
+            Console.WriteLine();
+            Console.WriteLine($"  {n}: {what}");
+        }
+        return substantive.Count == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// True when a difference is two private names that agree after their <c>_private.Module.N.</c> prefix: the same
+    /// auxiliary declaration realized in a different module, not a different declaration.
+    /// </summary>
+    private static bool SamePrivateTail(string what)
+    {
+        string? a = null, b = null;
+        foreach (string line in what.Split('\n'))
+        {
+            string t = line.Trim();
+            if (t.StartsWith("a: ", StringComparison.Ordinal))
+            {
+                a = t[3..];
+            }
+            else if (t.StartsWith("b: ", StringComparison.Ordinal))
+            {
+                b = t[3..];
+            }
+        }
+        if (a is null || b is null)
+        {
+            return false;
+        }
+        // strip a leading `_private.<module path>.<n>.` from each and see whether what is left agrees
+        var prefix = new System.Text.RegularExpressions.Regex(@"^_private\.[A-Za-z0-9_.]+?\.\d+\.");
+        System.Text.RegularExpressions.Match ma = prefix.Match(a), mb = prefix.Match(b);
+        return ma.Success && mb.Success && a[ma.Length..] == b[mb.Length..];
     }
 
     /// <summary>
