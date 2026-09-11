@@ -23,6 +23,7 @@ internal static class Program
           tenet statement <Module.olean> <name>...  which constants a theorem's statement is built from, and who defines them
           tenet audit <project dir>               which of a project's declarations are complete and which rest on sorry
           tenet why <Module.olean> <name>         the chain from a declaration to each assumption it rests on
+          tenet compare <a.olean> <nameA> <b.olean> <nameB>   are two projects stating the same theorem?
           tenet crosscheck <export.ndjson> <olean|dir>  what the .olean reader decodes, against Lean's own exporter
           tenet version
 
@@ -70,6 +71,7 @@ internal static class Program
                 "axioms" => Axioms(args[1..]),
                 "statement" => Statement(args[1..]),
                 "audit" => Audit(args[1..]),
+                "compare" => Compare(args[1..]),
                 "why" => Why(args[1..]),
                 "crosscheck" => CrossCheck(args[1..]),
                 "version" => Version(),
@@ -441,6 +443,142 @@ internal static class Program
         var prefix = new System.Text.RegularExpressions.Regex(@"^_private\.[A-Za-z0-9_.]+?\.\d+\.");
         System.Text.RegularExpressions.Match ma = prefix.Match(a), mb = prefix.Match(b);
         return ma.Success && mb.Success && a[ma.Length..] == b[mb.Length..];
+    }
+
+    /// <summary>
+    /// Are two theorems, in two separately built projects, the same statement? A kernel checks that a proof proves
+    /// the statement written down; it never asks whether that statement is the one intended. The one case a machine
+    /// can settle is when somebody else has written the statement independently: then the question becomes whether
+    /// the two agree, and definitional equality answers it.
+    ///
+    /// Both statements are brought into one environment. Where a constant name carries different content in the two
+    /// projects, that is reported rather than silently resolved, because a disagreement inside a shared definition is
+    /// exactly the thing that would make two statements look alike and mean different things.
+    /// </summary>
+    private static int Compare(string[] args)
+    {
+        if (args.Length < 4)
+        {
+            return Fail("compare needs: <a.olean> <nameA> <b.olean> <nameB>");
+        }
+        (Tenet.Olean.OleanChecker Checker, Name Name) Side(string path, string decl)
+        {
+            var search = new Tenet.Olean.LeanSearchPath();
+            search.AddFromEnvironment();
+            search.AddAroundOleanFile(path);
+            var checker = new Tenet.Olean.OleanChecker(search);
+            Name module = search.ModuleNameOf(path);
+            checker.Load([(module, path)]);
+            search.AddToolchainFor(checker.Modules[module].LeanVersion);
+            checker.Load([(module, path)]);
+            return (checker, Name.Parse(decl));
+        }
+
+        var (ca, na) = Side(args[0], args[1]);
+        using (ca)
+        {
+            var (cb, nb) = Side(args[2], args[3]);
+            using (cb)
+            {
+                ConstantInfo? a = ca.Resolve(na), b = cb.Resolve(nb);
+                if (a is null)
+                {
+                    return Fail($"{na} is not in {args[0]} or its imports");
+                }
+                if (b is null)
+                {
+                    return Fail($"{nb} is not in {args[2]} or its imports");
+                }
+
+                // Pull in everything both statements reach, from whichever side owns it, and note where the two
+                // projects disagree about a name they share.
+                var env = new Environment();
+                var conflicts = new SortedSet<string>(StringComparer.Ordinal);
+                var seen = new HashSet<Name>();
+                var todo = new Stack<Name>();
+                void Seed(Expr e) => ExprOps.ForEach(e, (t, _) =>
+                {
+                    if (t is ConstExpr k)
+                    {
+                        todo.Push(k.Name);
+                    }
+                    return true;
+                });
+                Seed(a.Type);
+                Seed(b.Type);
+                while (todo.Count > 0)
+                {
+                    Name cur = todo.Pop();
+                    if (!seen.Add(cur))
+                    {
+                        continue;
+                    }
+                    ConstantInfo? fa = ca.Resolve(cur), fb = cb.Resolve(cur);
+                    ConstantInfo? pick = fa ?? fb;
+                    if (pick is null)
+                    {
+                        continue;
+                    }
+                    if (fa is not null && fb is not null && !fa.Type.Equals(fb.Type))
+                    {
+                        conflicts.Add(cur.ToString());
+                    }
+                    env.AddCore(pick);
+                    foreach (Name u in Replay.UsedConstants(pick))
+                    {
+                        todo.Push(u);
+                    }
+                }
+
+                bool syntactic = a.Type.Equals(b.Type);
+                bool defeq = syntactic;
+                string note = "";
+                if (!syntactic)
+                {
+                    try
+                    {
+                        defeq = new TypeChecker(env).IsDefEq(a.Type, b.Type);
+                    }
+                    catch (KernelException e)
+                    {
+                        note = "   (the comparison itself failed: " + e.Message.Split('\n')[0] + ")";
+                    }
+                }
+
+                Console.WriteLine($"A  {na}");
+                Console.WriteLine($"     {args[0]}");
+                Console.WriteLine($"B  {nb}");
+                Console.WriteLine($"     {args[2]}");
+                Console.WriteLine();
+                Console.WriteLine(syntactic
+                    ? "same statement: yes, the two types are identical"
+                    : defeq
+                        ? "same statement: yes, the two types are definitionally equal though written differently"
+                        : "same statement: NO, the two types are not definitionally equal" + note);
+                Console.WriteLine($"  constants reached by both statements: {seen.Count}");
+                if (conflicts.Count == 0)
+                {
+                    Console.WriteLine("  shared names that differ between the projects: none");
+                }
+                else
+                {
+                    Console.WriteLine($"  shared names that differ between the projects: {conflicts.Count}");
+                    Console.WriteLine("    a name meaning two things is how two statements look alike and differ:");
+                    foreach (string c in conflicts.Take(20))
+                    {
+                        Console.WriteLine($"      {c}");
+                    }
+                }
+                if (!syntactic)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("A: " + ExprPrinter.Print(a.Type));
+                    Console.WriteLine();
+                    Console.WriteLine("B: " + ExprPrinter.Print(b.Type));
+                }
+                return defeq ? 0 : 1;
+            }
+        }
     }
 
     /// <summary>

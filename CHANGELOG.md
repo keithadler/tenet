@@ -6,6 +6,12 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `tenet compare A.olean nameA B.olean nameB` asks whether two separately built projects state
+  the same theorem, by definitional equality rather than by eye. A kernel never asks whether a
+  statement is the intended one; the case a machine can settle is when somebody has written the
+  statement independently, and then the question is whether the two agree. Names that carry
+  different content in the two projects are reported rather than silently resolved, since a
+  shared name meaning two things is how two statements look alike and differ.
 - `tenet crosscheck <export.ndjson> <olean|dir>` compares what the `.olean` reader decodes
   against what Lean's own exporter wrote for the same declarations, and classifies each
   difference. Comparing verdicts with Lean's kernel cannot find a reader bug, because a reader

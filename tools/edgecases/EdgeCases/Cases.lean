@@ -109,4 +109,21 @@ def layer3 : Nat := layer2 - 3
 
 theorem layers_reduce : layer3 = 13 := rfl
 
+/-! ## One theorem stated two ways, and a near miss.
+
+`tenet compare` exists for the case where two projects formalize the same claim independently.
+These three are the test of it: the first two say the same thing through different definitions,
+the third differs by one number and must not be mistaken for either.
+-/
+
+def twoAlias : Nat := 2
+
+theorem sum_direct : 2 + 2 = 4 := rfl
+theorem sum_via_alias : twoAlias + 2 = 4 := rfl
+theorem sum_near_miss : 2 + 3 = 5 := rfl
+
+/-- Same statement as `sum_direct`, differing only in how the binder is named. -/
+theorem addzero_n : ∀ n : Nat, n + 0 = n := fun n => rfl
+theorem addzero_m : ∀ m : Nat, m + 0 = m := fun m => rfl
+
 end EdgeCases

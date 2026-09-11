@@ -134,6 +134,20 @@ Classifying a mutation as equality-preserving is a claim that has to be right. `
 the damage group for that reason. Getting this wrong turns an expected rejection into a false
 bug report.
 
+### Comparing statements across projects
+
+`tenet compare` answers the one faithfulness question a machine can settle: when two groups
+formalize the same claim independently, do their statements agree? Both are brought into one
+environment and compared by definitional equality, so a difference of phrasing is seen through
+and a difference of meaning is not.
+
+The corpus carries the test cases: `sum_direct` and `sum_via_alias` state one claim through
+different definitions and compare equal, `sum_near_miss` differs by one number and does not,
+and `addzero_n` and `addzero_m` differ only in a binder name and are identical.
+
+Where a name carries different content in the two projects, that is reported rather than
+resolved. Two statements built from a name that means two things will look alike and are not.
+
 ### A corpus built to be mutated
 
 `tools/edgecases` is a small Lean library dense in the rules a general export exercises only
