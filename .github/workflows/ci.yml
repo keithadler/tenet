@@ -76,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [v4.34.0-rc2, v4.33.1, v4.28.0]
+        toolchain: [v4.34.0-rc2, v4.33.1, v4.28.0, v4.24.0, v4.16.0, v4.12.0]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4

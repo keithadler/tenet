@@ -33,7 +33,7 @@ internal sealed unsafe class Region : IDisposable
             throw new FileNotFoundException("no such .olean file", path);
         }
         Length = info.Length;
-        if (Length < HeaderSize + 8)
+        if (Length < 64)
         {
             throw new OleanFormatException(path, "file is too small to be an .olean");
         }
@@ -51,16 +51,31 @@ internal sealed unsafe class Region : IDisposable
             throw new OleanFormatException(path, "missing 'olean' marker");
         }
         FormatVersion = p[5];
-        Gmp = (p[6] & 1) != 0;
-        LeanVersion = ReadFixedString(7, 33);
-        GitHash = ReadFixedString(40, 40);
-        BaseAddr = *(ulong*)(p + 80);
-        long dataStart = FormatVersion switch
+        long dataStart;
+        if (FormatVersion == 1)
         {
-            2 => HeaderSize,
-            3 => HeaderSize + 8, // a data_size word precedes the data
-            _ => throw new OleanFormatException(path, $"unsupported .olean format version {FormatVersion} (Tenet reads 2 and 3)"),
-        };
+            // The original header, written by Lean up to about 4.12: marker, version, a 40-byte git hash, two
+            // bytes of padding, then the base address. It carries no flags byte and no version string, and big
+            // numbers were always GMP at the time.
+            Gmp = true;
+            LeanVersion = "";
+            GitHash = ReadFixedString(6, 40);
+            BaseAddr = *(ulong*)(p + 48);
+            dataStart = 56;
+        }
+        else
+        {
+            Gmp = (p[6] & 1) != 0;
+            LeanVersion = ReadFixedString(7, 33);
+            GitHash = ReadFixedString(40, 40);
+            BaseAddr = *(ulong*)(p + 80);
+            dataStart = FormatVersion switch
+            {
+                2 => HeaderSize,
+                3 => HeaderSize + 8, // a data_size word precedes the data
+                _ => throw new OleanFormatException(path, $"unsupported .olean format version {FormatVersion} (Tenet reads 1, 2 and 3)"),
+            };
+        }
         RootAddr = *(ulong*)(p + dataStart);
     }
 
@@ -166,13 +181,25 @@ public sealed unsafe class OleanModule : IDisposable
             }
             if (ReferenceEquals(region, _regions[0]))
             {
-                isModule = NumObjs(root) >= 5 && ScalarU8(root, 0) != 0;
+                // The module-system flag is a scalar written after the pointer fields. Lean versions before the
+                // module system have no such byte, and on a root object at the very end of the file, reading it
+                // runs past the mapping. Absence means "not a module system file", which is exactly right.
+                isModule = NumObjs(root) >= 5
+                           && HasBytes(root + 8 + 8UL * (ulong)NumObjs(root), 1)
+                           && ScalarU8(root, 0) != 0;
             }
             ulong importsArr = Ptr(Field(root, 0));
             for (long i = 0; i < ArrayLength(importsArr); i++)
             {
                 ulong imp = Ptr(ArrayElement(importsArr, i));
-                var im = new Import(DecodeName(Field(imp, 0)), ScalarU8(imp, 0) != 0, ScalarU8(imp, 1) != 0, ScalarU8(imp, 2) != 0);
+                // Only the module-system era records importAll / exported / meta. Older files carry a differently
+                // shaped Import, so reading those bytes there would report flags that were never written.
+                bool rich = region.FormatVersion >= 2 && HasBytes(imp + 8 + 8UL * (ulong)NumObjs(imp) + 2, 1);
+                var im = new Import(
+                    DecodeName(Field(imp, 0)),
+                    rich && ScalarU8(imp, 0) != 0,
+                    rich && ScalarU8(imp, 1) != 0,
+                    rich && ScalarU8(imp, 2) != 0);
                 if (!imports.Any(x => x.Module.Equals(im.Module)))
                 {
                     imports.Add(im);
@@ -258,6 +285,19 @@ public sealed unsafe class OleanModule : IDisposable
         int i = RegionIndexOf(addr, len);
         Region r = _regions[i];
         return r.Base + (addr - r.BaseAddr);
+    }
+
+    /// <summary>True when <paramref name="len"/> bytes at this address lie inside one of the mapped parts.</summary>
+    private bool HasBytes(ulong addr, long len)
+    {
+        foreach (Region r in _regions)
+        {
+            if (r.Contains(addr) && (ulong)len <= (ulong)r.Length - (addr - r.BaseAddr))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private int RegionIndexOf(ulong addr, long len = 8)

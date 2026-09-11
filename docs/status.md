@@ -113,11 +113,21 @@ The tests and the tables above pin Lean 4.34.0-rc2, but the `.olean` reader and 
 checked against several toolchains in CI (the `olean-compat` matrix): each job installs a
 toolchain and checks its whole `Init` library in place.
 
-| Toolchain | Declarations in `Init` | Result |
-| --- | --- | --- |
-| 4.34.0-rc2 | 64,814 | 0 failures |
-| 4.33.1 | 64,656 | 0 failures |
-| 4.28.0 | 56,236 | 0 failures |
+| Toolchain | `.olean` format | Declarations in `Init` | Result |
+| --- | --- | --- | --- |
+| 4.34.0-rc2 | 2 | 64,814 | 0 failures |
+| 4.33.1 | 2 | 64,656 | 0 failures |
+| 4.28.0 | 2 | 56,236 | 0 failures |
+| 4.24.0 | 2 | | 0 failures |
+| 4.16.0 | 2, no module system | 21,965 | 0 failures |
+| 4.12.0 | **1** | 17,559 | 0 failures |
+
+Reaching back that far took two fixes. Lean before the module system writes a `ModuleData` with
+no trailing flag byte, and on a root object at the very end of a file, reading that absent byte
+runs past the mapping; absence now means "not a module-system file", which is what it is. And
+Lean up to about 4.12 wrote an older header entirely: no flags byte, no version string, the git
+hash at offset 6 and the base address at 48. Both were found by pointing the reader at old
+toolchains rather than by reasoning about the format.
 | 4.20.0 | 38,631 | 5 not checkable, see below |
 
 Reading Lean 4.20.0 found two things worth recording, and one real gap in the kernel.

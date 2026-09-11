@@ -6,6 +6,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `.olean` format 1 (Lean up to about 4.12) is read, and the pre-module-system `ModuleData`
+  layout no longer overruns the mapping. CI now covers six toolchains from 4.12 to 4.34.
 - `--json` on `axioms`, `audit`, `compare`, `crosscheck`, `statement` and `why`. Every command that answers a
   question worth acting on can now answer it to a program; parsing prose was not an interface.
 - `--names-out` on `crosscheck`, writing every constant compared, so coverage across several
