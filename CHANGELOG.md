@@ -3,7 +3,10 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-11
+
+Two questions that a kernel alone cannot answer: is my reader decoding what Lean actually
+stored, and are two projects stating the same theorem.
 
 ### Added
 - `tenet compare A.olean nameA B.olean nameB` asks whether two separately built projects state
@@ -18,10 +21,6 @@ versions follow [Semantic Versioning](https://semver.org/).
   that drops a hypothesis yields a weaker theorem both kernels accept; this covers that path.
   Over all 648 modules of `Init` and a Mathlib slice: 98,463 constants compared, 0 substantive
   differences.
-
-## [Unreleased]
-
-### Added
 - The differential harness takes `--kinds` and `--list-kinds`, and carries eleven mutation
   kinds aimed at one kernel feature at a time: universe level normalization, literal
   arithmetic at 0 / 2^31 / 2^63 / 2^64 / 2^128, nested inductive metadata, and recursor and

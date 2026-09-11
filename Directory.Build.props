@@ -23,6 +23,6 @@
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>lean;lean4;theorem-prover;type-checker;kernel;dependent-types;proof-checker</PackageTags>
-    <VersionPrefix>0.5.0</VersionPrefix>
+    <VersionPrefix>0.6.0</VersionPrefix>
   </PropertyGroup>
 </Project>
