@@ -155,6 +155,7 @@ Nothing, so far, and the shape of the nothing is worth recording.
 | `level-max-commute` on `Init.Prelude` (equality-preserving) | 40 | 0, as required: both kernels accepted every variant | 0 |
 | Ten damage kinds on `Init.Prelude` | 50 | 6,230 | 0 |
 | Ten damage kinds on `Init.Core` | 30 | 4,233 | 0 |
+| All kinds against the edge-case corpus, `--tail 300000` | 12 | 85 | 0 |
 
 The equality-preserving run is the more informative of the three. Zero rejections on either
 side is the correct answer, and it confirms both kernels agree that `max u v` and `max v u`
