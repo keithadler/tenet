@@ -24,6 +24,7 @@ internal static class Program
           tenet audit <project dir>               which of a project's declarations are complete and which rest on sorry
           --fail-on-axiom NAME on check exits non-zero if anything rests on that axiom (e.g. sorryAx)
           --timing on check prints where the time went: mapping, decoding, kernel, and worker utilization
+          --sarif FILE on check writes findings in SARIF, which GitHub code scanning renders on the diff
           tenet why <Module.olean> <name>         the chain from a declaration to each assumption it rests on
           tenet compare <a.olean> <nameA> <b.olean> <nameB>   are two projects stating the same theorem?
 
@@ -610,6 +611,58 @@ internal static class Program
             Header, imports and declaration counts, without checking anything.
             """,
     };
+
+    /// <summary>Best-effort source path for a module, so a finding lands on a file rather than nowhere.</summary>
+    private static string ModuleFile(Name module, Tenet.Olean.OleanChecker checker) =>
+        module.ToString().Replace('.', '/') + ".lean";
+
+    /// <summary>
+    /// SARIF, the format GitHub code scanning reads. A rejected declaration then appears on the pull request diff
+    /// instead of in a log nobody opens.
+    /// </summary>
+    private static void WriteSarif(string path, List<(string Rule, string File, string Message)> findings)
+    {
+        var results = new List<object>();
+        foreach ((string rule, string file, string message) in findings)
+        {
+            string region = Json(("startLine", 1));
+            string artifact = Json(("uri", file));
+            string physical = Json(("artifactLocation", new RawJson(artifact)), ("region", new RawJson(region)));
+            string location = Json(("physicalLocation", new RawJson(physical)));
+            results.Add(new RawJson(Json(
+                ("ruleId", rule),
+                ("level", "error"),
+                ("message", new RawJson(Json(("text", message)))),
+                ("locations", new List<object> { new RawJson(location) }))));
+        }
+
+        string ruleDoc = Json(
+            ("id", "tenet-rejected"),
+            ("shortDescription", new RawJson(Json(("text", "Declaration rejected by an independent Lean kernel")))),
+            ("fullDescription", new RawJson(Json(("text",
+                "Tenet re-derived this declaration from scratch and could not accept it. Lean accepted it when the "
+                + "file was built, so a disagreement is far more likely to be a bug in Tenet than a problem with the "
+                + "proof; please report it.")))));
+        string axiomRule = Json(
+            ("id", "tenet-rests-on-axiom"),
+            ("shortDescription", new RawJson(Json(("text", "Declaration rests on an axiom this project excludes")))),
+            ("fullDescription", new RawJson(Json(("text",
+                "The proof is valid, and it depends on an axiom the project asked to be kept out of the build. "
+                + "`sorry` is the usual one: it compiles, and it proves nothing.")))));
+        string driver = Json(
+            ("name", "Tenet"),
+            ("informationUri", "https://github.com/keithadler/tenet"),
+            ("version", typeof(Program).Assembly.GetName().Version?.ToString(3)),
+            ("rules", new List<object> { new RawJson(ruleDoc), new RawJson(axiomRule) }));
+        string run = Json(
+            ("tool", new RawJson(Json(("driver", new RawJson(driver))))),
+            ("results", results));
+        string doc = Json(
+            ("$schema", "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json"),
+            ("version", "2.1.0"),
+            ("runs", new List<object> { new RawJson(run) }));
+        File.WriteAllText(path, doc);
+    }
 
     private static string Trim(string s) => s.Length > 200 ? s[..200] + " …" : s;
 
@@ -1426,6 +1479,7 @@ internal static class Program
         var search = new Tenet.Olean.LeanSearchPath();
         bool all = false, failFast = false, compare = true, quiet = false, stats = false, verbose = false;
         Name? failOnAxiom = null;
+        string? sarif = null;
         string? report = null;
         double slow = 1.0;
         int jobs = System.Environment.ProcessorCount;
@@ -1454,6 +1508,10 @@ internal static class Program
                     break;
                 case "--low-memory": break;
                 case "--timing": break;   // read directly where the breakdown is printed
+                case "--sarif":
+                    if (++i >= args.Length) return Fail("--sarif needs a file name");
+                    sarif = args[i];
+                    break;
                 case "--fail-on-axiom":
                     if (++i >= args.Length) return Fail("--fail-on-axiom needs an axiom name, e.g. sorryAx");
                     failOnAxiom = Name.Parse(args[i]);
@@ -1622,6 +1680,9 @@ internal static class Program
                     ("path", Path.GetFullPath(t)), ("sha256", Sha256(t))))).ToList())));
         }
 
+        var findings = result.Failures.Select(f =>
+            (Rule: "tenet-rejected", File: ModuleFile(f.Module, checker), Message: $"{f.Name}: {f.Message.Split('\n')[0]}")).ToList();
+
         // A gate for projects that want an assumption kept out of their build. Checking says the proofs are valid;
         // this says they are valid without leaning on something the project has decided not to lean on.
         if (failOnAxiom is Name gate)
@@ -1648,6 +1709,15 @@ internal static class Program
                     hit.Add(ci.Name);
                 }
             }
+            foreach (Name n in hit.OrderBy(x => x.ToString(), StringComparer.Ordinal))
+            {
+                findings.Add(("tenet-rests-on-axiom", ModuleFile(targetNames.FirstOrDefault() ?? n, checker),
+                    $"{n} rests on {gate}"));
+            }
+            if (sarif is not null)
+            {
+                WriteSarif(sarif, findings);
+            }
             if (hit.Count > 0)
             {
                 Console.Error.WriteLine($"FAILED: {hit.Count} declaration{(hit.Count == 1 ? "" : "s")} rest on {gate}");
@@ -1665,6 +1735,10 @@ internal static class Program
             {
                 Console.Error.WriteLine($"no declaration rests on {gate}");
             }
+        }
+        else if (sarif is not null)
+        {
+            WriteSarif(sarif, findings);
         }
         return result.Success ? 0 : 1;
     }

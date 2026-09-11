@@ -6,6 +6,12 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `tenet check --sarif FILE` writes findings in SARIF, so GitHub code scanning renders a
+  rejection on the pull request diff rather than in a log. `--fail-on-axiom` contributes
+  findings too, which is the more useful case: a `sorry` that reached the branch shows up
+  where someone will see it.
+- `tools/bench`, a committed benchmark and a comparison script that exits non-zero on a
+  regression. Performance was previously only visible to whoever timed it by hand.
 - `tenet check --timing` prints where the time went: mapping, decoding, kernel, and worker
   utilization. On `Init` it shows the same work costing 24.2 s of kernel time on one job and
   56.1 s summed across twelve, which is the parallel contention measured rather than estimated.
