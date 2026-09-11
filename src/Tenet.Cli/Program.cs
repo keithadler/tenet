@@ -26,6 +26,7 @@ internal static class Program
           tenet compare <a.olean> <nameA> <b.olean> <nameB>   are two projects stating the same theorem?
 
           --json on axioms, audit, compare and crosscheck prints one machine-readable line instead
+          --names-out FILE on crosscheck writes every constant compared, so slices can be unioned
           tenet crosscheck <export.ndjson> <olean|dir>  what the .olean reader decodes, against Lean's own exporter
           tenet version
 
@@ -290,6 +291,25 @@ internal static class Program
             }
             var (axioms, _) = Replay.AxiomsOf(checker.Resolve, n);
             var interesting = axioms.Where(a => !standard.Contains(a)).ToList();
+            if (WantsJson(args))
+            {
+                var chains = new List<object>();
+                foreach (Name ax in interesting)
+                {
+                    List<Name>? path = Replay.PathTo(checker.Resolve, n, ax);
+                    chains.Add(new RawJson(Json(
+                        ("assumption", ax.ToString()),
+                        ("steps", path is null ? 0 : path.Count - 1),
+                        ("chain", (path ?? new List<Name>()).Select(x => x.ToString()).ToList()),
+                        ("modules", (path ?? new List<Name>())
+                            .Select(x => definedIn.TryGetValue(x, out Name? dm) ? dm.ToString() : "").ToList()))));
+                }
+                Console.WriteLine(Json(
+                    ("command", "why"), ("name", n.ToString()),
+                    ("unconditional", interesting.Count == 0),
+                    ("assumptions", chains)));
+                continue;
+            }
             Console.WriteLine(n.ToString());
             if (interesting.Count == 0)
             {
@@ -355,6 +375,7 @@ internal static class Program
             : [args[1]];
 
         int compared = 0, agreed = 0, absent = 0;
+        var comparedNames = new List<Name>();
         var differences = new List<(Name Name, string What)>();
         foreach (string f in files)
         {
@@ -368,6 +389,7 @@ internal static class Program
                     continue;
                 }
                 compared++;
+                comparedNames.Add(c.Name);
                 string? diff = Replay.Difference(e, c);
                 if (diff is null)
                 {
@@ -404,6 +426,13 @@ internal static class Program
             }
         }
 
+        // Coverage across several slices only means something if the union is counted, not the sum: two exports
+        // of different Mathlib modules share most of their closure.
+        int nameIdx = Array.IndexOf(args, "--names-out");
+        if (nameIdx >= 0 && nameIdx + 1 < args.Length)
+        {
+            File.WriteAllLines(args[nameIdx + 1], comparedNames.Select(n => n.ToString()));
+        }
         if (WantsJson(args))
         {
             Console.WriteLine(Json(
@@ -938,6 +967,16 @@ internal static class Program
                 {
                     local.Add($"{u}   ({m})");
                 }
+            }
+            if (WantsJson(args))
+            {
+                Console.WriteLine(Json(
+                    ("command", "statement"), ("name", n.ToString()),
+                    ("constants", used.Count),
+                    ("definedByThisProject", local.Select(l => l.Split("   (")[0]).ToList()),
+                    ("fromLibraries", library.Select(kv => new RawJson(Json(("library", kv.Key), ("constants", kv.Value)))).ToList()),
+                    ("notFound", unknown.ToList())));
+                continue;
             }
             Console.WriteLine($"{n}");
             Console.WriteLine($"  statement built from {used.Count} constants");

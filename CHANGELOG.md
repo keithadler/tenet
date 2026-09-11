@@ -6,8 +6,13 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- `--json` on `axioms`, `audit`, `compare` and `crosscheck`. Every command that answers a
+- `--json` on `axioms`, `audit`, `compare`, `crosscheck`, `statement` and `why`. Every command that answers a
   question worth acting on can now answer it to a program; parsing prose was not an interface.
+- `--names-out` on `crosscheck`, writing every constant compared, so coverage across several
+  export slices can be unioned rather than summed: two Mathlib exports share most of a closure,
+  and adding their counts overstates coverage badly.
+- A nightly run against Mathlib master, since the `.olean` reader depends on Lean's compiled
+  object layout, which is not a stable interface, and per-push CI only checks `Init`.
 - A verdict regression test over the edge-case corpus. The large runs all report zero failures
   and would keep reporting it whichever answer were wrong, so nothing previously noticed if a
   refactor quietly changed how structure eta, proof irrelevance, K-like reduction, quotient
