@@ -236,6 +236,7 @@ Tenet reads export format 3.x (NDJSON), both the current 3.1 layout and the 3.0 
 | `tenet why FILE.olean NAME` | the chain from a declaration to each assumption it rests on, module by module |
 | `tenet crosscheck EXPORT OLEAN` | what the `.olean` reader decodes, against Lean's own exporter |
 | `tenet compare A.olean nameA B.olean nameB` | are two separately built projects stating the same theorem? |
+| `--fail-on-axiom NAME` | on `check`: exit non-zero if anything rests on that axiom, e.g. `sorryAx` |
 | `--json` | on `axioms`, `audit`, `compare`, `crosscheck`, `statement` and `why`: machine-readable output instead of prose |
 | `tenet audit DIR` | which of a project's declarations are complete and which rest on `sorry` |
 | `tenet statement FILE.olean NAME...` | which constants a theorem's statement is built from, and which of them the project defines itself |

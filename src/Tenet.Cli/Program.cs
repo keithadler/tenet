@@ -22,6 +22,7 @@ internal static class Program
           tenet axioms <file> <name>...           print the axioms a declaration depends on, transitively
           tenet statement <Module.olean> <name>...  which constants a theorem's statement is built from, and who defines them
           tenet audit <project dir>               which of a project's declarations are complete and which rest on sorry
+          --fail-on-axiom NAME on check exits non-zero if anything rests on that axiom (e.g. sorryAx)
           tenet why <Module.olean> <name>         the chain from a declaration to each assumption it rests on
           tenet compare <a.olean> <nameA> <b.olean> <nameB>   are two projects stating the same theorem?
 
@@ -522,6 +523,21 @@ internal static class Program
     }
 
     private static string Trim(string s) => s.Length > 200 ? s[..200] + " …" : s;
+
+    /// <summary>Hash of a file, so a report says which artifact produced the verdict rather than only its path.</summary>
+    private static string Sha256(string path)
+    {
+        try
+        {
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            using FileStream f = File.OpenRead(path);
+            return System.Convert.ToHexString(sha.ComputeHash(f)).ToLowerInvariant();
+        }
+        catch (IOException)
+        {
+            return "";
+        }
+    }
 
     /// <summary>
     /// Minimal JSON emitter for the reporting commands. Every command that answers a question worth acting on should
@@ -1320,6 +1336,7 @@ internal static class Program
         var targets = new List<string>();
         var search = new Tenet.Olean.LeanSearchPath();
         bool all = false, failFast = false, compare = true, quiet = false, stats = false, verbose = false;
+        Name? failOnAxiom = null;
         string? report = null;
         double slow = 1.0;
         int jobs = System.Environment.ProcessorCount;
@@ -1347,6 +1364,10 @@ internal static class Program
                     report = args[i];
                     break;
                 case "--low-memory": break;
+                case "--fail-on-axiom":
+                    if (++i >= args.Length) return Fail("--fail-on-axiom needs an axiom name, e.g. sorryAx");
+                    failOnAxiom = Name.Parse(args[i]);
+                    break;
                 case "--slow":
                     if (++i >= args.Length || !double.TryParse(args[i], NumberStyles.Float, CultureInfo.InvariantCulture, out slow)) return Fail("--slow needs a number of seconds");
                     break;
@@ -1462,60 +1483,117 @@ internal static class Program
         Console.WriteLine($"{(result.Success ? "OK" : "FAILED")}: {result.Checked} checked in {result.ModulesChecked} module{(result.ModulesChecked == 1 ? "" : "s")}, {result.Failures.Count} failed{skipped}, {result.ModulesLoaded} modules mapped, {result.Elapsed.TotalSeconds:F1}s, {jobs} job{(jobs == 1 ? "" : "s")}");
         if (report is not null)
         {
-            var doc = new
+            File.WriteAllText(report, Json(
+                ("tenet", typeof(Program).Assembly.GetName().Version?.ToString(3)),
+                ("targets", targets.Select(Path.GetFullPath).ToList()),
+                ("modules", targetNames.Select(n => n.ToString()).ToList()),
+                ("lean", result.LeanVersion),
+                ("all", all),
+                ("success", result.Success),
+                ("modulesChecked", result.ModulesChecked),
+                ("modulesMapped", result.ModulesLoaded),
+                ("checked", result.Checked),
+                ("failed", result.Failures.Count),
+                ("skippedOldCodegen", result.SkippedOldCodegen),
+                ("jobs", jobs),
+                ("seconds", Math.Round(result.Elapsed.TotalSeconds, 2)),
+                ("failures", result.Failures.Select(f => new RawJson(Json(
+                    ("name", f.Name.ToString()), ("module", f.Module.ToString()), ("kind", f.Kind),
+                    ("message", f.Message), ("seconds", Math.Round(f.Elapsed.TotalSeconds, 3))))).ToList()),
+                ("slow", result.Slow.OrderByDescending(x => x.Elapsed).Select(x => new RawJson(Json(
+                    ("name", x.Name.ToString()), ("module", x.Module.ToString()),
+                    ("seconds", Math.Round(x.Elapsed.TotalSeconds, 2))))).ToList()),
+                ("kernelWork", stats ? new RawJson(Json(
+                    ("infer", TypeChecker.Stats.Infer), ("whnf", TypeChecker.Stats.Whnf),
+                    ("whnfCore", TypeChecker.Stats.WhnfCore), ("defEq", TypeChecker.Stats.DefEq),
+                    ("unfold", TypeChecker.Stats.Unfold), ("iota", TypeChecker.Stats.Iota),
+                    ("natLit", TypeChecker.Stats.NatLit), ("faithfulRetries", TypeChecker.Stats.FaithfulRetries))) : null),
+                // A verdict is only reproducible if you can tell whether the inputs were the same files.
+                ("artifacts", targets.Select(t => new RawJson(Json(
+                    ("path", Path.GetFullPath(t)), ("sha256", Sha256(t))))).ToList())));
+        }
+
+        // A gate for projects that want an assumption kept out of their build. Checking says the proofs are valid;
+        // this says they are valid without leaning on something the project has decided not to lean on.
+        if (failOnAxiom is Name gate)
+        {
+            var scope = new List<ConstantInfo>();
+            foreach (Name m in targetNames)
             {
-                tenet = typeof(Program).Assembly.GetName().Version?.ToString(3),
-                targets = targets.Select(Path.GetFullPath).ToArray(),
-                modules = targetNames.Select(n => n.ToString()).ToArray(),
-                lean = result.LeanVersion,
-                all,
-                success = result.Success,
-                modulesChecked = result.ModulesChecked,
-                modulesMapped = result.ModulesLoaded,
-                @checked = result.Checked,
-                failed = result.Failures.Count,
-                skippedOldCodegen = result.SkippedOldCodegen,
-                jobs,
-                seconds = Math.Round(result.Elapsed.TotalSeconds, 2),
-                failures = result.Failures.Select(f => new { name = f.Name.ToString(), module = f.Module.ToString(), kind = f.Kind, message = f.Message, seconds = Math.Round(f.Elapsed.TotalSeconds, 3) }).ToArray(),
-                slow = result.Slow.OrderByDescending(s => s.Elapsed).Select(s => new { name = s.Name.ToString(), module = s.Module.ToString(), seconds = Math.Round(s.Elapsed.TotalSeconds, 2) }).ToArray(),
-                kernelWork = stats ? new { infer = TypeChecker.Stats.Infer, whnf = TypeChecker.Stats.Whnf, whnfCore = TypeChecker.Stats.WhnfCore, defEq = TypeChecker.Stats.DefEq, unfold = TypeChecker.Stats.Unfold, iota = TypeChecker.Stats.Iota, natLit = TypeChecker.Stats.NatLit, faithfulRetries = TypeChecker.Stats.FaithfulRetries } : null,
-            };
-            File.WriteAllText(report, System.Text.Json.JsonSerializer.Serialize(doc, ReportJsonOptions));
+                if (checker.Modules.TryGetValue(m, out Tenet.Olean.OleanModule? om))
+                {
+                    foreach (Name cn in om.ConstantNames)
+                    {
+                        if (checker.Resolve(cn) is ConstantInfo ci)
+                        {
+                            scope.Add(ci);
+                        }
+                    }
+                }
+            }
+            HashSet<Name> hit = Replay.DependentsOf(gate, scope);
+            foreach (ConstantInfo ci in scope)
+            {
+                if (ci.Name.Equals(gate))
+                {
+                    hit.Add(ci.Name);
+                }
+            }
+            if (hit.Count > 0)
+            {
+                Console.Error.WriteLine($"FAILED: {hit.Count} declaration{(hit.Count == 1 ? "" : "s")} rest on {gate}");
+                foreach (Name n in hit.OrderBy(x => x.ToString(), StringComparer.Ordinal).Take(20))
+                {
+                    Console.Error.WriteLine($"  {n}");
+                }
+                if (hit.Count > 20)
+                {
+                    Console.Error.WriteLine($"  ... and {hit.Count - 20} more");
+                }
+                return 1;
+            }
+            if (!quiet)
+            {
+                Console.Error.WriteLine($"no declaration rests on {gate}");
+            }
         }
         return result.Success ? 0 : 1;
     }
 
     private static void WriteReport(string reportPath, string exportPath, CheckResult result, int jobs, bool stats)
     {
-        var doc = new
-        {
-            tenet = typeof(Program).Assembly.GetName().Version?.ToString(3),
-            export = Path.GetFullPath(exportPath),
-            meta = result.Stream?.Meta is ExportMeta m ? new { exporter = m.ExporterName, exporterVersion = m.ExporterVersion, format = m.FormatVersion, lean = m.LeanVersion, leanGitHash = m.LeanGitHash } : null,
-            success = result.Success,
-            incomplete = result.ReadError?.Message,
-            declarations = result.Stream?.Declarations,
-            expressions = result.Stream?.Expressions,
-            @checked = result.Checked,
-            failed = result.Failures.Count,
-            skipped = result.Skipped,
-            constants = result.Environment.Count,
-            jobs,
-            seconds = Math.Round(result.Elapsed.TotalSeconds, 2),
-            parseSeconds = result.Stream is StreamInfo si ? Math.Round(si.ParseTime.TotalSeconds, 2) : (double?)null,
-            failures = result.Failures.Select(f => new { name = f.Name.ToString(), kind = f.Kind, message = f.Message, seconds = Math.Round(f.Elapsed.TotalSeconds, 3) }).ToArray(),
-            slow = result.Slow.OrderByDescending(s => s.Elapsed).Select(s => new { name = s.Name.ToString(), seconds = Math.Round(s.Elapsed.TotalSeconds, 2) }).ToArray(),
-            kernelWork = stats ? new { infer = TypeChecker.Stats.Infer, whnf = TypeChecker.Stats.Whnf, whnfCore = TypeChecker.Stats.WhnfCore, defEq = TypeChecker.Stats.DefEq, unfold = TypeChecker.Stats.Unfold, iota = TypeChecker.Stats.Iota, natLit = TypeChecker.Stats.NatLit } : null,
-        };
-        File.WriteAllText(reportPath, System.Text.Json.JsonSerializer.Serialize(doc, ReportJsonOptions));
+        ExportMeta? m = result.Stream?.Meta;
+        File.WriteAllText(reportPath, Json(
+            ("tenet", typeof(Program).Assembly.GetName().Version?.ToString(3)),
+            ("export", Path.GetFullPath(exportPath)),
+            ("meta", m is null ? null : new RawJson(Json(
+                ("exporter", m.ExporterName), ("exporterVersion", m.ExporterVersion),
+                ("format", m.FormatVersion), ("lean", m.LeanVersion), ("leanGitHash", m.LeanGitHash)))),
+            ("success", result.Success),
+            ("incomplete", result.ReadError?.Message),
+            ("declarations", result.Stream?.Declarations),
+            ("expressions", result.Stream?.Expressions),
+            ("checked", result.Checked),
+            ("failed", result.Failures.Count),
+            ("skipped", result.Skipped),
+            ("constants", result.Environment.Count),
+            ("jobs", jobs),
+            ("seconds", Math.Round(result.Elapsed.TotalSeconds, 2)),
+            ("parseSeconds", result.Stream is StreamInfo si ? Math.Round(si.ParseTime.TotalSeconds, 2) : null),
+            ("failures", result.Failures.Select(f => new RawJson(Json(
+                ("name", f.Name.ToString()), ("kind", f.Kind), ("message", f.Message),
+                ("seconds", Math.Round(f.Elapsed.TotalSeconds, 3))))).ToList()),
+            ("slow", result.Slow.OrderByDescending(x => x.Elapsed).Select(x => new RawJson(Json(
+                ("name", x.Name.ToString()), ("seconds", Math.Round(x.Elapsed.TotalSeconds, 2))))).ToList()),
+            ("kernelWork", stats ? new RawJson(Json(
+                ("infer", TypeChecker.Stats.Infer), ("whnf", TypeChecker.Stats.Whnf),
+                ("whnfCore", TypeChecker.Stats.WhnfCore), ("defEq", TypeChecker.Stats.DefEq),
+                ("unfold", TypeChecker.Stats.Unfold), ("iota", TypeChecker.Stats.Iota),
+                ("natLit", TypeChecker.Stats.NatLit))) : null),
+            ("artifacts", new List<object> { new RawJson(Json(
+                ("path", Path.GetFullPath(exportPath)), ("sha256", Sha256(exportPath)))) })));
     }
 
-    private static readonly System.Text.Json.JsonSerializerOptions ReportJsonOptions = new()
-    {
-        WriteIndented = true,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-    };
 
     private static string Truncate(string s, int n) => s.Length <= n ? s : s[..(n - 1)] + "…";
 }

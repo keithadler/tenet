@@ -18,12 +18,28 @@ jobs:
       - run: dotnet build -c Release
       - run: dotnet test --no-build -c Release
       - run: dotnet pack --no-build -c Release -o artifacts
+      - name: Build standalone binaries
+        # A native binary needs no .NET installed and starts in about 7 ms instead of 27.
+        # That is the difference between "install an SDK first" and "download and run".
+        run: |
+          for rid in linux-x64 osx-arm64 win-x64; do
+            dotnet publish src/Tenet.Cli -c Release -r "$rid" -p:PublishAot=true \
+              -o "artifacts/$rid" 2>/dev/null || {
+                echo "AOT unavailable for $rid on this runner; falling back to self-contained"
+                dotnet publish src/Tenet.Cli -c Release -r "$rid" --self-contained true \
+                  -p:PublishSingleFile=true -o "artifacts/$rid"
+              }
+            ( cd "artifacts/$rid" && tar czf "../tenet-${GITHUB_REF_NAME}-$rid.tar.gz" tenet* 2>/dev/null || true )
+          done
+          ls -la artifacts/*.tar.gz || true
+
       - name: Attach packages to the GitHub release
         # The release is normally created by hand with written notes before the tag is pushed;
         # if it does not exist yet, create it from the tag so the packages still land somewhere.
         run: |
           gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "Tenet ${GITHUB_REF_NAME#v}" --generate-notes
           gh release upload "$GITHUB_REF_NAME" artifacts/*.nupkg --clobber
+          gh release upload "$GITHUB_REF_NAME" artifacts/*.tar.gz --clobber || true
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Publish to nuget.org

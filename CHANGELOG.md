@@ -6,6 +6,14 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `tenet check --fail-on-axiom NAME` exits non-zero if anything checked rests on that axiom.
+  Checking says the proofs are valid; this says they are valid without leaning on something the
+  project has decided not to lean on, which is the gate a formalization wants in CI.
+- Reports record the SHA-256 of every artifact checked. A verdict is only reproducible if you
+  can tell whether the inputs were the same files.
+- Standalone native binaries on each release: no .NET installed, 4 MB, and about 7 ms to start
+  instead of 27. Reports are now written by a hand-rolled emitter rather than a reflecting
+  serializer, which is what made an ahead-of-time build possible and also fixes the field order.
 - `.olean` format 1 (Lean up to about 4.12) is read, and the pre-module-system `ModuleData`
   layout no longer overruns the mapping. CI now covers six toolchains from 4.12 to 4.34.
 - `--json` on `axioms`, `audit`, `compare`, `crosscheck`, `statement` and `why`. Every command that answers a
