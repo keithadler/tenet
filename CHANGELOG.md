@@ -25,7 +25,7 @@ Demonstrated on OpenAI's NavierStokesAndEuler and on the FLT project.
   rests on, naming the module at every step. An axiom list says what a theorem depends on;
   the chain says which lemma brought the dependency in.
   [gonzalgo](https://github.com/vince-gonzalez/gonzalgo) did this first and goes further,
-  asking whether the statement itself required the axiom.
+  measuring how far an axiom reaches and flagging theorems that may not need it.
 - `tenet statement FILE.olean NAME...` lists the constants a theorem's statement is built
   from, split into those the project under test defines and those coming from established
   libraries. A kernel cannot tell whether a statement means what its prose claims, and the

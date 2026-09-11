@@ -249,7 +249,7 @@ internal static class Program
     /// Show a shortest chain from a declaration to each assumption it rests on. An axiom list says what a theorem
     /// depends on; this says which lemma brought the dependency in, which is the part you can act on.
     /// Credit where due: <see href="https://github.com/vince-gonzalez/gonzalgo">gonzalgo</see> did this first, and
-    /// goes further by asking whether the statement itself required the axiom.
+    /// goes further by measuring how far an axiom reaches and flagging theorems that may not need it.
     /// </summary>
     private static int Why(string[] args)
     {
