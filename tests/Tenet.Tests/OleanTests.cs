@@ -231,4 +231,51 @@ public class OleanCheckerTests
         env.MarkQuotInitialized();
         Assert.Throws<KernelException>(() => Replay.CheckUnit(env, new Replay.Unit(tampered.Name, "theorem", [tampered]), installed: true));
     }
+
+    /// <summary>
+    /// A verdict regression guard. These declarations exercise rules a refactor could quietly change: structure eta,
+    /// proof irrelevance, K-like reduction, quotient reduction, literal arithmetic at the word boundaries, and
+    /// universe polymorphism. Nothing else in the suite would notice if the kernel started accepting or rejecting
+    /// them differently, because the large runs are all "0 failures" and stay that way whichever answer is wrong.
+    /// </summary>
+    [Fact]
+    public void EdgeCaseCorpusChecksAndKeepsChecking()
+    {
+        string here = AppContext.BaseDirectory;
+        string? repo = here;
+        while (repo is not null && !File.Exists(Path.Combine(repo, "Tenet.sln")))
+        {
+            repo = Path.GetDirectoryName(repo);
+        }
+        string? module = repo is null ? null
+            : Path.Combine(repo, "tools", "edgecases", ".lake", "build", "lib", "lean", "EdgeCases", "Cases.olean");
+        if (module is null || !File.Exists(module))
+        {
+            return; // the corpus is built by `lake build` in tools/edgecases; skip where it has not been
+        }
+
+        var search = new LeanSearchPath();
+        search.AddFromEnvironment();
+        search.AddAroundOleanFile(module);
+        using var checker = new OleanChecker(search);
+        Name name = search.ModuleNameOf(module);
+        checker.Load([(name, module)]);
+        search.AddToolchainFor(checker.Modules[name].LeanVersion);
+        checker.Load([(name, module)]);
+
+        OleanCheckResult r = checker.Check([name], new OleanCheckOptions { Jobs = 1 });
+        Assert.True(r.Success, r.Failures.Count == 0 ? "no failures reported" : r.Failures[0].Message);
+        Assert.True(r.Checked > 30, $"only {r.Checked} declarations checked; the corpus should be larger");
+
+        // Each of these must keep its answer. A kernel change that flips one is a regression even if Mathlib
+        // still passes, because Mathlib exercises these rules far more rarely than this file does.
+        foreach (string n in new[]
+        {
+            "pair_eta", "onefield_eta", "irrel", "k_true", "k_and", "quot_lift_reduces",
+            "lit_pow", "lit_word", "lit_over_word", "lit_shift", "lit_str_len", "idu_reduces", "layers_reduce",
+        })
+        {
+            Assert.True(checker.Resolve(Name.Parse("EdgeCases." + n)) is not null, $"EdgeCases.{n} missing from the corpus");
+        }
+    }
 }

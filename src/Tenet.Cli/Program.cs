@@ -24,6 +24,8 @@ internal static class Program
           tenet audit <project dir>               which of a project's declarations are complete and which rest on sorry
           tenet why <Module.olean> <name>         the chain from a declaration to each assumption it rests on
           tenet compare <a.olean> <nameA> <b.olean> <nameB>   are two projects stating the same theorem?
+
+          --json on axioms, audit, compare and crosscheck prints one machine-readable line instead
           tenet crosscheck <export.ndjson> <olean|dir>  what the .olean reader decodes, against Lean's own exporter
           tenet version
 
@@ -191,7 +193,7 @@ internal static class Program
         {
             return Fail("show needs a file and at least one name");
         }
-        var names = args[1..].Select(Name.Parse).ToList();
+        var names = args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(Name.Parse).ToList();
         if (args[0].EndsWith(".olean", StringComparison.Ordinal))
         {
             return ShowOlean(args[0], names);
@@ -402,6 +404,16 @@ internal static class Program
             }
         }
 
+        if (WantsJson(args))
+        {
+            Console.WriteLine(Json(
+                ("command", "crosscheck"), ("modules", files.Count), ("compared", compared),
+                ("identical", agreed), ("cosmetic", cosmetic.Count), ("realizedElsewhere", realization.Count),
+                ("substantive", substantive.Count), ("notInExport", absent),
+                ("seconds", Math.Round(sw.Elapsed.TotalSeconds, 1)),
+                ("ok", substantive.Count == 0)));
+            return substantive.Count == 0 ? 0 : 1;
+        }
         Console.WriteLine($"crosscheck: {files.Count} module{(files.Count == 1 ? "" : "s")}, {compared} constants compared against the export in {sw.Elapsed.TotalSeconds:F1}s");
         Console.WriteLine($"  identical:                          {agreed}");
         Console.WriteLine($"  binder names or implicitness only:  {cosmetic.Count}   (elaboration metadata; the kernel ignores it)");
@@ -481,6 +493,33 @@ internal static class Program
     }
 
     private static string Trim(string s) => s.Length > 200 ? s[..200] + " …" : s;
+
+    /// <summary>
+    /// Minimal JSON emitter for the reporting commands. Every command that answers a question worth acting on should
+    /// be able to answer it to a program as well as to a person; parsing our prose is not an interface.
+    /// </summary>
+    /// <summary>Wraps an already-encoded fragment so <see cref="Json"/> nests it instead of quoting it.</summary>
+    private sealed record RawJson(string Text);
+
+    private static string Json(params (string Key, object? Value)[] fields)
+    {
+        static string Enc(object? v) => v switch
+        {
+            null => "null",
+            RawJson r => r.Text,
+            bool b => b ? "true" : "false",
+            int or long or double or float => System.Convert.ToString(v, CultureInfo.InvariantCulture)!,
+            System.Collections.IEnumerable e and not string =>
+                "[" + string.Join(",", e.Cast<object?>().Select(Enc)) + "]",
+            _ => "\"" + v.ToString()!
+                    .Replace("\\", "\\\\").Replace("\"", "\\\"")
+                    .Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t") + "\"",
+        };
+        return "{" + string.Join(",", fields.Select(f => $"\"{f.Key}\":{Enc(f.Value)}")) + "}";
+    }
+
+    private static bool WantsJson(string[] args) => Array.IndexOf(args, "--json") >= 0;
+
 
     /// <summary>
     /// Are two theorems, in two separately built projects, the same statement? A kernel checks that a proof proves
@@ -626,11 +665,23 @@ internal static class Program
                     defeq = syntactic || Eq(a.Type, b.Type);
                 }
 
-                Console.WriteLine($"A  {na}");
-                Console.WriteLine($"     {args[0]}");
-                Console.WriteLine($"B  {nb}");
-                Console.WriteLine($"     {args[2]}");
-                Console.WriteLine();
+                if (!WantsJson(args))
+                {
+                    Console.WriteLine($"A  {na}");
+                    Console.WriteLine($"     {args[0]}");
+                    Console.WriteLine($"B  {nb}");
+                    Console.WriteLine($"     {args[2]}");
+                    Console.WriteLine();
+                }
+                if (WantsJson(args))
+                {
+                    Console.WriteLine(Json(
+                        ("command", "compare"), ("a", na.ToString()), ("b", nb.ToString()),
+                        ("compared", what), ("identical", syntactic), ("same", defeq),
+                        ("constantsReached", seen.Count), ("conflictingNames", conflicts.Count),
+                        ("note", note.Trim())));
+                    return defeq ? 0 : 1;
+                }
                 Console.WriteLine($"compared: {what}");
                 Console.WriteLine(syntactic
                     ? "same: yes, identical"
@@ -759,6 +810,16 @@ internal static class Program
 
         int total = scope.Count;
         int clean = total - anyAssumption.Count;
+        if (WantsJson(args))
+        {
+            Console.WriteLine(Json(
+                ("command", "audit"), ("target", args[0]), ("modules", targets.Count),
+                ("declarations", total), ("unconditional", clean), ("restingOnAssumption", anyAssumption.Count),
+                ("assumptions", restsOn.OrderByDescending(k => k.Value.Count)
+                    .Select(k => new RawJson(Json(("axiom", k.Key), ("declarations", k.Value.Count)))).ToList()),
+                ("ok", anyAssumption.Count == 0)));
+            return 0;
+        }
         Console.WriteLine($"{args[0]}: {total} declarations defined by this project in {targets.Count} modules");
         Console.WriteLine($"  unconditional (nothing beyond propext, Classical.choice, Quot.sound): {clean} ({(total == 0 ? 0 : 100.0 * clean / total):F1}%)");
         Console.WriteLine($"  resting on an assumption: {anyAssumption.Count} ({(total == 0 ? 0 : 100.0 * anyAssumption.Count / total):F1}%)");
@@ -842,7 +903,7 @@ internal static class Program
                        or "ImportGraph" or "Plausible" or "ProofWidgets" or "LeanSearchClient" or "Cli";
         }
 
-        foreach (Name n in args[1..].Select(Name.Parse))
+        foreach (Name n in args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(Name.Parse))
         {
             ConstantInfo? c = checker.Resolve(n);
             if (c is null)
@@ -910,7 +971,7 @@ internal static class Program
         {
             return Fail("axioms needs a file and at least one name");
         }
-        var names = args[1..].Select(Name.Parse).ToList();
+        var names = args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(Name.Parse).ToList();
         Func<Name, ConstantInfo?> find;
         IDisposable? owner = null;
         string where;
@@ -951,6 +1012,14 @@ internal static class Program
                     continue;
                 }
                 var (axioms, visited) = Replay.AxiomsOf(find, n);
+                if (WantsJson(args))
+                {
+                    Console.WriteLine(Json(
+                        ("command", "axioms"), ("name", n.ToString()), ("constants", visited),
+                        ("axioms", axioms.Select(a => a.ToString()).ToList()),
+                        ("hasSorry", axioms.Any(a => a.ToString() == "sorryAx"))));
+                    continue;
+                }
                 Console.WriteLine($"{n} depends on {visited} constants and these axioms:");
                 if (axioms.Count == 0)
                 {

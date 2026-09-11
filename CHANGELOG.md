@@ -3,6 +3,16 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `--json` on `axioms`, `audit`, `compare` and `crosscheck`. Every command that answers a
+  question worth acting on can now answer it to a program; parsing prose was not an interface.
+- A verdict regression test over the edge-case corpus. The large runs all report zero failures
+  and would keep reporting it whichever answer were wrong, so nothing previously noticed if a
+  refactor quietly changed how structure eta, proof irrelevance, K-like reduction, quotient
+  reduction or literal arithmetic were decided.
+
 ## [0.6.0] - 2026-09-11
 
 Two questions that a kernel alone cannot answer: is my reader decoding what Lean actually
