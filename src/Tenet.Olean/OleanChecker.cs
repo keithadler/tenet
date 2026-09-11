@@ -37,6 +37,10 @@ public sealed class OleanCheckResult
     public List<OleanCheckFailure> Failures { get; } = new();
     public List<(Name Module, Name Name, TimeSpan Elapsed)> Slow { get; } = new();
     public TimeSpan Elapsed { get; internal set; }
+    /// <summary>Wall time spent decoding constants out of the mapped files, summed across workers.</summary>
+    public TimeSpan DecodeTime { get; internal set; }
+    /// <summary>Wall time spent in the kernel, summed across workers. Exceeds Elapsed when several jobs run.</summary>
+    public TimeSpan KernelTime { get; internal set; }
     public string LeanVersion { get; internal set; } = "";
     public bool Success => Failures.Count == 0;
 }
@@ -181,6 +185,7 @@ public sealed class OleanChecker : IDisposable
     {
         options ??= new OleanCheckOptions();
         var result = new OleanCheckResult { ModulesLoaded = _modules.Count };
+        long kernelTicks = 0, decodeTicks = 0;
         var total = Stopwatch.StartNew();
         var env = new Environment();
         env.SetResolver(Resolve);
@@ -208,7 +213,9 @@ public sealed class OleanChecker : IDisposable
         {
             mi++;
             OleanModule m = _modules[module];
+            long decodeStart = Stopwatch.GetTimestamp();
             var constants = m.DecodeAll().ToList();
+            decodeTicks += Stopwatch.GetTimestamp() - decodeStart;
             List<Replay.Unit> units = Replay.GroupUnits(constants);
             List<Replay.Unit> ordered = OrderByDependency(units, module, out List<Replay.Unit> cyclic);
             var position = new Dictionary<Name, int>();
@@ -252,6 +259,7 @@ public sealed class OleanChecker : IDisposable
                     }
                     options.BeforeUnit?.Invoke(unit.Name);
                     var sw = Stopwatch.StartNew();
+                    long kernelStart = Stopwatch.GetTimestamp();
                     try
                     {
                         CheckOrder(unit, i, position, module);
@@ -270,6 +278,7 @@ public sealed class OleanChecker : IDisposable
                         }
                     }
                     sw.Stop();
+                    Interlocked.Add(ref kernelTicks, Stopwatch.GetTimestamp() - kernelStart);
                     if (sw.Elapsed >= options.SlowThreshold)
                     {
                         lock (sync)
@@ -308,6 +317,8 @@ public sealed class OleanChecker : IDisposable
             }
         }
         result.Elapsed = total.Elapsed;
+        result.KernelTime = TimeSpan.FromSeconds((double)kernelTicks / Stopwatch.Frequency);
+        result.DecodeTime = TimeSpan.FromSeconds((double)decodeTicks / Stopwatch.Frequency);
         return result;
     }
 

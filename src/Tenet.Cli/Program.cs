@@ -23,6 +23,7 @@ internal static class Program
           tenet statement <Module.olean> <name>...  which constants a theorem's statement is built from, and who defines them
           tenet audit <project dir>               which of a project's declarations are complete and which rest on sorry
           --fail-on-axiom NAME on check exits non-zero if anything rests on that axiom (e.g. sorryAx)
+          --timing on check prints where the time went: mapping, decoding, kernel, and worker utilization
           tenet why <Module.olean> <name>         the chain from a declaration to each assumption it rests on
           tenet compare <a.olean> <nameA> <b.olean> <nameB>   are two projects stating the same theorem?
 
@@ -1452,6 +1453,7 @@ internal static class Program
                     report = args[i];
                     break;
                 case "--low-memory": break;
+                case "--timing": break;   // read directly where the breakdown is printed
                 case "--fail-on-axiom":
                     if (++i >= args.Length) return Fail("--fail-on-axiom needs an axiom name, e.g. sorryAx");
                     failOnAxiom = Name.Parse(args[i]);
@@ -1485,6 +1487,7 @@ internal static class Program
         }
         using var checker = new Tenet.Olean.OleanChecker(search);
         var sw = Stopwatch.StartNew();
+        double mapSeconds = 0;
         var targetNames = new List<Name>();
         try
         {
@@ -1507,6 +1510,7 @@ internal static class Program
         {
             var first = checker.Modules[targetNames[0]];
             string shown = targetNames.Count <= 4 ? string.Join(", ", targetNames) : $"{string.Join(", ", targetNames.Take(3))} and {targetNames.Count - 3} more modules";
+            mapSeconds = sw.Elapsed.TotalSeconds;
             Console.WriteLine($"{shown}: Lean {first.LeanVersion} ({first.GitHash[..9]}); {checker.Modules.Count} modules mapped in {sw.Elapsed.TotalSeconds:F1}s{(all ? ", checking all of them" : ", checking the targets")}");
             Console.WriteLine("  library roots: " + string.Join(", ", search.Roots));
         }
@@ -1566,6 +1570,23 @@ internal static class Program
             Console.WriteLine("  " + TypeChecker.Stats.Detail);
             Console.WriteLine("most unfolded definitions:");
             foreach (var (name, count) in TypeChecker.Stats.TopUnfolds(25)) Console.WriteLine($"  {count,9}  {name}");
+        }
+        if (Array.IndexOf(args, "--timing") >= 0)
+        {
+            // Wall time is what you wait; the other two are summed across workers, so with N jobs they can
+            // exceed it. The gap between their sum and wall time times jobs is contention, which is the
+            // number worth watching.
+            double wall = result.Elapsed.TotalSeconds;
+            Console.Error.WriteLine("timing:");
+            Console.Error.WriteLine($"  wall                 {wall,8:F2}s");
+            Console.Error.WriteLine($"  mapping modules      {mapSeconds,8:F2}s");
+            Console.Error.WriteLine($"  decoding constants   {result.DecodeTime.TotalSeconds,8:F2}s   (summed across workers)");
+            Console.Error.WriteLine($"  kernel               {result.KernelTime.TotalSeconds,8:F2}s   (summed across workers)");
+            if (jobs > 1 && wall > 0)
+            {
+                double busy = (result.KernelTime.TotalSeconds + result.DecodeTime.TotalSeconds) / (wall * jobs);
+                Console.Error.WriteLine($"  worker utilization   {busy * 100,7:F0}%   ({jobs} jobs)");
+            }
         }
         string skipped = result.SkippedOldCodegen > 0 ? $", {result.SkippedOldCodegen} old-codegen helpers skipped" : "";
         Console.WriteLine($"{(result.Success ? "OK" : "FAILED")}: {result.Checked} checked in {result.ModulesChecked} module{(result.ModulesChecked == 1 ? "" : "s")}, {result.Failures.Count} failed{skipped}, {result.ModulesLoaded} modules mapped, {result.Elapsed.TotalSeconds:F1}s, {jobs} job{(jobs == 1 ? "" : "s")}");

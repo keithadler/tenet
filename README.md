@@ -188,6 +188,18 @@ prover; this project only reads its export format.
 
 ## Install
 
+A release attaches a standalone binary for each platform: no .NET installation, about 4 MB, and
+roughly 7 ms to start. Download it from the
+[releases page](https://github.com/keithadler/tenet/releases), or:
+
+```bash
+dotnet tool install -g tenet          # needs the .NET SDK
+brew install --build-from-source ./Formula/tenet.rb   # macOS, from a checkout
+```
+
+Shell completions for bash and zsh are in `completions/`.
+
+
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
 ```bash

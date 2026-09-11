@@ -6,6 +6,10 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `tenet check --timing` prints where the time went: mapping, decoding, kernel, and worker
+  utilization. On `Init` it shows the same work costing 24.2 s of kernel time on one job and
+  56.1 s summed across twelve, which is the parallel contention measured rather than estimated.
+- Shell completions for bash and zsh in `completions/`, and a Homebrew formula.
 - `tenet <command> --help` answers about that command alone. The full usage block lists nine
   commands and had stopped being something anyone reads to find one flag.
 - A determinism test: the same check run sequentially and in parallel, twice, must give the

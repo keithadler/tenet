@@ -1,0 +1,48 @@
+#compdef tenet
+# zsh completion for tenet. Install: put this file on your $fpath, e.g. ~/.zsh/completions/_tenet
+
+_tenet() {
+  local -a commands
+  commands=(
+    'check:re-check every declaration in an export, module, or project'
+    'axioms:the axioms a declaration depends on, transitively'
+    'why:the chain from a declaration to each assumption it rests on'
+    'audit:how much of a project stands unconditionally'
+    'statement:which constants a theorem'\''s statement is built from'
+    'compare:whether two projects state the same theorem'
+    'crosscheck:the .olean reader against Lean'\''s own exporter'
+    'show:print declarations in full'
+    'info:header, imports and counts'
+    'version:version and supported export formats'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe -t commands 'tenet command' commands
+    return
+  fi
+
+  case "$words[2]" in
+    check)
+      _arguments \
+        '--all[check every imported module too]' \
+        '--only[check only these declarations]:names:' \
+        '--jobs[worker threads]:count:' \
+        '--fail-on-axiom[exit non-zero if anything rests on this axiom]:axiom:(sorryAx)' \
+        '--report[write a JSON report]:file:_files' \
+        '--timing[print where the time went]' \
+        '--stats[kernel work counters]' \
+        '--slow[report declarations slower than this]:seconds:' \
+        '--verbose[name each declaration before checking]' \
+        '--low-memory[workstation collector: less memory, slower]' \
+        '--fail-fast[stop at the first failure]' \
+        '--quiet[only the final line]' \
+        '*:file:_files -g "*.(olean|ndjson)"'
+      ;;
+    audit)      _arguments '--limit[how many to list]:n:' '--json[machine-readable output]' '*:file:_files' ;;
+    compare)    _arguments '--show-types[print both types in full]' '--json[machine-readable output]' '*:file:_files -g "*.olean"' ;;
+    crosscheck) _arguments '--show[how many differences to list]:n:' '--names-out[write compared names]:file:_files' '--json[machine-readable output]' '*:file:_files' ;;
+    *)          _arguments '--json[machine-readable output]' '*:file:_files -g "*.(olean|ndjson)"' ;;
+  esac
+}
+
+_tenet "$@"
