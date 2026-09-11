@@ -27,6 +27,7 @@ internal static class Program
           --out        directory for variants and logs (default: a temp directory)
           --keep       keep variants that produced no disagreement (default: delete them)
           --kinds      restrict to these mutation kinds, comma separated (see --list-kinds)
+          --tail N     only mutate within the last N lines, where a small appended corpus lives
           --list-kinds print the available mutation kinds and exit
           --timeout    kill a checker run after this many seconds and count it as incomplete (default 1800)
         """;
@@ -53,6 +54,7 @@ internal static class Program
                 case "--keep": keep = true; break;
                 case "--timeout": TimeoutSeconds = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--kinds": Mutator.Restrict = new HashSet<string>(args[++i].Split(','), StringComparer.Ordinal); break;
+                case "--tail": Mutator.TailLines = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--list-kinds":
                     foreach (string k in Mutator.Names)
                     {
@@ -399,10 +401,18 @@ internal static class Mutator
     private static bool RecNumIndices(string[] lines, Random rng) => BumpInt(lines, rng, "\"numIndices\":", "numIndices");
     private static bool CtorNumParams(string[] lines, Random rng) => BumpInt(lines, rng, "\"numFields\":", "numParams");
 
+    /// <summary>
+    /// When set, mutations only consider the last this-many lines of the export. An export carries the whole
+    /// transitive closure, so a small corpus of interesting declarations is a sliver at the end of a large file and
+    /// random mutation almost never lands on it. Declarations appear in dependency order, so the tail is the corpus.
+    /// </summary>
+    public static int TailLines;
+
     private static List<int> LinesWith(string[] lines, string needle)
     {
         var r = new List<int>();
-        for (int i = 0; i < lines.Length; i++) if (lines[i].Contains(needle, StringComparison.Ordinal)) r.Add(i);
+        int from = TailLines > 0 ? Math.Max(0, lines.Length - TailLines) : 0;
+        for (int i = from; i < lines.Length; i++) if (lines[i].Contains(needle, StringComparison.Ordinal)) r.Add(i);
         return r;
     }
 

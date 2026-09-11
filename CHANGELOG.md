@@ -21,6 +21,9 @@ versions follow [Semantic Versioning](https://semver.org/).
   arithmetic at 0 / 2^31 / 2^63 / 2^64 / 2^128, nested inductive metadata, and recursor and
   constructor arity. Kinds whose result is definitionally equal to the original are marked,
   because those are the ones that find completeness gaps rather than obvious damage.
+- `tools/edgecases`, a Lean corpus dense in structure eta, proof irrelevance, K-like reduction,
+  quotient reduction, nested and mutual inductives, literal boundaries and universe
+  polymorphism, for use as a mutation target. `--tail N` focuses mutation on it.
 
 ## [0.5.0] - 2026-09-10
 

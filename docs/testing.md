@@ -134,6 +134,18 @@ Classifying a mutation as equality-preserving is a claim that has to be right. `
 the damage group for that reason. Getting this wrong turns an expected rejection into a false
 bug report.
 
+### A corpus built to be mutated
+
+`tools/edgecases` is a small Lean library dense in the rules a general export exercises only
+rarely: structure eta, proof irrelevance, K-like reduction, quotient reduction, nested and
+mutual inductives, literal arithmetic at the word boundaries, and universe polymorphism. Both
+kernels accept all 58,236 declarations of its export, which for several of those rules is the
+only direct comparison against the reference the project has.
+
+`lean4export` writes the whole transitive closure, so the corpus is a sliver at the end of a
+6.5-million-line file and random mutation almost never lands on it. `--tail N` restricts
+mutation to the last N lines, where the newest declarations sit.
+
 ### What the targeted campaigns found
 
 Nothing, so far, and the shape of the nothing is worth recording.
