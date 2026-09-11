@@ -26,6 +26,8 @@ internal static class Program
           --seed       random seed (default: time based)
           --out        directory for variants and logs (default: a temp directory)
           --keep       keep variants that produced no disagreement (default: delete them)
+          --kinds      restrict to these mutation kinds, comma separated (see --list-kinds)
+          --list-kinds print the available mutation kinds and exit
           --timeout    kill a checker run after this many seconds and count it as incomplete (default 1800)
         """;
 
@@ -50,6 +52,13 @@ internal static class Program
                 case "--out": outDir = args[++i]; break;
                 case "--keep": keep = true; break;
                 case "--timeout": TimeoutSeconds = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--kinds": Mutator.Restrict = new HashSet<string>(args[++i].Split(','), StringComparer.Ordinal); break;
+                case "--list-kinds":
+                    foreach (string k in Mutator.Names)
+                    {
+                        Console.WriteLine(Mutator.MustAccept.Contains(k) ? $"{k}   (must be accepted by both)" : k);
+                    }
+                    return 0;
                 default: Console.Error.WriteLine(Usage); return 2;
             }
         }
@@ -280,13 +289,115 @@ internal static class Mutator
         ("drop-safety", UnsafeToSafe),                   // an unsafe def relabeled safe (if any)
         ("max-imax-swap", MaxImaxSwap),                  // a universe max becomes imax or vice versa
         ("let-nondep", LetNonDepFlip),                   // no semantic effect in the kernel: both must accept
+
+        // Targeted at kernel features rather than at random structure. The first group is the valuable one:
+        // each of these rewrites a term into one that is *equal*, so both kernels must still accept. A rejection
+        // from either side is a completeness gap, which is where both of the real kernel bugs found so far lived.
+        ("level-max-commute", LevelMaxCommute),          // max u v = max v u: both must accept
+
+        // The rest damage the term on purpose, but aim the damage at one kernel feature at a time.
+        ("level-max-idem", LevelMaxIdem),                // max u v becomes max u u: equal only when u = v
+        ("level-succ-drop", LevelSuccDrop),              // succ u becomes u: a strictly smaller level
+        ("level-imax-commute", LevelImaxCommute),        // imax is not commutative: must reject
+        ("natlit-boundary", NatLitBoundary),             // literals at 0, 2^31, 2^64, 2^128: exercises big-number paths
+        ("ind-numnested", IndNumNested),                 // nested-inductive metadata: comparison must fail
+        ("ind-isrec", IndIsRec),                         // recursiveness metadata: comparison must fail
+        ("ind-isreflexive", IndIsReflexive),             // reflexivity metadata: comparison must fail
+        ("rec-numminors", RecNumMinors),                 // recursor arity metadata: comparison must fail
+        ("rec-numindices", RecNumIndices),               // recursor arity metadata: comparison must fail
+        ("ctor-numparams", CtorNumParams),               // constructor metadata: comparison must fail
     ];
+
+    /// <summary>Mutations whose result is definitionally equal to the original, so both kernels must accept.</summary>
+    public static readonly HashSet<string> MustAccept =
+        new(StringComparer.Ordinal) { "level-max-commute", "binder-info", "hints-height", "let-nondep" };
+
+    /// <summary>When set, only these mutation names are used (--kinds).</summary>
+    public static HashSet<string>? Restrict;
 
     public static string? Apply(string[] lines, Random rng)
     {
-        var (name, m) = Menu[rng.Next(Menu.Length)];
+        (string Name, Mutation Apply)[] menu = Restrict is null
+            ? Menu
+            : Menu.Where(x => Restrict.Contains(x.Name)).ToArray();
+        if (menu.Length == 0)
+        {
+            return null;
+        }
+        var (name, m) = menu[rng.Next(menu.Length)];
         return m(lines, rng) ? name : null;
     }
+
+    public static IEnumerable<string> Names => Menu.Select(x => x.Name);
+
+    private static readonly Regex MaxArgs = new("\"(i?max)\":\\[(\\d+),(\\d+)\\]", RegexOptions.Compiled);
+
+    /// <summary><c>max u v</c> and <c>max v u</c> are the same level. Both kernels must still accept.</summary>
+    private static bool LevelMaxCommute(string[] lines, Random rng)
+    {
+        int? i = Pick(LinesWith(lines, "\"max\":["), rng);
+        return i is int k && ReplaceFirst(lines, k, MaxArgs,
+            m => m.Groups[1].Value == "max" ? $"\"max\":[{m.Groups[3].Value},{m.Groups[2].Value}]" : m.Value);
+    }
+
+    /// <summary><c>max u v</c> becomes <c>max u u</c>. Equal only when the two arguments already denote the same
+    /// level, so this is usually a rejection test. Not classified as must-accept for exactly that reason.</summary>
+    private static bool LevelMaxIdem(string[] lines, Random rng)
+    {
+        int? i = Pick(LinesWith(lines, "\"max\":["), rng);
+        return i is int k && ReplaceFirst(lines, k, MaxArgs,
+            m => m.Groups[1].Value == "max" ? $"\"max\":[{m.Groups[2].Value},{m.Groups[2].Value}]" : m.Value);
+    }
+
+    /// <summary><c>succ u</c> becomes <c>max u u</c>, which is just <c>u</c>: a strictly smaller universe, so this
+    /// must be rejected wherever the level is load-bearing. Exercises level normalization on the rejection path.</summary>
+    private static bool LevelSuccDrop(string[] lines, Random rng)
+    {
+        int? i = Pick(LinesWith(lines, "\"succ\":"), rng);
+        return i is int k && ReplaceFirst(lines, k, new Regex("\"succ\":(\\d+)"),
+            m => $"\"max\":[{m.Groups[1].Value},{m.Groups[1].Value}]");
+    }
+
+    /// <summary><c>imax u v</c> is not commutative: swapping is a real change and must be rejected.</summary>
+    private static bool LevelImaxCommute(string[] lines, Random rng)
+    {
+        int? i = Pick(LinesWith(lines, "\"imax\":["), rng);
+        return i is int k && ReplaceFirst(lines, k, MaxArgs,
+            m => m.Groups[1].Value == "imax" ? $"\"imax\":[{m.Groups[3].Value},{m.Groups[2].Value}]" : m.Value);
+    }
+
+    private static readonly string[] Boundaries =
+        ["0", "1", "2147483648", "9223372036854775807", "18446744073709551616", "340282366920938463463374607431768211456"];
+
+    /// <summary>Move a literal to a boundary value, exercising the kernel's big-number and overflow paths.</summary>
+    private static bool NatLitBoundary(string[] lines, Random rng)
+    {
+        int? i = Pick(LinesWith(lines, "\"natVal\":"), rng);
+        string v = Boundaries[rng.Next(Boundaries.Length)];
+        return i is int k && ReplaceFirst(lines, k, new Regex("\"natVal\":\"(\\d+)\""),
+            m => m.Groups[1].Value == v ? m.Value : $"\"natVal\":\"{v}\"");
+    }
+
+    private static bool BumpInt(string[] lines, Random rng, string needle, string field)
+    {
+        int? i = Pick(LinesWith(lines, needle), rng);
+        return i is int k && ReplaceFirst(lines, k, new Regex($"\"{field}\":(\\d+)"),
+            m => $"\"{field}\":{int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) + 1}");
+    }
+
+    private static bool FlipBool(string[] lines, Random rng, string needle, string field)
+    {
+        int? i = Pick(LinesWith(lines, needle), rng);
+        return i is int k && ReplaceFirst(lines, k, new Regex($"\"{field}\":(true|false)"),
+            m => $"\"{field}\":{(m.Groups[1].Value == "true" ? "false" : "true")}");
+    }
+
+    private static bool IndNumNested(string[] lines, Random rng) => BumpInt(lines, rng, "\"numNested\":", "numNested");
+    private static bool IndIsRec(string[] lines, Random rng) => FlipBool(lines, rng, "\"isRec\":", "isRec");
+    private static bool IndIsReflexive(string[] lines, Random rng) => FlipBool(lines, rng, "\"isReflexive\":", "isReflexive");
+    private static bool RecNumMinors(string[] lines, Random rng) => BumpInt(lines, rng, "\"numMinors\":", "numMinors");
+    private static bool RecNumIndices(string[] lines, Random rng) => BumpInt(lines, rng, "\"numIndices\":", "numIndices");
+    private static bool CtorNumParams(string[] lines, Random rng) => BumpInt(lines, rng, "\"numFields\":", "numParams");
 
     private static List<int> LinesWith(string[] lines, string needle)
     {

@@ -114,6 +114,26 @@ to stderr for every declaration, the wall-clock time Lean's kernel spent in `add
 This is the ground truth for Tenet's performance work: the same export checked by both,
 declaration by declaration.
 
+### Targeted campaigns
+
+The mutation menu is split. Most kinds damage the term and both kernels must reject; a few
+rewrite it into something *equal*, so both must still accept, and a rejection from either side
+is a completeness gap. Both real kernel bugs found so far lived on that side, so those kinds
+are worth more per run. `--list-kinds` prints the menu and marks which are which;
+`--kinds a,b,c` restricts a campaign to a chosen few, which makes a disagreement point at one
+cause instead of eight.
+
+The targeted kinds aim at one kernel feature at a time: universe level normalization
+(`level-max-commute`, `level-imax-commute`, `level-max-idem`, `level-succ-drop`), literal
+arithmetic and overflow (`natlit-boundary`, at 0, 2^31, 2^63, 2^64 and 2^128), nested inductive
+metadata (`ind-numnested`, `ind-isrec`, `ind-isreflexive`), and recursor and constructor arity
+(`rec-numminors`, `rec-numindices`, `ctor-numparams`).
+
+Classifying a mutation as equality-preserving is a claim that has to be right. `max u v` to
+`max u u` and `succ u` to `u` both look like level rearrangements and are not equal; they are in
+the damage group for that reason. Getting this wrong turns an expected rejection into a false
+bug report.
+
 `tools/Tenet.DiffTest` produces mutated copies of an export (swapped proofs, off-by-one
 de Bruijn indices, permuted universe arguments, swapped recursor rules, wrong constructor
 metadata, and semantically neutral edits such as binder annotations and reducibility

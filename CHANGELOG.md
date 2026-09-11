@@ -13,6 +13,15 @@ versions follow [Semantic Versioning](https://semver.org/).
   Over all 648 modules of `Init` and a Mathlib slice: 98,463 constants compared, 0 substantive
   differences.
 
+## [Unreleased]
+
+### Added
+- The differential harness takes `--kinds` and `--list-kinds`, and carries eleven mutation
+  kinds aimed at one kernel feature at a time: universe level normalization, literal
+  arithmetic at 0 / 2^31 / 2^63 / 2^64 / 2^128, nested inductive metadata, and recursor and
+  constructor arity. Kinds whose result is definitionally equal to the original are marked,
+  because those are the ones that find completeness gaps rather than obvious damage.
+
 ## [0.5.0] - 2026-09-10
 
 Four questions a kernel can answer about a finished build, beyond "does it check": which
