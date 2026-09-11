@@ -28,7 +28,8 @@ jobs:
       - name: Make room
         run: |
           # Mathlib's cache is several gigabytes and a hosted runner starts with little free disk.
-          sudo rm -rf /usr/share/dotnet/sdk/*/Roslyn /usr/local/lib/android /opt/ghc /usr/share/swift || true
+          # Nothing under /usr/share/dotnet: the build needs it, and deleting its Roslyn broke this job once.
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/swift /opt/hostedtoolcache/CodeQL || true
           df -h / | tail -1
 
       - name: Build Mathlib from its own cache

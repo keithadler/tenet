@@ -85,6 +85,32 @@ between proofs of different propositions, `Sort u : Sort u`, and literal arithme
 result would not fit (refused, never computed). Each test also checks the rejection
 reason, so a rejection for the wrong reason fails.
 
+## The reader against Lean's own exporter
+
+Comparing verdicts with Lean's kernel cannot find a bug in the `.olean` reader. A reader that
+drops a hypothesis yields a weaker theorem, and both kernels accept it, honestly and for the
+same reason. `tenet crosscheck` covers that path by comparing every constant the reader decodes
+against the same constant as `lean4export` wrote it.
+
+| Export | Compared | Cosmetic | Realized elsewhere | Substantive |
+| --- | --- | --- | --- | --- |
+| `Init` (648 modules) | 59,720 | 41 | 16 | **0** |
+| `Analysis.SpecialFunctions.Trigonometric.Basic` | 153,687 | 64 | 6 | **0** |
+| `CategoryTheory.Limits.Shapes.Products` | 29,113 | 30 | 0 | **0** |
+| `LinearAlgebra.Matrix.Determinant.Basic` | 111,992 | 59 | 8 | **0** |
+| `NumberTheory.Padics.PadicNumbers` | 133,907 | 57 | 6 | **0** |
+| `Topology.MetricSpace.Polish` | 129,031 | 57 | 5 | **0** |
+| **distinct constants, unioned** | **228,720** | 308 | 41 | **0** |
+
+Count the union, never the sum. Those six runs add to 617,450, which overstates coverage by a
+factor of 2.7, because any two Mathlib exports share most of their closure. `--names-out` writes
+every constant compared so the union can be taken; 228,720 is roughly 30% of what a full Mathlib
+check covers, and the rest is still untested ground.
+
+"Cosmetic" means a difference of binder name or implicitness, which the kernel ignores.
+"Realized elsewhere" means one private auxiliary generated in a different module: the same
+declaration under a different prefix. Neither can change what is accepted.
+
 ## Robustness of the `.olean` reader
 
 A memory-mapped reader that trusts stored pointers or sizes would read outside the mapping
