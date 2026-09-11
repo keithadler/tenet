@@ -1,0 +1,72 @@
+name: Nightly
+
+# The .olean reader depends on Lean's compiled object layout, which is not a stable interface,
+# and Mathlib moves daily. CI on every push only checks Init, so a change that breaks reading
+# real projects would not show up there. This finds it before a user does.
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  mathlib:
+    name: Check Mathlib master
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build -c Release
+
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Make room
+        run: |
+          # Mathlib's cache is several gigabytes and a hosted runner starts with little free disk.
+          sudo rm -rf /usr/share/dotnet/sdk/*/Roslyn /usr/local/lib/android /opt/ghc /usr/share/swift || true
+          df -h / | tail -1
+
+      - name: Build Mathlib from its own cache
+        run: |
+          git clone --depth 1 https://github.com/leanprover-community/mathlib4 "$RUNNER_TEMP/mathlib4"
+          cd "$RUNNER_TEMP/mathlib4"
+          lake exe cache get
+          lake build Mathlib.Init          # enough to populate the tree; the cache supplies the rest
+          echo "MATHLIB=$RUNNER_TEMP/mathlib4" >> "$GITHUB_ENV"
+
+      - name: Check it
+        run: |
+          # --low-memory switches to the workstation collector, which uses roughly a third of the
+          # memory and takes longer. The server collector peaks near 9 GB on Mathlib, which is
+          # more headroom than a hosted runner reliably has.
+          dotnet run --no-build -c Release --project src/Tenet.Cli -- \
+            check "$MATHLIB/.lake/build/lib/lean/Mathlib.olean" --all --quiet --low-memory \
+            --report "$RUNNER_TEMP/mathlib.json"
+
+      - name: Report
+        if: always()
+        run: |
+          r="$RUNNER_TEMP/mathlib.json"
+          if [ -f "$r" ]; then
+            python3 - "$r" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          print(f"## Mathlib master: {'clean' if d.get('success') else 'FAILURES'}")
+          print()
+          print(f"- {d.get('checked')} declarations, {d.get('seconds')} s, Lean {d.get('lean','?')}")
+          for f in d.get("failures", [])[:20]:
+              print(f"- FAIL `{f['name']}`: {f['message'].splitlines()[0][:200]}")
+          PY
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mathlib-report
+          path: ${{ runner.temp }}/mathlib.json
+          if-no-files-found: ignore
