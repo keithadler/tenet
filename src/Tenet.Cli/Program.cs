@@ -55,6 +55,18 @@ internal static class Program
 
     private static int Main(string[] args)
     {
+        // `tenet <command> --help` answers about that command only. The full usage block lists nine commands
+        // and is no longer something anyone reads to find one flag.
+        if (args.Length >= 2 && args[1] is "-h" or "--help" && CommandHelp.TryGetValue(args[0], out string? one))
+        {
+            Console.WriteLine(one.TrimEnd());
+            return 0;
+        }
+        if (args.Length >= 2 && args[0] is "help" && CommandHelp.TryGetValue(args[1], out string? two))
+        {
+            Console.WriteLine(two.TrimEnd());
+            return 0;
+        }
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
         {
             Console.WriteLine(Usage);
@@ -521,6 +533,82 @@ internal static class Program
         why = diffs.Count == 0 ? "" : $"{diffs.Count} of {i} fields differ:\n      " + string.Join("\n      ", diffs);
         return (syntactic, diffs.Count == 0);
     }
+
+    private static readonly Dictionary<string, string> CommandHelp = new(StringComparer.Ordinal)
+    {
+        ["check"] = """
+            tenet check <file.ndjson | Module.olean | project dir> [options]
+
+            Re-check every declaration. Exit 0 if all check, 1 if any fail, 2 on a usage or file
+            error, 3 if an export is truncated (declarations before the problem are still checked).
+
+              --all                 also check every imported module, not just the targets
+              --only a,b            check only these declarations; the rest are added unchecked
+              --jobs N              worker threads (default: every core; 1 for sequential)
+              --fail-on-axiom NAME  exit non-zero if anything checked rests on that axiom
+              --report FILE         write a JSON report, including a hash of every artifact
+              --stats               print kernel work counters and the most unfolded definitions
+              --slow SECONDS        list declarations slower than this (default 1)
+              --verbose             name each declaration before checking it (.olean only)
+              --low-memory          workstation collector: about a third the memory, slower
+              --fail-fast           stop at the first failure
+              --quiet               only the final line
+            """,
+        ["axioms"] = """
+            tenet axioms <file> <name>... [--json]
+
+            The axioms a declaration depends on, transitively, as Lean's `#print axioms` reports
+            them. A proof resting on nothing but propext, Classical.choice and Quot.sound is
+            complete in Lean's logic; sorryAx marks a hole. Works on exports and .olean files.
+            """,
+        ["why"] = """
+            tenet why <Module.olean> <name>... [--json]
+
+            A shortest chain from a declaration to each assumption it rests on, naming the module
+            at every step. An axiom list says what a theorem depends on; the chain says which
+            lemma brought the dependency in.
+            """,
+        ["audit"] = """
+            tenet audit <project dir | Module.olean> [--limit N] [--json]
+
+            How much of a project stands unconditionally, and every axiom beyond propext,
+            Classical.choice and Quot.sound that the rest carry, with the declarations that
+            introduce each hole. A green build proves nothing here: `sorry` is a real term of any
+            type, so a project full of holes compiles perfectly.
+            """,
+        ["statement"] = """
+            tenet statement <Module.olean> <name>... [--json]
+
+            Which constants a theorem's statement is built from, split into those the project
+            defined itself and those from established libraries. A wrong definition hides in the
+            first group. This points; it does not judge.
+            """,
+        ["compare"] = """
+            tenet compare <a.olean> <nameA> <b.olean> <nameB> [--show-types] [--json]
+
+            Whether two separately built projects state the same theorem. A theorem is compared by
+            its type, a definition by type and value, a structure field by field. Names carrying
+            different content in the two projects are reported rather than silently resolved.
+            """,
+        ["crosscheck"] = """
+            tenet crosscheck <export.ndjson> <olean | dir> [--show N] [--names-out FILE] [--json]
+
+            What the .olean reader decodes, against what Lean's own exporter wrote for the same
+            declarations. Comparing verdicts with Lean's kernel cannot find a reader bug, because a
+            reader that drops a hypothesis yields a weaker theorem both kernels accept.
+            """,
+        ["show"] = """
+            tenet show <file.ndjson | Module.olean> <name>...
+
+            Print declarations in full: type, value, reducibility hints, constructor and recursor
+            data.
+            """,
+        ["info"] = """
+            tenet info <file.ndjson | Module.olean>
+
+            Header, imports and declaration counts, without checking anything.
+            """,
+    };
 
     private static string Trim(string s) => s.Length > 200 ? s[..200] + " …" : s;
 

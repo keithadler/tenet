@@ -6,6 +6,12 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `tenet <command> --help` answers about that command alone. The full usage block lists nine
+  commands and had stopped being something anyone reads to find one flag.
+- A determinism test: the same check run sequentially and in parallel, twice, must give the
+  same answer. Workers share decode caches, a resolver and an environment, so a race would
+  show up as a verdict that depends on thread timing, and nothing else would catch it because
+  every large run reports zero failures whichever way a race fell.
 - `tenet check --fail-on-axiom NAME` exits non-zero if anything checked rests on that axiom.
   Checking says the proofs are valid; this says they are valid without leaning on something the
   project has decided not to lean on, which is the gate a formalization wants in CI.

@@ -278,4 +278,53 @@ public class OleanCheckerTests
             Assert.True(checker.Resolve(Name.Parse("EdgeCases." + n)) is not null, $"EdgeCases.{n} missing from the corpus");
         }
     }
+
+    /// <summary>
+    /// The same check, run twice in parallel, must give the same answer. Workers share decode caches, a resolver and
+    /// an environment, so a race here would surface as a verdict that depends on thread timing: green on the machine
+    /// that ran it and red on someone else's, or the reverse. Nothing else in the suite would catch that, because
+    /// every large run reports zero failures and a race that flips one declaration still usually reports zero.
+    /// </summary>
+    [Fact]
+    public void CheckingTwiceGivesTheSameAnswer()
+    {
+        string? lib = OleanTests.ToolchainLib();
+        if (lib is null)
+        {
+            return;
+        }
+        string path = Path.Combine(lib, "Init", "Core.olean");
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        (int Checked, int Failed, string Failures) Run(int jobs)
+        {
+            var search = new LeanSearchPath();
+            search.AddFromEnvironment();
+            search.AddAroundOleanFile(path);
+            using var checker = new OleanChecker(search);
+            Name m = search.ModuleNameOf(path);
+            checker.Load([(m, path)]);
+            search.AddToolchainFor(checker.Modules[m].LeanVersion);
+            checker.Load([(m, path)]);
+            OleanCheckResult r = checker.Check([m], new OleanCheckOptions { Jobs = jobs });
+            string failures = string.Join("|", r.Failures
+                .Select(f => f.Name.ToString())
+                .OrderBy(x => x, StringComparer.Ordinal));
+            return (r.Checked, r.Failures.Count, failures);
+        }
+
+        var sequential = Run(1);
+        var parallel = Run(Math.Max(2, System.Environment.ProcessorCount));
+        var again = Run(Math.Max(2, System.Environment.ProcessorCount));
+
+        Assert.Equal(sequential.Checked, parallel.Checked);
+        Assert.Equal(sequential.Failed, parallel.Failed);
+        Assert.Equal(sequential.Failures, parallel.Failures);
+        Assert.Equal(parallel.Checked, again.Checked);
+        Assert.Equal(parallel.Failures, again.Failures);
+        Assert.True(sequential.Checked > 1000, $"only {sequential.Checked} checked");
+    }
 }
