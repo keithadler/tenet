@@ -148,6 +148,47 @@ and `addzero_n` and `addzero_m` differ only in a binder name and are identical.
 Where a name carries different content in the two projects, that is reported rather than
 resolved. Two statements built from a name that means two things will look alike and are not.
 
+### A worked case: is OpenAI's Navier-Stokes statement the one it claims to adapt?
+
+OpenAI's `formalization.yaml` names DeepMind's
+[Formal Conjectures](https://github.com/google-deepmind/formal-conjectures) file as the
+independent statement of the Clay problem, and its Comparator README thanks those authors for
+the formalization it adapted. Both sides therefore agree on what the reference is, and the
+question is whether the adaptation changed anything. A theorem name and a statement's surface
+text can be identical while a structure underneath has been weakened, and the proof would still
+check.
+
+Two confounds had to go first. The projects pin different Lean toolchains, 4.33.1 against
+4.34.0-rc2, so a comparison across them is really a comparison across two Mathlib versions: the
+first attempt reported 216 shared names carrying different content, which tells you nothing
+about the adaptation. The Formal Conjectures file was therefore rebuilt inside the OpenAI
+project against its exact Mathlib, with only the FC-specific attributes stripped and its two
+scoped notations inlined verbatim. Notation abbreviates; it changes no term.
+
+| Declaration | Result |
+| --- | --- |
+| `divergence` | definitionally equal |
+| `IsOnePeriodic` | identical |
+| `InitialVelocityCondition` | all fields definitionally equal |
+| `ForceCondition` | all fields identical |
+| `NavierStokesExistenceAndSmoothness` | all fields definitionally equal |
+| `InitialVelocityConditionDecay` | 3 of 4 fields equal; the 4th is `toInitialVelocityCondition` |
+| `ForceConditionDecay` | same shape; the differing field is `toForceCondition` |
+| `NavierStokesExistenceAndSmoothnessRn` | 8 of 9 fields equal; the 9th is `toNavierStokesExistenceAndSmoothness` |
+| `NavierStokesExistenceAndSmoothnessPeriodic` | 8 of 9 equal; the 9th is the parent |
+| `InitialVelocityConditionPeriodic` | 3 of 4 equal; the 4th is the parent |
+| `ForceConditionPeriodic` | 4 of 5 equal; the 5th is the parent |
+
+Every field that *can* differ in content is equal. The single field that differs in each
+derived structure is always the inheritance reference to the parent, and that one can never
+match: two structures declared separately are distinct types in Lean no matter how identically
+they are written. The parents themselves compare equal on their own fields, so the content
+agrees the whole way down, including the row that carries the actual equations.
+
+What this does not establish is that either statement is a faithful rendering of the Clay
+problem. It establishes that the adaptation preserved the statement it started from. Whether
+that statement is right remains a question for people who read it.
+
 ### A corpus built to be mutated
 
 `tools/edgecases` is a small Lean library dense in the rules a general export exercises only

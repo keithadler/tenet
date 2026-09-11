@@ -446,6 +446,43 @@ internal static class Program
     }
 
     /// <summary>
+    /// Compare two constructor types argument by argument, ignoring the final result type. A structure's fields are
+    /// its content; the result type merely names the structure, and two structures declared separately are distinct
+    /// types no matter how identically they are written, so including it would answer "different" every time.
+    /// </summary>
+    private static (bool Syntactic, bool Equal) CompareTelescope(
+        Expr ta, Expr tb, LocalContext lctx, Func<Expr, Expr, bool> eq, out string why)
+    {
+        var diffs = new List<string>();
+        bool syntactic = true;
+        int i = 0;
+        while (ta is PiExpr pa && tb is PiExpr pb)
+        {
+            if (!pa.Domain.Equals(pb.Domain))
+            {
+                syntactic = false;
+                if (!eq(pa.Domain, pb.Domain))
+                {
+                    // Keep going rather than stopping here. Which fields differ is the answer; the first one is not.
+                    diffs.Add($"field {i} ({pa.BinderName}):\n        A: {Trim(ExprPrinter.Print(pa.Domain))}\n        B: {Trim(ExprPrinter.Print(pb.Domain))}");
+                }
+            }
+            Expr fv = lctx.MkLocalDecl(pa.BinderName, pa.Domain, pa.Info);
+            ta = ExprOps.Instantiate1(pa.Body, fv);
+            tb = ExprOps.Instantiate1(pb.Body, fv);
+            i++;
+        }
+        if (ta is PiExpr || tb is PiExpr)
+        {
+            diffs.Add($"different number of fields: one side has more than {i}");
+        }
+        why = diffs.Count == 0 ? "" : $"{diffs.Count} of {i} fields differ:\n      " + string.Join("\n      ", diffs);
+        return (syntactic, diffs.Count == 0);
+    }
+
+    private static string Trim(string s) => s.Length > 200 ? s[..200] + " …" : s;
+
+    /// <summary>
     /// Are two theorems, in two separately built projects, the same statement? A kernel checks that a proof proves
     /// the statement written down; it never asks whether that statement is the one intended. The one case a machine
     /// can settle is when somebody else has written the statement independently: then the question becomes whether
@@ -506,6 +543,8 @@ internal static class Program
                 });
                 Seed(a.Type);
                 Seed(b.Type);
+                if (a.Value is Expr sa) { Seed(sa); }
+                if (b.Value is Expr sb) { Seed(sb); }
                 while (todo.Count > 0)
                 {
                     Name cur = todo.Pop();
@@ -530,19 +569,61 @@ internal static class Program
                     }
                 }
 
-                bool syntactic = a.Type.Equals(b.Type);
-                bool defeq = syntactic;
+                // What carries the meaning depends on the kind of declaration, and comparing the wrong part is
+                // worse than not comparing at all because it answers with confidence.
+                //
+                //   theorem     the type is the statement, so compare types
+                //   definition  the type is only a signature, so the value is the content
+                //   constructor the fields are the content; the final result type names the structure itself, and
+                //               two separately declared structures are different types by construction, so that
+                //               last step can never match and must be excluded
+                var tc = new TypeChecker(env);
+                var lctx = new LocalContext();
+                string what;
+                bool syntactic, defeq;
                 string note = "";
-                if (!syntactic)
+
+                bool Eq(Expr x, Expr y)
                 {
                     try
                     {
-                        defeq = new TypeChecker(env).IsDefEq(a.Type, b.Type);
+                        return tc.IsDefEq(x, y);
                     }
                     catch (KernelException e)
                     {
                         note = "   (the comparison itself failed: " + e.Message.Split('\n')[0] + ")";
+                        return false;
                     }
+                }
+
+                if (a is ConstructorInfo && b is ConstructorInfo)
+                {
+                    what = "fields";
+                    (syntactic, defeq) = CompareTelescope(a.Type, b.Type, lctx, Eq, out string why);
+                    if (!defeq && why.Length > 0)
+                    {
+                        note = "   (" + why + ")";
+                    }
+                }
+                else if (a is TheoremInfo || b is TheoremInfo)
+                {
+                    // A theorem's statement is its type. Two different proofs of one statement are both proofs of it,
+                    // so comparing the values here would report a difference that does not exist.
+                    what = "statement (the type; proofs are not compared)";
+                    syntactic = a.Type.Equals(b.Type);
+                    defeq = syntactic || Eq(a.Type, b.Type);
+                }
+                else if (a.Value is Expr va && b.Value is Expr vb)
+                {
+                    what = "type and value";
+                    syntactic = a.Type.Equals(b.Type) && va.Equals(vb);
+                    defeq = syntactic || (Eq(a.Type, b.Type) && Eq(va, vb));
+                }
+                else
+                {
+                    what = "type";
+                    syntactic = a.Type.Equals(b.Type);
+                    defeq = syntactic || Eq(a.Type, b.Type);
                 }
 
                 Console.WriteLine($"A  {na}");
@@ -550,11 +631,12 @@ internal static class Program
                 Console.WriteLine($"B  {nb}");
                 Console.WriteLine($"     {args[2]}");
                 Console.WriteLine();
+                Console.WriteLine($"compared: {what}");
                 Console.WriteLine(syntactic
-                    ? "same statement: yes, the two types are identical"
+                    ? "same: yes, identical"
                     : defeq
-                        ? "same statement: yes, the two types are definitionally equal though written differently"
-                        : "same statement: NO, the two types are not definitionally equal" + note);
+                        ? "same: yes, definitionally equal though written differently"
+                        : "same: NO, not definitionally equal" + note);
                 Console.WriteLine($"  constants reached by both statements: {seen.Count}");
                 if (conflicts.Count == 0)
                 {
@@ -569,12 +651,16 @@ internal static class Program
                         Console.WriteLine($"      {c}");
                     }
                 }
-                if (!syntactic)
+                if (!syntactic && Array.IndexOf(args, "--show-types") >= 0)
                 {
                     Console.WriteLine();
                     Console.WriteLine("A: " + ExprPrinter.Print(a.Type));
                     Console.WriteLine();
                     Console.WriteLine("B: " + ExprPrinter.Print(b.Type));
+                }
+                else if (!syntactic)
+                {
+                    Console.WriteLine("  (--show-types prints both in full; they run to thousands of characters)");
                 }
                 return defeq ? 0 : 1;
             }
