@@ -353,7 +353,7 @@ A checker that accepted everything would produce the same clean output, so:
   proof: at least 95% must be rejected, with no collateral damage. Recursor rules and
   theorem statements are tampered with in the fixtures too.
 - **Its verdicts are compared with Lean's own kernel**, declaration by declaration, on about
-  130,000 deliberately damaged declarations. That comparison has found two real kernel bugs,
+  140,000 deliberately damaged declarations. That comparison has found two real kernel bugs,
   both in Tenet: a head comparison that used reference equality where the reference compares
   structurally, and a recursor walk that accepted only one binder shape.
 - **The `.olean` reader is checked against Lean's own exporter**, constant by constant, over all

@@ -134,6 +134,29 @@ Classifying a mutation as equality-preserving is a claim that has to be right. `
 the damage group for that reason. Getting this wrong turns an expected rejection into a false
 bug report.
 
+### What the targeted campaigns found
+
+Nothing, so far, and the shape of the nothing is worth recording.
+
+| Campaign | Variants | Agreed rejections | Disagreements |
+| --- | --- | --- | --- |
+| `level-max-commute` on `Init.Prelude` (equality-preserving) | 40 | 0, as required: both kernels accepted every variant | 0 |
+| Ten damage kinds on `Init.Prelude` | 50 | 6,230 | 0 |
+| Ten damage kinds on `Init.Core` | 30 | 4,233 | 0 |
+
+The equality-preserving run is the more informative of the three. Zero rejections on either
+side is the correct answer, and it confirms both kernels agree that `max u v` and `max v u`
+denote the same universe. The damage runs confirm the two kernels reject the same things for
+the same reasons across level normalization, literal boundaries, inductive metadata and
+recursor arity.
+
+This method has a ceiling worth stating. Mutating an export is good at finding places where
+two implementations of the same specification drift apart, which is how both real kernel bugs
+here were caught. It is unlikely to find a deep soundness bug in Lean, because such a bug needs
+a term someone constructed deliberately against the type theory, not one produced by damaging
+a valid term at random. Fuzzing finds implementation disagreements; it does not find design
+flaws, and nobody should read a clean campaign as evidence that none exist.
+
 `tools/Tenet.DiffTest` produces mutated copies of an export (swapped proofs, off-by-one
 de Bruijn indices, permuted universe arguments, swapped recursor rules, wrong constructor
 metadata, and semantically neutral edits such as binder annotations and reducibility
