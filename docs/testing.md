@@ -160,6 +160,45 @@ Classifying a mutation as equality-preserving is a claim that has to be right. `
 the damage group for that reason. Getting this wrong turns an expected rejection into a false
 bug report.
 
+### Against con-leche, a checker with a consistency proof
+
+[con-leche](https://github.com/leanprover/con-leche) is an external Lean checker proven in Lean
+not to accept a proof of `False`. That is a stronger guarantee than anything here: Tenet is
+tested, con-leche is proved. Running the two on identical export files is therefore worth more
+to Tenet than to con-leche, and it is the best assurance evidence this project has.
+
+| Export | Tenet | con-leche | Agree |
+| --- | --- | --- | --- |
+| `Init.Core` | 3,482 accepted | 3,482 accepted | yes |
+| `Init` | 57,897 accepted | 57,897 accepted | yes |
+| `Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic` | 293,323 accepted | 293,323 accepted | yes |
+
+293,323 distinct declarations, no disagreement. Count the largest run, not the sum: these
+corpora are nested, since `Init.Core` sits inside `Init` and the Mathlib slice's export carries
+all of Init's closure.
+
+The two take visibly different internal routes to the same verdicts. con-leche's log reports 62
+projection functions of non-direct structure-likes rewritten to recursor form, and two
+declarations hoisted ahead of the pinned `Nat` operations they ground. Tenet does neither and
+agrees anyway, which is the point of an independent check.
+
+On the same files with twelve jobs, Tenet ran `Init` in 5.5 s against 14.5 s, and the Mathlib
+slice in 19.7 s against 63.1 s. con-leche's README states plainly that it is deliberately slow
+because the annotation work is what makes its proof tractable, so this measures the price of
+the proof rather than a defect.
+
+One difference in what each will accept. con-leche takes only Lean's three standard axioms and
+stops on anything else:
+
+```
+con-leche: not implemented yet: non-standard axiom (AxTest.knownResult)
+tenet:     OK: 57900 checked, 0 failed
+```
+
+That means con-leche cannot currently check the FLT project, which carries `knownin1980s`,
+`Mazur_statement` and `Odlyzko_statement`. Tenet checks such projects and reports which
+declarations rest on which assumption, which is the case `audit` and `why` exist for.
+
 ### Comparing statements across projects
 
 `tenet compare` answers the one faithfulness question a machine can settle: when two groups

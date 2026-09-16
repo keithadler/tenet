@@ -21,8 +21,8 @@ independent kernel and does not claim to be; it is the one on .NET. See
 
 ```
 $ tenet check .lake/build/lib/lean/Mathlib.olean --all
-Mathlib: Lean 4.34.0-rc2 (6a10ac8c2); 10726 modules mapped in 1.5s, checking all of them
-OK: 765497 checked in 10726 modules, 0 failed, 10726 modules mapped, 390.5s, 12 jobs
+Mathlib: Lean 4.35.0-rc1; 10758 modules mapped in 1.5s, checking all of them
+OK: 766950 checked in 10758 modules, 0 failed, 10758 modules mapped, 398.0s, 12 jobs
 ```
 
 ## Status
@@ -326,6 +326,8 @@ Tenet is another entry, not a first.
 | | What it is | Catches a bug in Lean's kernel? |
 | --- | --- | --- |
 | [lean4checker](https://github.com/leanprover/lean4checker) | Official. Replays a module's environment through **Lean's own kernel** | No: it shares the kernel it is checking |
+| [con-leche](https://github.com/leanprover/con-leche) | An external checker written in Lean, **proven in Lean not to accept a proof of `False`** | Yes, and it is the strongest guarantee of any of these |
+| [con-ron](https://github.com/leanprover/con-ron) | A Rust port of con-leche, proven equivalent to it with [Aeneas](https://aeneasverif.github.io) | A different compiler and runtime, but proven identical in behavior, so not design diversity |
 | [lean4lean](https://github.com/digama0/lean4lean) | A Lean 4 kernel written in Lean 4, aimed at being verified against the type theory | Yes, and it is the most rigorous of these |
 | [nanoda](https://github.com/ammkrn/nanoda_lib) | An independent kernel in Rust; the checker [Comparator](https://github.com/leanprover/comparator) drives it | Yes |
 | [trepplein](https://github.com/gebner/trepplein) | An independent kernel in Scala | Yes |
@@ -383,6 +385,10 @@ A checker that accepted everything would produce the same clean output, so:
 - **It rejects tampered proofs.** Every theorem in the prelude given the previous theorem's
   proof: at least 95% must be rejected, with no collateral damage. Recursor rules and
   theorem statements are tampered with in the fixtures too.
+- **Its verdicts are compared with [con-leche](https://github.com/leanprover/con-leche)**, the
+  external checker proven in Lean not to accept a proof of `False`, on identical export files:
+  293,323 declarations, no disagreement. That comparison is worth more to Tenet than to
+  con-leche, since a proof beats testing, and it is the strongest assurance evidence here.
 - **Its verdicts are compared with Lean's own kernel**, declaration by declaration, on about
   140,000 deliberately damaged declarations. That comparison has found two real kernel bugs,
   both in Tenet: a head comparison that used reference equality where the reference compares
