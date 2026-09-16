@@ -6,18 +6,18 @@ class Tenet < Formula
   desc "Independent implementation of the Lean 4 kernel, and a checker for Lean proofs"
   homepage "https://github.com/keithadler/tenet"
   license any_of: ["MIT", "Apache-2.0"]
-  version "0.6.0"
+  version "0.7.0"
 
   on_macos do
     on_arm do
-      url "https://github.com/keithadler/tenet/releases/download/v0.6.0/tenet-v0.6.0-osx-arm64.tar.gz"
+      url "https://github.com/keithadler/tenet/releases/download/v0.7.0/tenet-v0.7.0-osx-arm64.tar.gz"
       # sha256 filled in at release time; `brew fetch` reports the value to paste here.
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/keithadler/tenet/releases/download/v0.6.0/tenet-v0.6.0-linux-x64.tar.gz"
+      url "https://github.com/keithadler/tenet/releases/download/v0.7.0/tenet-v0.7.0-linux-x64.tar.gz"
     end
   end
 

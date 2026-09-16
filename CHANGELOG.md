@@ -3,7 +3,10 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.0] - 2026-09-15
+
+Checked against a checker with a consistency proof, and made to answer to programs as well as
+people.
 
 ### Fixed
 - The GC's adaptive heap sizing (DATAS) is pinned off. It costs this workload about 30% at
