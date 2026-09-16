@@ -193,7 +193,7 @@ prover; this project only reads its export format.
 | Lean | 4.35.0-rc1, 4.34.0, 4.33.1, 4.28.0, 4.24.0, 4.16.0, 4.12.0 | each toolchain's whole `Init` library checked in place, every push |
 | .NET | 10 (ships), 11 RC1 (tracked) | built and tested on both; 10 is the active LTS |
 | Platforms | Linux, macOS, Windows | build and test on every push |
-| Mathlib | master | checked nightly |
+| Mathlib | master, on Lean 4.35.0-rc1 | 766,950 declarations, 0 failures, checked nightly |
 
 .NET 11 is tracked rather than targeted. It is a release candidate on the short-term support
 track, and the one difference that mattered was a default rather than the runtime: it turns on

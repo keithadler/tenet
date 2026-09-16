@@ -149,6 +149,22 @@ Reading Lean 4.20.0 found two things worth recording, and one real gap in the ke
   wrote to any `.olean`. Tenet reports them as failures and says no loaded module stores the
   constant. The CI matrix therefore covers 4.28.0 and later.
 
+## Current runs
+
+Everything below was re-run on 2026-09-15, against the versions each project actually pins.
+
+| What | Lean | Result |
+| --- | --- | --- |
+| Mathlib master and its dependencies | 4.35.0-rc1 | 766,950 declarations in 10,758 modules, 0 failures, 398 s |
+| OpenAI's NavierStokesAndEuler, whole closure | 4.34.0-rc2 | 853,307 declarations in 13,241 modules, 0 failures, 637 s |
+| The same, on .NET 11 RC1 | 4.34.0-rc2 | identical verdicts, 696 s |
+| FLT | 4.34.0-rc2 | 9,821 declarations, 98.1% unconditional, `knownin1980s` 106, `sorryAx` 90 |
+| Each toolchain's `Init`, 4.12.0 through 4.35.0-rc1 | seven versions | 0 failures on every one |
+
+The two formalizations pin 4.34.0-rc2 and will move when their authors move them, so checking
+them "on the latest Lean" is not something a checker can decide. What is checked is each project
+at the version it uses, on both runtimes, with the same answer.
+
 ## A runtime default that costs 30%
 
 The garbage collector's adaptive heap sizing, DATAS, is wrong for this workload. Checking
