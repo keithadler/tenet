@@ -167,6 +167,8 @@ at the version it uses, on both runtimes, with the same answer.
 
 ## A runtime default that costs 30%
 
+Reported upstream as [dotnet/runtime#134031](https://github.com/dotnet/runtime/issues/134031).
+
 The garbage collector's adaptive heap sizing, DATAS, is wrong for this workload. Checking
 allocates expression nodes continuously and wants a heap that simply stays large; DATAS keeps
 shrinking it. .NET 10 left DATAS off for the server collector and .NET 11 turns it on, so a

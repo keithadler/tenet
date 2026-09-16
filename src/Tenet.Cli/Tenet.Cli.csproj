@@ -29,6 +29,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Reported upstream: https://github.com/dotnet/runtime/issues/134031 -->
     <RuntimeHostConfigurationOption Include="System.GC.DynamicAdaptationMode" Value="0" Trim="true" />
   </ItemGroup>
 
