@@ -349,7 +349,9 @@ For each declaration in the export, in order:
   generated and compared against the export.
 
 What it does not do: run compiled code. `Lean.reduceBool` and `Lean.reduceNat` are
-rejected with a clear message, because trusting them means trusting the compiler.
+rejected with a clear message, because trusting them means trusting the compiler. Lean 4.35
+removes both constants and the kernel's support for them, which settles the question in the
+same direction for everyone; the rejection stays here for exports from 4.34 and earlier.
 
 ### What you still have to trust
 

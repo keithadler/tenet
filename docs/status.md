@@ -109,13 +109,17 @@ Nothing was found that could change what the kernel accepts.
 
 ## Lean versions
 
-The tests and the tables above pin Lean 4.34.0-rc2, but the `.olean` reader and the kernel are
-checked against several toolchains in CI (the `olean-compat` matrix): each job installs a
-toolchain and checks its whole `Init` library in place.
+The fixtures above were exported with Lean 4.34.0-rc2 and the Lean projects under `tools/`
+pin 4.34.0, but the `.olean` reader and the kernel are checked against several toolchains in
+CI (the `olean-compat` matrix): each job installs a toolchain and checks its whole `Init`
+library in place. 4.34.0 and 4.35.0-rc1 were added on 2026-09-15, the day 4.35.0-rc1 was
+tagged; both passed unchanged, so nothing in 4.34.0's kernel hardening or 4.35.0-rc1 needed
+a counterpart here.
 
 | Toolchain | `.olean` format | Declarations in `Init` | Result |
 | --- | --- | --- | --- |
-| 4.34.0-rc2 | 2 | 64,814 | 0 failures |
+| 4.35.0-rc1 | 2 | 64,635 | 0 failures |
+| 4.34.0 | 2 | 64,814 | 0 failures |
 | 4.33.1 | 2 | 64,656 | 0 failures |
 | 4.28.0 | 2 | 56,236 | 0 failures |
 | 4.24.0 | 2 | | 0 failures |
@@ -148,6 +152,27 @@ Reading Lean 4.20.0 found two things worth recording, and one real gap in the ke
   four like it mention names Lean realizes on demand (`.induct`, `.splitter`) and never
   wrote to any `.olean`. Tenet reports them as failures and says no loaded module stores the
   constant. The CI matrix therefore covers 4.28.0 and later.
+
+## The 4.34.0 kernel changes
+
+Lean 4.34.0 hardened the kernel: three soundness fixes and three defensive checks, all
+landed between 12 and 20 August 2026. None of them needed a change here, which is worth
+recording precisely, because "no change needed" is the kind of claim that hides a gap.
+
+| Lean | Change | Tenet's counterpart |
+| --- | --- | --- |
+| [#14806](https://github.com/leanprover/lean4/pull/14806) | `is_def_eq` caching made order-independent: the union-find that merged classes is now a plain cache | Results were already cached as unordered pairs, success and failure kept apart, with no merging of classes (`TypeChecker.OrderPair`) |
+| [#14807](https://github.com/leanprover/lean4/pull/14807), [#14843](https://github.com/leanprover/lean4/pull/14843) | `is_prop` requires a sort instead of answering `false` when inference is stuck | `IsProp` is `EnsureSort(Infer(e))` and raises on anything that is not a sort |
+| [#14808](https://github.com/leanprover/lean4/pull/14808) | Generated recursors are type-checked and their computation rules verified type-preserving | Recursors and their rules are derived here and compared field for field against the export |
+| [#14582](https://github.com/leanprover/lean4/pull/14582) | Occurrences of the datatypes being declared must be uniform | `Inductive.CheckUniformIndOccs` |
+| [#14849](https://github.com/leanprover/lean4/pull/14849) | `Nat` numerals the kernel computes are bounded at 128 MB | `TypeChecker.NatMaxSizeBytes`, the same bound |
+| [#14838](https://github.com/leanprover/lean4/pull/14838), [#14833](https://github.com/leanprover/lean4/pull/14833) | 32-bit refcount overflow frozen; GMP 6.3.0 or later required | No counterpart: these are properties of the C++ runtime and its bignum library, and .NET's `BigInteger` and collector are not that runtime |
+
+4.35.0-rc1 removes `Lean.reduceBool`, `Lean.reduceNat`, `Lean.ofReduceBool`,
+`Lean.ofReduceNat` and `Lean.trustCompiler`, and with them the kernel's own native
+reduction ([#14953](https://github.com/leanprover/lean4/pull/14953)). Tenet refused those
+two constants from the start, so the newest kernel has come to where the checker already
+stood; the refusal stays for exports from 4.34 and earlier, where the constants still exist.
 
 ## Parallel checking
 
@@ -213,13 +238,15 @@ runs a 15-variant differential test on every push.
   every derived field with the export.
 - Quotients.
 - Export reader for format 3.0 and 3.1.
-- `.olean` reader (format versions 2 and 3, GMP and native big numbers, the module system's
+- `.olean` reader (format versions 1, 2 and 3, GMP and native big numbers, the module system's
   `.olean.private` part merged) and in-place checking with lazily decoded imports.
 
 ## Limits
 
 - Native reduction (`Lean.reduceBool` / `Lean.reduceNat`) is rejected by design: an
-  external checker cannot trust the compiler.
+  external checker cannot trust the compiler. Lean 4.35 removes both constants and the
+  kernel's support for reducing them, so from that toolchain on the rejection can only be
+  reached by an export from an older one.
 - Definition unfolding per declaration is bounded (`TypeChecker.MaxUnfolds`, default 100
   million) so a non-terminating unsafe definition fails with a deterministic timeout
   instead of hanging; Lean uses a heartbeat limit for the same purpose.

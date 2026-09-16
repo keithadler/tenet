@@ -31,7 +31,7 @@ versions follow [Semantic Versioning](https://semver.org/).
   instead of 27. Reports are now written by a hand-rolled emitter rather than a reflecting
   serializer, which is what made an ahead-of-time build possible and also fixes the field order.
 - `.olean` format 1 (Lean up to about 4.12) is read, and the pre-module-system `ModuleData`
-  layout no longer overruns the mapping. CI now covers six toolchains from 4.12 to 4.34.
+  layout no longer overruns the mapping. CI now covers seven toolchains from 4.12 to 4.35.
 - `--json` on `axioms`, `audit`, `compare`, `crosscheck`, `statement` and `why`. Every command that answers a
   question worth acting on can now answer it to a program; parsing prose was not an interface.
 - `--names-out` on `crosscheck`, writing every constant compared, so coverage across several
@@ -43,6 +43,18 @@ versions follow [Semantic Versioning](https://semver.org/).
   and would keep reporting it whichever answer were wrong, so nothing previously noticed if a
   refactor quietly changed how structure eta, proof irrelevance, K-like reduction, quotient
   reduction or literal arithmetic were decided.
+
+### Changed
+- CI checks `Init` from Lean 4.35.0-rc1 and 4.34.0 as well, seven toolchains from 4.12 up.
+  Both passed unchanged: 64,635 declarations from 4.35.0-rc1 and 64,814 from 4.34.0, no
+  failures. The Lean projects under `tools/` (the kernel oracle and the edge-case corpus)
+  move from 4.34.0-rc2 to 4.34.0.
+- `docs/status.md` records the 4.34.0 kernel changes one by one against what was already
+  here: the order-independent `is_def_eq` cache, `is_prop` requiring a sort, type-checked
+  recursors, uniform occurrences of the datatypes being declared, and the 128 MB bound on
+  `Nat` numerals. 4.35.0-rc1 removes `Lean.reduceBool`, `Lean.reduceNat` and the kernel's
+  native reduction, which Tenet has refused from the start; the refusal stays for exports
+  from 4.34 and earlier.
 
 ## [0.6.0] - 2026-09-11
 
