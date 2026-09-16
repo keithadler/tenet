@@ -10,6 +10,11 @@
     <IsPackable>true</IsPackable>
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <!-- DATAS, the GC's adaptive heap sizing, costs this workload about 30% at twelve threads: checking
+         allocates expression nodes constantly and benefits from a heap that simply stays large. .NET 10 left
+         it off for Server GC and .NET 11 turns it on, so leaving it unset means a runtime upgrade silently
+         changes throughput. Measured on Init: 10.2 s either way with this off, 13.3 s on .NET 11 without it. -->
+    <!-- (set as a runtime host option below; there is no first-class MSBuild property for it) -->
     <TieredPGO>true</TieredPGO>
   </PropertyGroup>
 
@@ -21,6 +26,10 @@
 
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.DynamicAdaptationMode" Value="0" Trim="true" />
   </ItemGroup>
 
 </Project>

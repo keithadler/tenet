@@ -5,6 +5,13 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- The GC's adaptive heap sizing (DATAS) is pinned off. It costs this workload about 30% at
+  twelve threads, and .NET 11 turns it on by default where .NET 10 left it off, so a runtime
+  upgrade alone would have changed throughput by a third. Both runtimes now perform the same.
+- `AnalysisLevel` is pinned rather than `latest`: with warnings as errors, a newly released SDK
+  could add style rules and break the build with no code change, which the .NET 11 RC did.
+
 ### Added
 - `tenet check --sarif FILE` writes findings in SARIF, so GitHub code scanning renders a
   rejection on the pull request diff rather than in a log. `--fail-on-axiom` contributes

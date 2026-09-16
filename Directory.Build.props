@@ -6,7 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <!-- Pinned, not "latest": with TreatWarningsAsErrors on, "latest" means a newly released SDK can add
+         rules and break the build for anyone who upgrades, without a line of code changing. The .NET 11 RC
+         did exactly that, adding five style rules across 38 sites. Bump this deliberately. -->
+    <AnalysisLevel>10.0-recommended</AnalysisLevel>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
     <InvariantGlobalization>true</InvariantGlobalization>

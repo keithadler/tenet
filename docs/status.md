@@ -149,6 +149,28 @@ Reading Lean 4.20.0 found two things worth recording, and one real gap in the ke
   wrote to any `.olean`. Tenet reports them as failures and says no loaded module stores the
   constant. The CI matrix therefore covers 4.28.0 and later.
 
+## A runtime default that costs 30%
+
+The garbage collector's adaptive heap sizing, DATAS, is wrong for this workload. Checking
+allocates expression nodes continuously and wants a heap that simply stays large; DATAS keeps
+shrinking it. .NET 10 left DATAS off for the server collector and .NET 11 turns it on, so a
+runtime upgrade alone changes throughput by a third with no code change.
+
+Measured on all of `Init`, twelve jobs, interleaved runs:
+
+| | .NET 10 | .NET 11 RC1 |
+| --- | --- | --- |
+| Runtime default | 9.8 s | 13.3 s |
+| DATAS forced on | 10.1 s | 13.3 s |
+| DATAS forced off | 10.3 s | 10.2 s |
+
+The two runtimes are equivalent once the setting is pinned. `System.GC.DynamicAdaptationMode`
+is therefore set to 0 in `Tenet.Cli.csproj`, alongside the server collector, so the number does
+not move when the host runtime does.
+
+The first reading of this was that .NET 11 was 30% slower. That was wrong: a default changed,
+and a default that only matters because this workload is unusual in allocating so steadily.
+
 ## Parallel checking
 
 `tenet check` uses all cores by default (`--jobs 1` for the sequential mode). In parallel
