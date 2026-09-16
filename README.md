@@ -186,6 +186,20 @@ found.
 Tenet is not affiliated with the Lean FRO or Microsoft. "Lean" is the name of their
 prover; this project only reads its export format.
 
+## Tested against
+
+| | Versions | How |
+| --- | --- | --- |
+| Lean | 4.35.0-rc1, 4.34.0, 4.33.1, 4.28.0, 4.24.0, 4.16.0, 4.12.0 | each toolchain's whole `Init` library checked in place, every push |
+| .NET | 10 (ships), 11 RC1 (tracked) | built and tested on both; 10 is the active LTS |
+| Platforms | Linux, macOS, Windows | build and test on every push |
+| Mathlib | master | checked nightly |
+
+.NET 11 is tracked rather than targeted. It is a release candidate on the short-term support
+track, and the one difference that mattered was a default rather than the runtime: it turns on
+the GC's adaptive heap sizing, which costs this workload about 30% at twelve threads. That
+setting is now pinned off, and with it pinned the two runtimes perform the same.
+
 ## Install
 
 A release attaches a standalone binary for each platform: no .NET installation, about 4 MB, and

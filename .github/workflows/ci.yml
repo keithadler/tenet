@@ -68,6 +68,28 @@ jobs:
             --oracle tools/leancheck/.lake/build/bin/leancheck \
             --variants 15 --mutations 10 --seed ${{ github.run_number }}
 
+  dotnet-next:
+    # .NET 10 is what ships. This tracks the next runtime so a change in its defaults is found here
+    # rather than by a user: the .NET 11 RC turned on the GC's adaptive sizing, which costs this
+    # workload about 30%, and added analyzer rules that failed the build with no code change.
+    name: Build and test on the next .NET
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+          dotnet-quality: preview
+      - name: Target the next framework
+        run: |
+          sed -i 's|<TargetFramework>net10.0</TargetFramework>|<TargetFramework>net11.0</TargetFramework>|' Directory.Build.props
+          python3 -c "import json; d=json.load(open('global.json')); d['sdk']['rollForward']='latestMajor'; json.dump(d, open('global.json','w'), indent=2)"
+      - run: dotnet build -c Release
+      - run: dotnet test --no-build -c Release
+
   olean-compat:
     # The .olean reader and the kernel against several Lean toolchains, not only the one the tests pin.
     # Each job installs a toolchain and checks its whole Init library in place.
@@ -76,7 +98,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [v4.34.0-rc2, v4.33.1, v4.28.0, v4.24.0, v4.16.0, v4.12.0]
+        toolchain: [v4.35.0-rc1, v4.34.0, v4.33.1, v4.28.0, v4.24.0, v4.16.0, v4.12.0]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
