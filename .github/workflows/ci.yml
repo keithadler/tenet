@@ -54,6 +54,19 @@ jobs:
           LIB="$(lake env printenv LEAN_SYSROOT)/lib/lean"
           cd ../..
           dotnet run --no-build -c Release --project src/Tenet.Cli -- check "$LIB/Init.olean" --all --quiet
+      - name: Resolve a declaration by name alone, across the whole toolchain
+        run: |
+          cd tools/leancheck
+          LIB="$(lake env printenv LEAN_SYSROOT)/lib/lean"
+          cd ../..
+          # A directory target searches every module under it, so this must find Nat.add_comm without
+          # being told that it lives in Init.olean.
+          out=$(dotnet run --no-build -c Release --project src/Tenet.Cli -- axioms "$LIB" Nat.add_comm)
+          echo "$out"
+          case "$out" in
+            *"not in"*) echo "directory target failed to resolve Nat.add_comm"; exit 1 ;;
+          esac
+
       - name: Build the Lean kernel oracle
         run: |
           cd tools/leancheck && lake build

@@ -17,16 +17,18 @@ internal static class Program
                                                    decoded on demand; --all checks the whole import closure)
           tenet check <project dir> [options]     check every module of a built Lake project (.lake/build/lib/lean)
           tenet info  <file.ndjson>               print the export's metadata and counts
-          tenet show  <file.ndjson> <name>...     print declarations from an export (type, value, metadata)
-          tenet show  <Module.olean> <name>...    print declarations from a compiled module or its imports
-          tenet axioms <file> <name>...           print the axioms a declaration depends on, transitively
-          tenet statement <Module.olean> <name>...  which constants a theorem's statement is built from, and who defines them
+          tenet show  <target> <name>...          print declarations in full (type, value, metadata)
+          tenet axioms <target> <name>...         print the axioms a declaration depends on, transitively
+          tenet statement <target> <name>...      which constants a theorem's statement is built from, and who defines them
           tenet audit <project dir>               which of a project's declarations are complete and which rest on sorry
           --fail-on-axiom NAME on check exits non-zero if anything rests on that axiom (e.g. sorryAx)
           --timing on check prints where the time went: mapping, decoding, kernel, and worker utilization
           --sarif FILE on check writes findings in SARIF, which GitHub code scanning renders on the diff
-          tenet why <Module.olean> <name>         the chain from a declaration to each assumption it rests on
-          tenet compare <a.olean> <nameA> <b.olean> <nameB>   are two projects stating the same theorem?
+          tenet why <target> <name>               the chain from a declaration to each assumption it rests on
+          tenet compare <a> <nameA> <b> <nameB>   are two projects stating the same theorem?
+
+          a <target> is an export file, a single Module.olean, or a project directory; given a directory,
+          every module is searched, so you need the declaration's name and not the file it lives in
 
           --json on axioms, audit, compare and crosscheck prints one machine-readable line instead
           --names-out FILE on crosscheck writes every constant compared, so slices can be unioned
@@ -95,6 +97,10 @@ internal static class Program
                 "version" => Version(),
                 _ => Fail($"unknown command '{args[0]}'\n\n{Usage}"),
             };
+        }
+        catch (UsageException e)
+        {
+            return Fail(e.Message);
         }
         catch (ExportFormatException e)
         {
@@ -207,60 +213,22 @@ internal static class Program
     {
         if (args.Length < 2)
         {
-            return Fail("show needs a file and at least one name");
+            return Fail("show needs an export file, an .olean file or a project directory, and at least one name");
         }
         var names = args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(Name.Parse).ToList();
-        if (args[0].EndsWith(".olean", StringComparison.Ordinal))
-        {
-            return ShowOlean(args[0], names);
-        }
-        ExportFile file = NdjsonReader.ReadFile(args[0]);
-        var env = new Environment();
-        foreach (ExportDecl d in file.Decls)
-        {
-            ExportChecker.AddUnchecked(env, d);
-        }
+        (Func<Name, ConstantInfo?> find, IDisposable? owner, string where, _) = OpenTarget(args[0]);
+        using var checker = owner;
         int missing = 0;
         foreach (Name n in names)
         {
-            ConstantInfo? c = env.Find(n);
+            ConstantInfo? c = find(n);
             if (c is null)
             {
-                Console.WriteLine($"{n}: not in this export");
+                Console.WriteLine($"{n}: not in {where}");
                 missing++;
                 continue;
             }
-            string lps = c.LevelParams.Length == 0 ? "" : ".{" + string.Join(", ", c.LevelParams.Select(l => l.ToString())) + "}";
-            Console.WriteLine($"{c.KindName} {c.Name}{lps} : {c.Type}");
-            switch (c)
-            {
-                case DefinitionInfo def:
-                    Console.WriteLine($"  := {def.Value}");
-                    Console.WriteLine($"  hints: {def.Hints}, safety: {def.Safety}");
-                    break;
-                case TheoremInfo thm:
-                    Console.WriteLine($"  := {thm.Value}");
-                    break;
-                case OpaqueInfo op:
-                    Console.WriteLine($"  := {op.OpaqueValue}");
-                    break;
-                case InductiveInfo ind:
-                    Console.WriteLine($"  params {ind.NumParams}, indices {ind.NumIndices}, ctors [{string.Join(", ", ind.Ctors.Select(x => x.ToString()))}], rec {(ind.IsRec ? "true" : "false")}, reflexive {(ind.IsReflexive ? "true" : "false")}, nested {ind.NumNested}");
-                    break;
-                case ConstructorInfo ctor:
-                    Console.WriteLine($"  of {ctor.Induct}, index {ctor.Cidx}, params {ctor.NumParams}, fields {ctor.NumFields}");
-                    break;
-                case RecursorInfo rec:
-                    Console.WriteLine($"  params {rec.NumParams}, indices {rec.NumIndices}, motives {rec.NumMotives}, minors {rec.NumMinors}, k {(rec.K ? "true" : "false")}");
-                    foreach (RecursorRule r in rec.Rules)
-                    {
-                        Console.WriteLine($"  rule {r.Ctor} ({r.NumFields} fields) := {r.Rhs}");
-                    }
-                    break;
-                case QuotInfo q:
-                    Console.WriteLine($"  quotient {q.Kind}");
-                    break;
-            }
+            PrintConstant(c);
         }
         return missing == 0 ? 0 : 1;
     }
@@ -275,43 +243,28 @@ internal static class Program
     {
         if (args.Length < 2)
         {
-            return Fail("why needs an .olean file and a declaration name");
+            return Fail("why needs an export file, an .olean file or a project directory, and a declaration name");
         }
-        var search = new Tenet.Olean.LeanSearchPath();
-        search.AddFromEnvironment();
-        search.AddAroundOleanFile(args[0]);
-        using var checker = new Tenet.Olean.OleanChecker(search);
-        Name module = search.ModuleNameOf(args[0]);
-        checker.Load([(module, args[0])]);
-        search.AddToolchainFor(checker.Modules[module].LeanVersion);
-        checker.Load([(module, args[0])]);
-
-        // Which module defines what, so each step of the chain can say where to look.
-        var definedIn = new Dictionary<Name, Name>();
-        foreach ((Name m, Tenet.Olean.OleanModule om) in checker.Modules)
-        {
-            foreach (Name c in om.ConstantNames)
-            {
-                definedIn.TryAdd(c, m);
-            }
-        }
+        (Func<Name, ConstantInfo?> find, IDisposable? owner, string where, Dictionary<Name, Name> definedIn) =
+            OpenTarget(args[0]);
+        using var checker = owner;
         var standard = new HashSet<Name> { Name.Of("propext"), Name.Of("Classical", "choice"), Name.Of("Quot", "sound") };
 
         foreach (Name n in args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(Name.Parse))
         {
-            if (checker.Resolve(n) is null)
+            if (find(n) is null)
             {
-                Console.WriteLine($"{n}: not in {module} or its imports");
+                Console.WriteLine($"{n}: not in {where}");
                 continue;
             }
-            var (axioms, _) = Replay.AxiomsOf(checker.Resolve, n);
+            var (axioms, _) = Replay.AxiomsOf(find, n);
             var interesting = axioms.Where(a => !standard.Contains(a)).ToList();
             if (WantsJson(args))
             {
                 var chains = new List<object>();
                 foreach (Name ax in interesting)
                 {
-                    List<Name>? path = Replay.PathTo(checker.Resolve, n, ax);
+                    List<Name>? path = Replay.PathTo(find, n, ax);
                     chains.Add(new RawJson(Json(
                         ("assumption", ax.ToString()),
                         ("steps", path is null ? 0 : path.Count - 1),
@@ -334,7 +287,7 @@ internal static class Program
             }
             foreach (Name ax in interesting)
             {
-                List<Name>? path = Replay.PathTo(checker.Resolve, n, ax);
+                List<Name>? path = Replay.PathTo(find, n, ax);
                 Console.WriteLine($"  rests on {ax} by this chain:");
                 if (path is null)
                 {
@@ -343,9 +296,9 @@ internal static class Program
                 }
                 for (int i = 0; i < path.Count; i++)
                 {
-                    string where = definedIn.TryGetValue(path[i], out Name? m) ? $"   [{m}]" : "";
+                    string at = definedIn.TryGetValue(path[i], out Name? m) ? $"   [{m}]" : "";
                     string arrow = i == 0 ? "   " : "-> ";
-                    Console.WriteLine($"    {arrow}{path[i]}{where}");
+                    Console.WriteLine($"    {arrow}{path[i]}{at}");
                 }
                 int steps = path.Count - 1;
                 Console.WriteLine($"    ({steps} step{(steps == 1 ? "" : "s")}; the last named declaration above the assumption is the one that invokes it)");
@@ -557,14 +510,15 @@ internal static class Program
               --quiet               only the final line
             """,
         ["axioms"] = """
-            tenet axioms <file> <name>... [--json]
+            tenet axioms <target> <name>... [--json]
 
             The axioms a declaration depends on, transitively, as Lean's `#print axioms` reports
             them. A proof resting on nothing but propext, Classical.choice and Quot.sound is
-            complete in Lean's logic; sorryAx marks a hole. Works on exports and .olean files.
+            complete in Lean's logic; sorryAx marks a hole. A target is an export file, an .olean
+            file, or a project directory, in which case every module is searched by name.
             """,
         ["why"] = """
-            tenet why <Module.olean> <name>... [--json]
+            tenet why <target> <name>... [--json]
 
             A shortest chain from a declaration to each assumption it rests on, naming the module
             at every step. An axiom list says what a theorem depends on; the chain says which
@@ -579,14 +533,14 @@ internal static class Program
             type, so a project full of holes compiles perfectly.
             """,
         ["statement"] = """
-            tenet statement <Module.olean> <name>... [--json]
+            tenet statement <target> <name>... [--json]
 
             Which constants a theorem's statement is built from, split into those the project
             defined itself and those from established libraries. A wrong definition hides in the
             first group. This points; it does not judge.
             """,
         ["compare"] = """
-            tenet compare <a.olean> <nameA> <b.olean> <nameB> [--show-types] [--json]
+            tenet compare <a> <nameA> <b> <nameB> [--show-types] [--json]
 
             Whether two separately built projects state the same theorem. A theorem is compared by
             its type, a definition by type and value, a structure field by field. Names carrying
@@ -600,7 +554,7 @@ internal static class Program
             reader that drops a hypothesis yields a weaker theorem both kernels accept.
             """,
         ["show"] = """
-            tenet show <file.ndjson | Module.olean> <name>...
+            tenet show <target> <name>...
 
             Print declarations in full: type, value, reducibility hints, constructor and recursor
             data.
@@ -664,6 +618,71 @@ internal static class Program
         File.WriteAllText(path, doc);
     }
 
+    /// <summary>
+    /// Open a target for name lookup: an export, a single module, or a whole project directory. The directory case
+    /// is the one that matters in practice. Every other command required knowing which <c>.olean</c> a declaration
+    /// lived in, which nobody does: names are namespaced by mathematics, files by whatever the author found tidy,
+    /// and the two rarely agree. Passing the project resolves a name wherever it sits.
+    /// </summary>
+    private static (Func<Name, ConstantInfo?> Find, IDisposable? Owner, string Where,
+        Dictionary<Name, Name> DefinedIn) OpenTarget(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            List<string> files = OleanFilesUnder(path);
+            if (files.Count == 0)
+            {
+                throw new UsageException($"no .olean files under {path} (is the project built?)");
+            }
+            var search = new Tenet.Olean.LeanSearchPath();
+            search.AddFromEnvironment();
+            search.AddAroundOleanFile(files[0]);
+            var checker = new Tenet.Olean.OleanChecker(search);
+            var targets = files.Select(f => (Module: search.ModuleNameOf(f), Path: f)).ToList();
+            checker.Load(targets);
+            search.AddToolchainFor(checker.Modules[targets[0].Module].LeanVersion);
+            checker.Load(targets);
+            return (checker.Resolve, checker, $"{files.Count} modules under {path} and their imports",
+                DefinedIn(checker));
+        }
+        if (path.EndsWith(".olean", StringComparison.Ordinal))
+        {
+            var search = new Tenet.Olean.LeanSearchPath();
+            search.AddFromEnvironment();
+            search.AddAroundOleanFile(path);
+            var checker = new Tenet.Olean.OleanChecker(search);
+            Name module = search.ModuleNameOf(path);
+            checker.Load([(module, path)]);
+            search.AddToolchainFor(checker.Modules[module].LeanVersion);
+            checker.Load([(module, path)]);
+            return (checker.Resolve, checker, $"{module} and its imports", DefinedIn(checker));
+        }
+        ExportFile file = NdjsonReader.ReadFile(path);
+        var env = new Environment();
+        foreach (ExportDecl d in file.Decls)
+        {
+            ExportChecker.AddUnchecked(env, d);
+        }
+        return (env.Find, null, "this export", new Dictionary<Name, Name>());
+    }
+
+    /// <summary>Which module defines what, so a dependency chain can say where to look for each step.</summary>
+    private static Dictionary<Name, Name> DefinedIn(Tenet.Olean.OleanChecker checker)
+    {
+        var map = new Dictionary<Name, Name>();
+        foreach ((Name m, Tenet.Olean.OleanModule om) in checker.Modules)
+        {
+            foreach (Name c in om.ConstantNames)
+            {
+                map.TryAdd(c, m);
+            }
+        }
+        return map;
+    }
+
+    /// <summary>A problem with what the user asked for, reported as a message rather than a stack trace.</summary>
+    private sealed class UsageException(string message) : Exception(message);
+
     private static string Trim(string s) => s.Length > 200 ? s[..200] + " …" : s;
 
     /// <summary>Hash of a file, so a report says which artifact produced the verdict rather than only its path.</summary>
@@ -722,35 +741,29 @@ internal static class Program
     {
         if (args.Length < 4)
         {
-            return Fail("compare needs: <a.olean> <nameA> <b.olean> <nameB>");
+            return Fail("compare needs: <a> <nameA> <b> <nameB>, where each side is an export file, "
+                      + "an .olean file or a project directory");
         }
-        (Tenet.Olean.OleanChecker Checker, Name Name) Side(string path, string decl)
+        (Func<Name, ConstantInfo?> Find, IDisposable? Owner, string Where, Name Name) Side(string path, string decl)
         {
-            var search = new Tenet.Olean.LeanSearchPath();
-            search.AddFromEnvironment();
-            search.AddAroundOleanFile(path);
-            var checker = new Tenet.Olean.OleanChecker(search);
-            Name module = search.ModuleNameOf(path);
-            checker.Load([(module, path)]);
-            search.AddToolchainFor(checker.Modules[module].LeanVersion);
-            checker.Load([(module, path)]);
-            return (checker, Name.Parse(decl));
+            (Func<Name, ConstantInfo?> find, IDisposable? owner, string where, _) = OpenTarget(path);
+            return (find, owner, where, Name.Parse(decl));
         }
 
-        var (ca, na) = Side(args[0], args[1]);
-        using (ca)
+        var (ca, oa, wa, na) = Side(args[0], args[1]);
+        using (oa)
         {
-            var (cb, nb) = Side(args[2], args[3]);
-            using (cb)
+            var (cb, ob, wb, nb) = Side(args[2], args[3]);
+            using (ob)
             {
-                ConstantInfo? a = ca.Resolve(na), b = cb.Resolve(nb);
+                ConstantInfo? a = ca(na), b = cb(nb);
                 if (a is null)
                 {
-                    return Fail($"{na} is not in {args[0]} or its imports");
+                    return Fail($"{na} is not in {wa}");
                 }
                 if (b is null)
                 {
-                    return Fail($"{nb} is not in {args[2]} or its imports");
+                    return Fail($"{nb} is not in {wb}");
                 }
 
                 // Pull in everything both statements reach, from whichever side owns it, and note where the two
@@ -778,7 +791,7 @@ internal static class Program
                     {
                         continue;
                     }
-                    ConstantInfo? fa = ca.Resolve(cur), fb = cb.Resolve(cur);
+                    ConstantInfo? fa = ca(cur), fb = cb(cur);
                     ConstantInfo? pick = fa ?? fb;
                     if (pick is null)
                     {
@@ -1062,27 +1075,12 @@ internal static class Program
     {
         if (args.Length < 2)
         {
-            return Fail("statement needs an .olean file and at least one theorem name");
+            return Fail("statement needs an export file, an .olean file or a project directory, "
+                      + "and at least one theorem name");
         }
-        var search = new Tenet.Olean.LeanSearchPath();
-        search.AddFromEnvironment();
-        search.AddAroundOleanFile(args[0]);
-        using var checker = new Tenet.Olean.OleanChecker(search);
-        Name module = search.ModuleNameOf(args[0]);
-        checker.Load([(module, args[0])]);
-        search.AddToolchainFor(checker.Modules[module].LeanVersion);
-        checker.Load([(module, args[0])]);
-
-        // Which module defines each constant, and which of those modules belong to the project rather than a library.
-        var definedIn = new Dictionary<Name, Name>();
-        foreach ((Name m, Tenet.Olean.OleanModule om) in checker.Modules)
-        {
-            foreach (Name c in om.ConstantNames)
-            {
-                definedIn.TryAdd(c, m);
-            }
-        }
-        string root = module.ToString().Split('.')[0];
+        (Func<Name, ConstantInfo?> find, IDisposable? owner, string where, Dictionary<Name, Name> definedIn) =
+            OpenTarget(args[0]);
+        using var checker = owner;
         static bool IsLibrary(Name m)
         {
             string top = m.ToString().Split('.')[0];
@@ -1092,10 +1090,10 @@ internal static class Program
 
         foreach (Name n in args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(Name.Parse))
         {
-            ConstantInfo? c = checker.Resolve(n);
+            ConstantInfo? c = find(n);
             if (c is null)
             {
-                Console.WriteLine($"{n}: not in {module} or its imports");
+                Console.WriteLine($"{n}: not in {where}");
                 continue;
             }
             var used = new HashSet<Name>();
@@ -1169,34 +1167,7 @@ internal static class Program
             return Fail("axioms needs a file and at least one name");
         }
         var names = args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(Name.Parse).ToList();
-        Func<Name, ConstantInfo?> find;
-        IDisposable? owner = null;
-        string where;
-        if (args[0].EndsWith(".olean", StringComparison.Ordinal))
-        {
-            var search = new Tenet.Olean.LeanSearchPath();
-            search.AddFromEnvironment();
-            search.AddAroundOleanFile(args[0]);
-            var checker = new Tenet.Olean.OleanChecker(search);
-            owner = checker;
-            Name module = search.ModuleNameOf(args[0]);
-            checker.Load([(module, args[0])]);
-            search.AddToolchainFor(checker.Modules[module].LeanVersion);
-            checker.Load([(module, args[0])]);
-            find = checker.Resolve;
-            where = $"{module} and its imports";
-        }
-        else
-        {
-            ExportFile file = NdjsonReader.ReadFile(args[0]);
-            var env = new Environment();
-            foreach (ExportDecl d in file.Decls)
-            {
-                ExportChecker.AddUnchecked(env, d);
-            }
-            find = env.Find;
-            where = "this export";
-        }
+        (Func<Name, ConstantInfo?> find, IDisposable? owner, string where, _) = OpenTarget(args[0]);
         using (owner)
         {
             int missing = 0;
@@ -1232,35 +1203,39 @@ internal static class Program
     }
 
     /// <summary>Print declarations from a compiled module and the modules it imports.</summary>
-    private static int ShowOlean(string path, List<Name> names)
-    {
-        var search = new Tenet.Olean.LeanSearchPath();
-        search.AddFromEnvironment();
-        search.AddAroundOleanFile(path);
-        using var checker = new Tenet.Olean.OleanChecker(search);
-        Name module = search.ModuleNameOf(path);
-        checker.Load([(module, path)]);
-        search.AddToolchainFor(checker.Modules[module].LeanVersion);
-        checker.Load([(module, path)]);
-        int missing = 0;
-        foreach (Name n in names)
-        {
-            ConstantInfo? c = checker.Resolve(n);
-            if (c is null)
-            {
-                Console.WriteLine($"{n}: not in {module} or its imports");
-                missing++;
-                continue;
-            }
-            PrintConstant(c);
-        }
-        return missing == 0 ? 0 : 1;
-    }
-
     private static void PrintConstant(ConstantInfo c)
     {
         string lps = c.LevelParams.Length == 0 ? "" : ".{" + string.Join(", ", c.LevelParams.Select(l => l.ToString())) + "}";
         Console.WriteLine($"{c.KindName} {c.Name}{lps} : {c.Type}");
+        switch (c)
+        {
+            case DefinitionInfo def:
+                Console.WriteLine($"  := {def.Value}");
+                Console.WriteLine($"  hints: {def.Hints}, safety: {def.Safety}");
+                break;
+            case TheoremInfo thm:
+                Console.WriteLine($"  := {thm.Value}");
+                break;
+            case OpaqueInfo op:
+                Console.WriteLine($"  := {op.OpaqueValue}");
+                break;
+            case InductiveInfo ind:
+                Console.WriteLine($"  params {ind.NumParams}, indices {ind.NumIndices}, ctors [{string.Join(", ", ind.Ctors.Select(x => x.ToString()))}], rec {(ind.IsRec ? "true" : "false")}, reflexive {(ind.IsReflexive ? "true" : "false")}, nested {ind.NumNested}");
+                break;
+            case ConstructorInfo ctor:
+                Console.WriteLine($"  of {ctor.Induct}, index {ctor.Cidx}, params {ctor.NumParams}, fields {ctor.NumFields}");
+                break;
+            case RecursorInfo rec:
+                Console.WriteLine($"  params {rec.NumParams}, indices {rec.NumIndices}, motives {rec.NumMotives}, minors {rec.NumMinors}, k {(rec.K ? "true" : "false")}");
+                foreach (RecursorRule r in rec.Rules)
+                {
+                    Console.WriteLine($"  rule {r.Ctor} ({r.NumFields} fields) := {r.Rhs}");
+                }
+                break;
+            case QuotInfo q:
+                Console.WriteLine($"  quotient {q.Kind}");
+                break;
+        }
     }
 
     private static int OleanInfo(string path)
@@ -1467,8 +1442,12 @@ internal static class Program
     {
         string lib = Path.Combine(dir, ".lake", "build", "lib", "lean");
         string root = Directory.Exists(lib) ? lib : dir;
+        // A project's own modules, not its dependencies' - but only for packages nested below the root we were
+        // given. Point at a package's build tree directly and that path contains .lake/packages itself, which
+        // once made every file under it look like a dependency and the directory look empty.
         return Directory.EnumerateFiles(root, "*.olean", SearchOption.AllDirectories)
-            .Where(f => !f.Contains(Path.Combine(".lake", "packages"), StringComparison.Ordinal))
+            .Where(f => !Path.GetRelativePath(root, f)
+                .Contains(Path.Combine(".lake", "packages"), StringComparison.Ordinal))
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToList();
     }

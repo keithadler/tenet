@@ -288,17 +288,22 @@ Tenet reads export format 3.x (NDJSON), both the current 3.1 layout and the 3.0 
 | --- | --- |
 | `tenet check FILE` | check every declaration of an export, a `.olean` module, or a built Lake project directory; `--jobs N` (default: all cores), `--only a,b`, `--fail-fast`, `--low-memory`, `--report out.json`, `--stats`, `--slow SECONDS`, `--verbose`, `--quiet` |
 | `tenet info FILE` | metadata and counts |
-| `tenet why FILE.olean NAME` | the chain from a declaration to each assumption it rests on, module by module |
+| `tenet why TARGET NAME` | the chain from a declaration to each assumption it rests on, module by module |
 | `tenet crosscheck EXPORT OLEAN` | what the `.olean` reader decodes, against Lean's own exporter |
-| `tenet compare A.olean nameA B.olean nameB` | are two separately built projects stating the same theorem? |
+| `tenet compare A nameA B nameB` | are two separately built projects stating the same theorem? |
 | `--sarif FILE` | on `check`: findings in SARIF, which GitHub code scanning renders on the diff |
 | `--timing` | on `check`: where the time went, and worker utilization |
 | `--fail-on-axiom NAME` | on `check`: exit non-zero if anything rests on that axiom, e.g. `sorryAx` |
 | `--json` | on `axioms`, `audit`, `compare`, `crosscheck`, `statement` and `why`: machine-readable output instead of prose |
 | `tenet audit DIR` | which of a project's declarations are complete and which rest on `sorry` |
-| `tenet statement FILE.olean NAME...` | which constants a theorem's statement is built from, and which of them the project defines itself |
-| `tenet axioms FILE NAME...` | print the axioms a declaration depends on, transitively, as Lean's `#print axioms` does |
-| `tenet show FILE NAME...` | print declarations from an export or a compiled module: type, value, hints, constructor and recursor data |
+| `tenet statement TARGET NAME...` | which constants a theorem's statement is built from, and which of them the project defines itself |
+| `tenet axioms TARGET NAME...` | print the axioms a declaration depends on, transitively, as Lean's `#print axioms` does |
+| `tenet show TARGET NAME...` | print declarations in full: type, value, hints, constructor and recursor data |
+
+A `TARGET` is an export file, a single `Module.olean`, or a project directory. Given a directory,
+every module under it is searched, so a declaration is found by its name and you do not have to know
+which file it lives in: `tenet why mathlib/.lake/build/lib/lean Finset.sum_comm` answers in about
+three seconds across 8,275 modules.
 
 Checking streams: one thread parses while the others check, so all of `Init` takes about
 seven seconds wall clock including parsing, and a declaration may only refer to constants
