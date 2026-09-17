@@ -383,3 +383,13 @@ the reference rather than defects in Tenet. Known classes:
   lowers it for campaigns); Lean's kernel has no such limit, so the harness kills a run
   after `--timeout` seconds and counts it as incomplete. When only one kernel finishes, check
   it is the one with the limit before reading anything into the difference.
+
+  The unfold budget does not bound every way a run can end. Prelude seed 97 variant 002 grows
+  a single term deep enough to exhaust a 512 MB stack before it spends anything like 100
+  million unfolds, and a .NET stack overflow cannot be caught: the process aborts. Lean's
+  kernel does not recurse to death on that input, it allocates, passing 3 GB and climbing.
+  So both fall over, differently, and neither is wrong to: a kernel is entitled to diverge on
+  ill-typed input. What the harness must not do is read the wreckage as a verdict. A run that
+  leaves no report is now counted as incomplete rather than as a clean sheet of zero
+  failures, and a campaign where every variant is inconclusive exits 4, because zero
+  disagreements across zero comparisons is not agreement.

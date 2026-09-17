@@ -100,7 +100,7 @@ internal static class Program
         }
         Console.WriteLine($"baseline: both accept all {bo.All.Count} declarations");
 
-        int soundness = 0, strict = 0, agreedRejections = 0;
+        int soundness = 0, strict = 0, agreedRejections = 0, inconclusive = 0;
         var kinds = new Dictionary<string, (int Applied, int Rejected)>();
         for (int v = 0; v < variants; v++)
         {
@@ -118,6 +118,7 @@ internal static class Program
             Verdicts o = RunOracle(oracle, path, outDir, $"variant-{v:D3}");
             if (o.Incomplete || t.Incomplete)
             {
+                inconclusive++;
                 Console.WriteLine($"variant {v:D3}: mutations [{string.Join(", ", applied)}]; a checker could not read the variant (tenet incomplete: {t.Incomplete}, lean incomplete: {o.Incomplete}); kept for inspection");
                 continue;
             }
@@ -154,8 +155,16 @@ internal static class Program
             }
         }
         Console.WriteLine();
-        Console.WriteLine($"done: {variants} variants, {agreedRejections} agreed rejections, {soundness} SOUNDNESS disagreements, {strict} STRICT disagreements");
+        Console.WriteLine($"done: {variants} variants, {variants - inconclusive} compared, {inconclusive} inconclusive, "
+                        + $"{agreedRejections} agreed rejections, {soundness} SOUNDNESS disagreements, {strict} STRICT disagreements");
         Console.WriteLine("mutations applied: " + string.Join(", ", kinds.OrderBy(k => k.Key).Select(k => $"{k.Key} x{k.Value.Applied}")));
+        if (inconclusive == variants)
+        {
+            // Zero disagreements across zero comparisons is not agreement. Without this the run is green whenever
+            // both sides fall over, which is the one case that most deserves to be looked at.
+            Console.Error.WriteLine("error: every variant was inconclusive; nothing was actually compared");
+            return 4;
+        }
         return soundness > 0 ? 1 : strict > 0 ? 3 : 0;
     }
 
@@ -171,12 +180,21 @@ internal static class Program
     private static Verdicts RunTenet(string tenet, string export, string outDir, string tag)
     {
         string report = Path.Combine(outDir, tag + ".tenet.json");
-        string output = Run(tenet, ["check", export, "--quiet", "--report", report], out _);
+        File.Delete(report);   // a report left by an earlier variant must not be read as this one's verdict
+        string output = Run(tenet, ["check", export, "--quiet", "--report", report], out int code);
         var failed = new HashSet<string>();
         bool incomplete = false;
-        if (File.Exists(report))
+        if (!File.Exists(report))
         {
-            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(report));
+            // No report means the process died before it could write one: a stack overflow on a pathological
+            // mutant, a kill on timeout, anything. Reading that as an empty failure list would say Tenet accepted
+            // every declaration, which is the opposite of what happened, and the disagreement it invents or hides
+            // is worse than no answer at all.
+            Console.Error.WriteLine($"  tenet exited {code} without writing a report; the run counts as incomplete");
+            return new Verdicts(failed, new HashSet<string>(), true, output);
+        }
+        using (JsonDocument doc = JsonDocument.Parse(File.ReadAllText(report)))
+        {
             foreach (JsonElement f in doc.RootElement.GetProperty("failures").EnumerateArray())
             {
                 failed.Add(Normalize(f.GetProperty("name").GetString() ?? ""));
@@ -237,7 +255,10 @@ internal static class Program
     private static string Normalize(string name) => name.Replace("«", "", StringComparison.Ordinal).Replace("»", "", StringComparison.Ordinal);
 
     /// <summary>A checker run longer than this is killed; Lean's kernel has no unfolding limit, so a mutation can send it into a very long reduction.</summary>
-    private static int TimeoutSeconds = 1800;
+    // A variant takes about a second. Anything past a minute has diverged on a pathological mutant, which both
+    // kernels are entitled to do on ill-typed input; what is not acceptable is a CI job that hangs until the
+    // runner kills it and reports nothing. The old default was 1800, longer than the job itself survives.
+    private static int TimeoutSeconds = 90;
 
     private static string Run(string exe, string[] args, out int exitCode)
     {
