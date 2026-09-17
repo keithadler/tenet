@@ -22,10 +22,11 @@ public static class ExprOps
     public static Expr Replace(Expr e, Func<Expr, int, Expr?> f)
     {
         var cache = new Dictionary<(Expr, int), Expr>(RefOffsetComparer.Instance);
-        return Go(e, 0);
+        return Go(e, 0, 0);
 
-        Expr Go(Expr t, int offset)
+        Expr Go(Expr t, int offset, int depth)
         {
+            StackGuard.CheckEvery(depth);
             bool compound = t.Kind is ExprKind.App or ExprKind.Lam or ExprKind.Pi or ExprKind.Let or ExprKind.Proj;
             if (compound && cache.TryGetValue((t, offset), out Expr? hit))
             {
@@ -34,23 +35,24 @@ public static class ExprOps
             Expr? r = f(t, offset);
             if (r is null)
             {
+                int d = depth + 1;
                 switch (t)
                 {
                     case AppExpr a:
                         {
-                            Expr nf = Go(a.Fn, offset);
-                            Expr na = Go(a.Arg, offset);
+                            Expr nf = Go(a.Fn, offset, d);
+                            Expr na = Go(a.Arg, offset, d);
                             r = ReferenceEquals(nf, a.Fn) && ReferenceEquals(na, a.Arg) ? t : Expr.App(nf, na);
                             break;
                         }
                     case BindingExpr b:
-                        r = b.Update(Go(b.Domain, offset), Go(b.Body, offset + 1));
+                        r = b.Update(Go(b.Domain, offset, d), Go(b.Body, offset + 1, d));
                         break;
                     case LetExpr l:
-                        r = l.Update(Go(l.Type, offset), Go(l.Value, offset), Go(l.Body, offset + 1));
+                        r = l.Update(Go(l.Type, offset, d), Go(l.Value, offset, d), Go(l.Body, offset + 1, d));
                         break;
                     case ProjExpr p:
-                        r = p.Update(Go(p.Struct, offset));
+                        r = p.Update(Go(p.Struct, offset, d));
                         break;
                     default:
                         r = t;
@@ -126,10 +128,11 @@ public static class ExprOps
     public static void ForEach(Expr e, Func<Expr, int, bool> f)
     {
         var visited = new HashSet<(Expr, int)>(RefOffsetComparer.Instance);
-        Go(e, 0);
+        Go(e, 0, 0);
 
-        void Go(Expr t, int offset)
+        void Go(Expr t, int offset, int depth)
         {
+            StackGuard.CheckEvery(depth);
             bool compound = t.Kind is ExprKind.App or ExprKind.Lam or ExprKind.Pi or ExprKind.Let or ExprKind.Proj;
             if (compound && !visited.Add((t, offset)))
             {
@@ -139,23 +142,24 @@ public static class ExprOps
             {
                 return;
             }
+            int d = depth + 1;
             switch (t)
             {
                 case AppExpr a:
-                    Go(a.Fn, offset);
-                    Go(a.Arg, offset);
+                    Go(a.Fn, offset, d);
+                    Go(a.Arg, offset, d);
                     break;
                 case BindingExpr b:
-                    Go(b.Domain, offset);
-                    Go(b.Body, offset + 1);
+                    Go(b.Domain, offset, d);
+                    Go(b.Body, offset + 1, d);
                     break;
                 case LetExpr l:
-                    Go(l.Type, offset);
-                    Go(l.Value, offset);
-                    Go(l.Body, offset + 1);
+                    Go(l.Type, offset, d);
+                    Go(l.Value, offset, d);
+                    Go(l.Body, offset + 1, d);
                     break;
                 case ProjExpr p:
-                    Go(p.Struct, offset);
+                    Go(p.Struct, offset, d);
                     break;
             }
         }

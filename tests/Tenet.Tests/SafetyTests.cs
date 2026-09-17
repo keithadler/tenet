@@ -102,6 +102,41 @@ public class SafetyTests
         Assert.Equal(1, rp.Checked);
     }
 
+    /// <summary>
+    /// A term deeper than the stack is rejected rather than taken as a reason to abort the process. Reduction can
+    /// grow a term without bound on ill-typed input, and a .NET stack overflow cannot be caught: it would kill
+    /// every other declaration being checked and leave no report. This runs on a deliberately small stack so the
+    /// limit is reached in a fraction of a second; on a real run the stack is 512 MB.
+    /// </summary>
+    [Fact]
+    public void ATermDeeperThanTheStackIsRejectedRatherThanCrashing()
+    {
+        // f (f (f ... (f Nat))), deep enough that no plausible stack holds it.
+        Expr deep = NatE;
+        for (int i = 0; i < 2_000_000; i++)
+        {
+            deep = Expr.App(NatE, deep);
+        }
+
+        Exception? caught = null;
+        var t = new Thread(() =>
+        {
+            try
+            {
+                ExprOps.ForEach(deep, (_, _) => true);
+                caught = new InvalidOperationException("traversal returned without hitting the limit");
+            }
+            catch (Exception e)
+            {
+                caught = e;
+            }
+        }, 1 * 1024 * 1024);
+        t.Start();
+        Assert.True(t.Join(TimeSpan.FromMinutes(2)), "the traversal neither finished nor hit the limit");
+        Assert.IsType<RecursionLimitException>(caught);
+        Assert.Contains("too deep", caught!.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void NonTerminatingUnsafeDefinitionHitsTheUnfoldLimit()
     {

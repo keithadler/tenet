@@ -497,6 +497,7 @@ public sealed class TypeChecker
         {
             throw new KernelException("type checker does not support loose bound variables, replace them with free variables before invoking it");
         }
+        StackGuard.Check();
         Dictionary<Expr, Expr> cache = inferOnly ? _inferOnlyCache : _checkCache;
         if (cache.TryGetValue(e, out Expr? cached))
         {
@@ -623,6 +624,7 @@ public sealed class TypeChecker
             Stats.WhnfCoreHit();
             return cached;
         }
+        StackGuard.Check();
         Stats.CountWhnfCore();
         Expr r;
         switch (e)
@@ -1422,6 +1424,7 @@ public sealed class TypeChecker
 
     private bool IsDefEqCore(Expr t, Expr s)
     {
+        StackGuard.Check();
         Stats.CountDefEq();
         LBool r = QuickIsDefEq(t, s);
         if (r != LBool.Undef)

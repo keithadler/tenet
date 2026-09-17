@@ -386,10 +386,16 @@ the reference rather than defects in Tenet. Known classes:
 
   The unfold budget does not bound every way a run can end. Prelude seed 97 variant 002 grows
   a single term deep enough to exhaust a 512 MB stack before it spends anything like 100
-  million unfolds, and a .NET stack overflow cannot be caught: the process aborts. Lean's
-  kernel does not recurse to death on that input, it allocates, passing 3 GB and climbing.
-  So both fall over, differently, and neither is wrong to: a kernel is entitled to diverge on
-  ill-typed input. What the harness must not do is read the wreckage as a verdict. A run that
-  leaves no report is now counted as incomplete rather than as a clean sheet of zero
-  failures, and a campaign where every variant is inconclusive exits 4, because zero
-  disagreements across zero comparisons is not agreement.
+  million unfolds. A .NET stack overflow cannot be caught, so that used to abort the process,
+  taking down the 1,807 declarations being checked beside it and leaving no report at all.
+  The kernel now probes the remaining stack as it recurses and raises
+  `RecursionLimitException`, so the one declaration is rejected with "expression too deep"
+  and the rest of the variant is checked normally. On that variant Tenet now finishes in
+  about 112 seconds with 32 rejections; Lean's kernel still does not finish it, allocating
+  past 3 GB and climbing. Neither is wrong to diverge on ill-typed input, and the honest
+  report is that one side answered and the other did not.
+
+  What the harness must not do is read the wreckage as a verdict. A run that leaves no report
+  counts as incomplete rather than as a clean sheet of zero failures, and a campaign where
+  every variant is inconclusive exits 4, because zero disagreements across zero comparisons
+  is not agreement.

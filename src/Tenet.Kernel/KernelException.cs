@@ -26,6 +26,19 @@ public sealed class UnsupportedException : KernelException
 }
 
 /// <summary>
+/// Recursion ran out of stack. Reported like any other rejection, and like a deterministic timeout it is never
+/// re-checked in the faithful mode: the reference algorithm would recurse just as deep and run out just the same.
+/// </summary>
+public sealed class RecursionLimitException : KernelException
+{
+    public RecursionLimitException()
+        : base("expression too deep: ran out of stack while reducing or traversing a term "
+             + "(--stack-mb raises the limit; a term this deep usually means reduction is running away)")
+    {
+    }
+}
+
+/// <summary>
 /// The per-declaration unfolding limit (<see cref="TypeChecker.MaxUnfolds"/>) was exceeded. Reported like any other
 /// rejection, but never re-checked in the faithful mode: the reference algorithm without failure caching would only
 /// repeat the work.
