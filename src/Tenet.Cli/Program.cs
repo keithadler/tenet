@@ -17,6 +17,7 @@ internal static class Program
                                                    decoded on demand; --all checks the whole import closure)
           tenet check <project dir> [options]     check every module of a built Lake project (.lake/build/lib/lean)
           tenet info  <file.ndjson>               print the export's metadata and counts
+          tenet names <target> [pattern]...       list the declarations a target defines (--all includes imports)
           tenet show  <target> <name>...          print declarations in full (type, value, metadata)
           tenet axioms <target> <name>...         print the axioms a declaration depends on, transitively
           tenet statement <target> <name>...      which constants a theorem's statement is built from, and who defines them
@@ -88,6 +89,7 @@ internal static class Program
                 "check" => RunOnBigStack(() => Check(args[1..]), ParseStackMb(args)),
                 "info" => Info(args[1..]),
                 "show" => Show(args[1..]),
+                "names" => Names(args[1..]),
                 "axioms" => Axioms(args[1..]),
                 "statement" => Statement(args[1..]),
                 "audit" => Audit(args[1..]),
@@ -146,6 +148,13 @@ internal static class Program
         Console.WriteLine("tenet " + (typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"));
         Console.WriteLine("export formats: " + string.Join(", ", NdjsonReader.SupportedFormatMajors.Select(m => m + ".x")));
         return 0;
+    }
+
+    /// <summary>An integer flag, or the default when it is absent or unparsable.</summary>
+    private static int ParseIntFlag(string[] args, string flag, int fallback)
+    {
+        int i = Array.IndexOf(args, flag);
+        return i >= 0 && i + 1 < args.Length && int.TryParse(args[i + 1], out int v) ? v : fallback;
     }
 
     private static int ParseStackMb(string[] args)
@@ -216,15 +225,14 @@ internal static class Program
             return Fail("show needs an export file, an .olean file or a project directory, and at least one name");
         }
         var names = args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(Name.Parse).ToList();
-        (Func<Name, ConstantInfo?> find, IDisposable? owner, string where, _) = OpenTarget(args[0]);
-        using var checker = owner;
+        using Target target = OpenTarget(args[0]);
         int missing = 0;
         foreach (Name n in names)
         {
-            ConstantInfo? c = find(n);
+            ConstantInfo? c = target.Find(n);
             if (c is null)
             {
-                Console.WriteLine($"{n}: not in {where}");
+                Console.WriteLine($"{n}: not in {target.Where}");
                 missing++;
                 continue;
             }
@@ -245,26 +253,28 @@ internal static class Program
         {
             return Fail("why needs an export file, an .olean file or a project directory, and a declaration name");
         }
-        (Func<Name, ConstantInfo?> find, IDisposable? owner, string where, Dictionary<Name, Name> definedIn) =
-            OpenTarget(args[0]);
-        using var checker = owner;
+        using Target target = OpenTarget(args[0]);
+        Dictionary<Name, Name> definedIn = target.DefinedIn;
         var standard = new HashSet<Name> { Name.Of("propext"), Name.Of("Classical", "choice"), Name.Of("Quot", "sound") };
 
         foreach (Name n in args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(Name.Parse))
         {
-            if (find(n) is null)
+            if (target.Find(n) is null)
             {
-                Console.WriteLine($"{n}: not in {where}");
+                Console.WriteLine(WantsJson(args)
+                    ? Json(("command", "why"), ("name", n.ToString()), ("found", false),
+                           ("searched", target.Where))
+                    : $"{n}: not in {target.Where}");
                 continue;
             }
-            var (axioms, _) = Replay.AxiomsOf(find, n);
+            var (axioms, _) = Replay.AxiomsOf(target.Find, n);
             var interesting = axioms.Where(a => !standard.Contains(a)).ToList();
             if (WantsJson(args))
             {
                 var chains = new List<object>();
                 foreach (Name ax in interesting)
                 {
-                    List<Name>? path = Replay.PathTo(find, n, ax);
+                    List<Name>? path = Replay.PathTo(target.Find, n, ax);
                     chains.Add(new RawJson(Json(
                         ("assumption", ax.ToString()),
                         ("steps", path is null ? 0 : path.Count - 1),
@@ -287,7 +297,7 @@ internal static class Program
             }
             foreach (Name ax in interesting)
             {
-                List<Name>? path = Replay.PathTo(find, n, ax);
+                List<Name>? path = Replay.PathTo(target.Find, n, ax);
                 Console.WriteLine($"  rests on {ax} by this chain:");
                 if (path is null)
                 {
@@ -509,6 +519,15 @@ internal static class Program
               --fail-fast           stop at the first failure
               --quiet               only the final line
             """,
+        ["names"] = """
+            tenet names <target> [pattern]... [--all] [--limit N] [--json]
+
+            The declarations a target defines, one per line. Every other command takes a name; this
+            is how you find out what the names are. A pattern keeps the names containing it, so a
+            partial name from a paper finds the declaration that backs it. --all also searches
+            everything the target imports, which for a Lake project means Mathlib and then some.
+            Exit 1 if nothing matched.
+            """,
         ["axioms"] = """
             tenet axioms <target> <name>... [--json]
 
@@ -619,13 +638,96 @@ internal static class Program
     }
 
     /// <summary>
-    /// Open a target for name lookup: an export, a single module, or a whole project directory. The directory case
-    /// is the one that matters in practice. Every other command required knowing which <c>.olean</c> a declaration
-    /// lived in, which nobody does: names are namespaced by mathematics, files by whatever the author found tidy,
-    /// and the two rarely agree. Passing the project resolves a name wherever it sits.
+    /// List the declarations a target defines, optionally filtered. Every other command takes a name, and until
+    /// now there was no way to ask what the names are: you read the source, or grepped, or guessed. A paper's
+    /// prose calls a theorem one thing and the library calls it another, so matching a claim to the declaration
+    /// that backs it starts here.
     /// </summary>
-    private static (Func<Name, ConstantInfo?> Find, IDisposable? Owner, string Where,
-        Dictionary<Name, Name> DefinedIn) OpenTarget(string path)
+    private static int Names(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            return Fail("names needs an export file, an .olean file or a project directory");
+        }
+        List<string> patterns = args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToList();
+        bool all = Array.IndexOf(args, "--all") >= 0;
+        int limit = ParseIntFlag(args, "--limit", int.MaxValue);
+        using Target target = OpenTarget(args[0]);
+
+        // By default, what this target defines. --all adds everything it imports, which for a Lake project is
+        // Mathlib and then some: useful for finding a library lemma, noise when auditing a project.
+        IEnumerable<Name> pool;
+        if (target.DefinedIn.Count == 0)
+        {
+            pool = ExportNames(args[0]);
+        }
+        else if (all)
+        {
+            pool = target.DefinedIn.Keys;
+        }
+        else
+        {
+            var own = new HashSet<Name>(target.Modules);
+            pool = target.DefinedIn.Where(kv => own.Contains(kv.Value)).Select(kv => kv.Key);
+        }
+
+        List<string> names = pool.Select(n => n.ToString())
+            .Where(n => patterns.Count == 0 || patterns.Any(pat => n.Contains(pat, StringComparison.Ordinal)))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        if (WantsJson(args))
+        {
+            Console.WriteLine(Json(
+                ("command", "names"), ("target", args[0]), ("searched", all ? "target and imports" : "target"),
+                ("matched", names.Count),
+                ("names", names.Take(limit).ToList())));
+            return names.Count == 0 ? 1 : 0;
+        }
+        foreach (string n in names.Take(limit))
+        {
+            Console.WriteLine(n);
+        }
+        if (names.Count > limit)
+        {
+            Console.Error.WriteLine($"({names.Count - limit} more; --limit {names.Count} for all of them)");
+        }
+        if (names.Count == 0)
+        {
+            Console.Error.WriteLine(patterns.Count == 0
+                ? $"no declarations in {target.Where}"
+                : $"nothing matching {string.Join(" or ", patterns)} in {target.Where}"
+                  + (all ? "" : " (--all also searches what it imports)"));
+            return 1;
+        }
+        return 0;
+    }
+
+    /// <summary>Every name an export declares, without building an environment for it.</summary>
+    private static IEnumerable<Name> ExportNames(string path) => NdjsonReader.ReadFile(path).DeclaredNames();
+
+    /// <summary>
+    /// A target opened for name lookup: an export, a single module, or a whole project directory. The directory
+    /// case is the one that matters in practice. Every other command required knowing which <c>.olean</c> a
+    /// declaration lived in, which nobody does: names are namespaced by mathematics, files by whatever the author
+    /// found tidy, and the two rarely agree. Passing the project resolves a name wherever it sits.
+    /// </summary>
+    /// <param name="Find">Resolve a name, in the target and everything it imports.</param>
+    /// <param name="Where">What was searched, for a message that says where a name was not found.</param>
+    /// <param name="DefinedIn">Which module defines what, so a chain can say where to look for each step.</param>
+    /// <param name="Modules">The target's own modules, as distinct from what they import.</param>
+    private sealed record Target(
+        Func<Name, ConstantInfo?> Find,
+        IDisposable? Owner,
+        string Where,
+        Dictionary<Name, Name> DefinedIn,
+        IReadOnlyList<Name> Modules) : IDisposable
+    {
+        public void Dispose() => Owner?.Dispose();
+    }
+
+    private static Target OpenTarget(string path)
     {
         if (Directory.Exists(path))
         {
@@ -642,8 +744,8 @@ internal static class Program
             checker.Load(targets);
             search.AddToolchainFor(checker.Modules[targets[0].Module].LeanVersion);
             checker.Load(targets);
-            return (checker.Resolve, checker, $"{files.Count} modules under {path} and their imports",
-                DefinedIn(checker));
+            return new Target(checker.Resolve, checker, $"{files.Count} modules under {path} and their imports",
+                DefinedIn(checker), targets.Select(x => x.Module).ToList());
         }
         if (path.EndsWith(".olean", StringComparison.Ordinal))
         {
@@ -655,7 +757,7 @@ internal static class Program
             checker.Load([(module, path)]);
             search.AddToolchainFor(checker.Modules[module].LeanVersion);
             checker.Load([(module, path)]);
-            return (checker.Resolve, checker, $"{module} and its imports", DefinedIn(checker));
+            return new Target(checker.Resolve, checker, $"{module} and its imports", DefinedIn(checker), [module]);
         }
         ExportFile file = NdjsonReader.ReadFile(path);
         var env = new Environment();
@@ -663,7 +765,7 @@ internal static class Program
         {
             ExportChecker.AddUnchecked(env, d);
         }
-        return (env.Find, null, "this export", new Dictionary<Name, Name>());
+        return new Target(env.Find, null, "this export", new Dictionary<Name, Name>(), []);
     }
 
     /// <summary>Which module defines what, so a dependency chain can say where to look for each step.</summary>
@@ -744,186 +846,168 @@ internal static class Program
             return Fail("compare needs: <a> <nameA> <b> <nameB>, where each side is an export file, "
                       + "an .olean file or a project directory");
         }
-        (Func<Name, ConstantInfo?> Find, IDisposable? Owner, string Where, Name Name) Side(string path, string decl)
+        using Target ta = OpenTarget(args[0]);
+        using Target tb = OpenTarget(args[2]);
+        Name na = Name.Parse(args[1]), nb = Name.Parse(args[3]);
+        ConstantInfo? a = ta.Find(na), b = tb.Find(nb);
+        if (a is null)
         {
-            (Func<Name, ConstantInfo?> find, IDisposable? owner, string where, _) = OpenTarget(path);
-            return (find, owner, where, Name.Parse(decl));
+            return Fail($"{na} is not in {ta.Where}");
+        }
+        if (b is null)
+        {
+            return Fail($"{nb} is not in {tb.Where}");
         }
 
-        var (ca, oa, wa, na) = Side(args[0], args[1]);
-        using (oa)
+        // Pull in everything both statements reach, from whichever side owns it, and note where the two
+        // projects disagree about a name they share.
+        var env = new Environment();
+        var conflicts = new SortedSet<string>(StringComparer.Ordinal);
+        var seen = new HashSet<Name>();
+        var todo = new Stack<Name>();
+        void Seed(Expr e) => ExprOps.ForEach(e, (t, _) =>
         {
-            var (cb, ob, wb, nb) = Side(args[2], args[3]);
-            using (ob)
+            if (t is ConstExpr k)
             {
-                ConstantInfo? a = ca(na), b = cb(nb);
-                if (a is null)
-                {
-                    return Fail($"{na} is not in {wa}");
-                }
-                if (b is null)
-                {
-                    return Fail($"{nb} is not in {wb}");
-                }
-
-                // Pull in everything both statements reach, from whichever side owns it, and note where the two
-                // projects disagree about a name they share.
-                var env = new Environment();
-                var conflicts = new SortedSet<string>(StringComparer.Ordinal);
-                var seen = new HashSet<Name>();
-                var todo = new Stack<Name>();
-                void Seed(Expr e) => ExprOps.ForEach(e, (t, _) =>
-                {
-                    if (t is ConstExpr k)
-                    {
-                        todo.Push(k.Name);
-                    }
-                    return true;
-                });
-                Seed(a.Type);
-                Seed(b.Type);
-                if (a.Value is Expr sa) { Seed(sa); }
-                if (b.Value is Expr sb) { Seed(sb); }
-                while (todo.Count > 0)
-                {
-                    Name cur = todo.Pop();
-                    if (!seen.Add(cur))
-                    {
-                        continue;
-                    }
-                    ConstantInfo? fa = ca(cur), fb = cb(cur);
-                    ConstantInfo? pick = fa ?? fb;
-                    if (pick is null)
-                    {
-                        continue;
-                    }
-                    if (fa is not null && fb is not null && !fa.Type.Equals(fb.Type))
-                    {
-                        conflicts.Add(cur.ToString());
-                    }
-                    env.AddCore(pick);
-                    foreach (Name u in Replay.UsedConstants(pick))
-                    {
-                        todo.Push(u);
-                    }
-                }
-
-                // What carries the meaning depends on the kind of declaration, and comparing the wrong part is
-                // worse than not comparing at all because it answers with confidence.
-                //
-                //   theorem     the type is the statement, so compare types
-                //   definition  the type is only a signature, so the value is the content
-                //   constructor the fields are the content; the final result type names the structure itself, and
-                //               two separately declared structures are different types by construction, so that
-                //               last step can never match and must be excluded
-                var tc = new TypeChecker(env);
-                var lctx = new LocalContext();
-                string what;
-                bool syntactic, defeq;
-                string note = "";
-
-                bool Eq(Expr x, Expr y)
-                {
-                    try
-                    {
-                        return tc.IsDefEq(x, y);
-                    }
-                    catch (KernelException e)
-                    {
-                        note = "   (the comparison itself failed: " + e.Message.Split('\n')[0] + ")";
-                        return false;
-                    }
-                }
-
-                if (a is ConstructorInfo && b is ConstructorInfo)
-                {
-                    what = "fields";
-                    (syntactic, defeq) = CompareTelescope(a.Type, b.Type, lctx, Eq, out string why);
-                    if (!defeq && why.Length > 0)
-                    {
-                        note = "   (" + why + ")";
-                    }
-                }
-                else if (a is TheoremInfo || b is TheoremInfo)
-                {
-                    // A theorem's statement is its type. Two different proofs of one statement are both proofs of it,
-                    // so comparing the values here would report a difference that does not exist.
-                    what = "statement (the type; proofs are not compared)";
-                    syntactic = a.Type.Equals(b.Type);
-                    defeq = syntactic || Eq(a.Type, b.Type);
-                }
-                else if (a.Value is Expr va && b.Value is Expr vb)
-                {
-                    what = "type and value";
-                    syntactic = a.Type.Equals(b.Type) && va.Equals(vb);
-                    defeq = syntactic || (Eq(a.Type, b.Type) && Eq(va, vb));
-                }
-                else
-                {
-                    what = "type";
-                    syntactic = a.Type.Equals(b.Type);
-                    defeq = syntactic || Eq(a.Type, b.Type);
-                }
-
-                if (!WantsJson(args))
-                {
-                    Console.WriteLine($"A  {na}");
-                    Console.WriteLine($"     {args[0]}");
-                    Console.WriteLine($"B  {nb}");
-                    Console.WriteLine($"     {args[2]}");
-                    Console.WriteLine();
-                }
-                if (WantsJson(args))
-                {
-                    Console.WriteLine(Json(
-                        ("command", "compare"), ("a", na.ToString()), ("b", nb.ToString()),
-                        ("compared", what), ("identical", syntactic), ("same", defeq),
-                        ("constantsReached", seen.Count), ("conflictingNames", conflicts.Count),
-                        ("note", note.Trim())));
-                    return defeq ? 0 : 1;
-                }
-                Console.WriteLine($"compared: {what}");
-                Console.WriteLine(syntactic
-                    ? "same: yes, identical"
-                    : defeq
-                        ? "same: yes, definitionally equal though written differently"
-                        : "same: NO, not definitionally equal" + note);
-                Console.WriteLine($"  constants reached by both statements: {seen.Count}");
-                if (conflicts.Count == 0)
-                {
-                    Console.WriteLine("  shared names that differ between the projects: none");
-                }
-                else
-                {
-                    Console.WriteLine($"  shared names that differ between the projects: {conflicts.Count}");
-                    Console.WriteLine("    a name meaning two things is how two statements look alike and differ:");
-                    foreach (string c in conflicts.Take(20))
-                    {
-                        Console.WriteLine($"      {c}");
-                    }
-                }
-                if (!syntactic && Array.IndexOf(args, "--show-types") >= 0)
-                {
-                    Console.WriteLine();
-                    Console.WriteLine("A: " + ExprPrinter.Print(a.Type));
-                    Console.WriteLine();
-                    Console.WriteLine("B: " + ExprPrinter.Print(b.Type));
-                }
-                else if (!syntactic)
-                {
-                    Console.WriteLine("  (--show-types prints both in full; they run to thousands of characters)");
-                }
-                return defeq ? 0 : 1;
+                todo.Push(k.Name);
+            }
+            return true;
+        });
+        Seed(a.Type);
+        Seed(b.Type);
+        if (a.Value is Expr sa) { Seed(sa); }
+        if (b.Value is Expr sb) { Seed(sb); }
+        while (todo.Count > 0)
+        {
+            Name cur = todo.Pop();
+            if (!seen.Add(cur))
+            {
+                continue;
+            }
+            ConstantInfo? fa = ta.Find(cur), fb = tb.Find(cur);
+            ConstantInfo? pick = fa ?? fb;
+            if (pick is null)
+            {
+                continue;
+            }
+            if (fa is not null && fb is not null && !fa.Type.Equals(fb.Type))
+            {
+                conflicts.Add(cur.ToString());
+            }
+            env.AddCore(pick);
+            foreach (Name u in Replay.UsedConstants(pick))
+            {
+                todo.Push(u);
             }
         }
-    }
 
-    /// <summary>
-    /// For every declaration a project defines, say whether it rests on <c>sorryAx</c>. A formalization in progress
-    /// compiles cleanly with holes in it: <c>sorry</c> is a real term of any type, so the build is green and the
-    /// theorems are vacuous. This separates what is actually proved from what is still assumed, and names the
-    /// declarations that introduce the holes rather than the far larger set that merely inherits them.
-    /// </summary>
+        // What carries the meaning depends on the kind of declaration, and comparing the wrong part is
+        // worse than not comparing at all because it answers with confidence.
+        //
+        //   theorem     the type is the statement, so compare types
+        //   definition  the type is only a signature, so the value is the content
+        //   constructor the fields are the content; the final result type names the structure itself, and
+        //               two separately declared structures are different types by construction, so that
+        //               last step can never match and must be excluded
+        var tc = new TypeChecker(env);
+        var lctx = new LocalContext();
+        string what;
+        bool syntactic, defeq;
+        string note = "";
+
+        bool Eq(Expr x, Expr y)
+        {
+            try
+            {
+                return tc.IsDefEq(x, y);
+            }
+            catch (KernelException e)
+            {
+                note = "   (the comparison itself failed: " + e.Message.Split('\n')[0] + ")";
+                return false;
+            }
+        }
+
+        if (a is ConstructorInfo && b is ConstructorInfo)
+        {
+            what = "fields";
+            (syntactic, defeq) = CompareTelescope(a.Type, b.Type, lctx, Eq, out string why);
+            if (!defeq && why.Length > 0)
+            {
+                note = "   (" + why + ")";
+            }
+        }
+        else if (a is TheoremInfo || b is TheoremInfo)
+        {
+            // A theorem's statement is its type. Two different proofs of one statement are both proofs of it,
+            // so comparing the values here would report a difference that does not exist.
+            what = "statement (the type; proofs are not compared)";
+            syntactic = a.Type.Equals(b.Type);
+            defeq = syntactic || Eq(a.Type, b.Type);
+        }
+        else if (a.Value is Expr va && b.Value is Expr vb)
+        {
+            what = "type and value";
+            syntactic = a.Type.Equals(b.Type) && va.Equals(vb);
+            defeq = syntactic || (Eq(a.Type, b.Type) && Eq(va, vb));
+        }
+        else
+        {
+            what = "type";
+            syntactic = a.Type.Equals(b.Type);
+            defeq = syntactic || Eq(a.Type, b.Type);
+        }
+
+        if (!WantsJson(args))
+        {
+            Console.WriteLine($"A  {na}");
+            Console.WriteLine($"     {args[0]}");
+            Console.WriteLine($"B  {nb}");
+            Console.WriteLine($"     {args[2]}");
+            Console.WriteLine();
+        }
+        if (WantsJson(args))
+        {
+            Console.WriteLine(Json(
+                ("command", "compare"), ("a", na.ToString()), ("b", nb.ToString()),
+                ("compared", what), ("identical", syntactic), ("same", defeq),
+                ("constantsReached", seen.Count), ("conflictingNames", conflicts.Count),
+                ("note", note.Trim())));
+            return defeq ? 0 : 1;
+        }
+        Console.WriteLine($"compared: {what}");
+        Console.WriteLine(syntactic
+            ? "same: yes, identical"
+            : defeq
+                ? "same: yes, definitionally equal though written differently"
+                : "same: NO, not definitionally equal" + note);
+        Console.WriteLine($"  constants reached by both statements: {seen.Count}");
+        if (conflicts.Count == 0)
+        {
+            Console.WriteLine("  shared names that differ between the projects: none");
+        }
+        else
+        {
+            Console.WriteLine($"  shared names that differ between the projects: {conflicts.Count}");
+            Console.WriteLine("    a name meaning two things is how two statements look alike and differ:");
+            foreach (string c in conflicts.Take(20))
+            {
+                Console.WriteLine($"      {c}");
+            }
+        }
+        if (!syntactic && Array.IndexOf(args, "--show-types") >= 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("A: " + ExprPrinter.Print(a.Type));
+            Console.WriteLine();
+            Console.WriteLine("B: " + ExprPrinter.Print(b.Type));
+        }
+        else if (!syntactic)
+        {
+            Console.WriteLine("  (--show-types prints both in full; they run to thousands of characters)");
+        }
+        return defeq ? 0 : 1;
+    }
     private static int Audit(string[] args)
     {
         if (args.Length < 1)
@@ -935,14 +1019,7 @@ internal static class Program
         {
             return Fail($"no .olean files under {args[0]} (is the project built?)");
         }
-        int limit = 40;
-        for (int i = 1; i < args.Length; i++)
-        {
-            if (args[i] == "--limit" && i + 1 < args.Length && int.TryParse(args[++i], out int l))
-            {
-                limit = l;
-            }
-        }
+        int limit = ParseIntFlag(args, "--limit", 40);
 
         var search = new Tenet.Olean.LeanSearchPath();
         search.AddFromEnvironment();
@@ -1078,9 +1155,8 @@ internal static class Program
             return Fail("statement needs an export file, an .olean file or a project directory, "
                       + "and at least one theorem name");
         }
-        (Func<Name, ConstantInfo?> find, IDisposable? owner, string where, Dictionary<Name, Name> definedIn) =
-            OpenTarget(args[0]);
-        using var checker = owner;
+        using Target target = OpenTarget(args[0]);
+        Dictionary<Name, Name> definedIn = target.DefinedIn;
         static bool IsLibrary(Name m)
         {
             string top = m.ToString().Split('.')[0];
@@ -1090,10 +1166,13 @@ internal static class Program
 
         foreach (Name n in args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(Name.Parse))
         {
-            ConstantInfo? c = find(n);
+            ConstantInfo? c = target.Find(n);
             if (c is null)
             {
-                Console.WriteLine($"{n}: not in {where}");
+                Console.WriteLine(WantsJson(args)
+                    ? Json(("command", "statement"), ("name", n.ToString()), ("found", false),
+                           ("searched", target.Where))
+                    : $"{n}: not in {target.Where}");
                 continue;
             }
             var used = new HashSet<Name>();
@@ -1167,19 +1246,21 @@ internal static class Program
             return Fail("axioms needs a file and at least one name");
         }
         var names = args[1..].Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(Name.Parse).ToList();
-        (Func<Name, ConstantInfo?> find, IDisposable? owner, string where, _) = OpenTarget(args[0]);
-        using (owner)
+        using (Target target = OpenTarget(args[0]))
         {
             int missing = 0;
             foreach (Name n in names)
             {
-                if (find(n) is null)
+                if (target.Find(n) is null)
                 {
-                    Console.WriteLine($"{n}: not in {where}");
+                    Console.WriteLine(WantsJson(args)
+                        ? Json(("command", "axioms"), ("name", n.ToString()), ("found", false),
+                               ("searched", target.Where))
+                        : $"{n}: not in {target.Where}");
                     missing++;
                     continue;
                 }
-                var (axioms, visited) = Replay.AxiomsOf(find, n);
+                var (axioms, visited) = Replay.AxiomsOf(target.Find, n);
                 if (WantsJson(args))
                 {
                     Console.WriteLine(Json(

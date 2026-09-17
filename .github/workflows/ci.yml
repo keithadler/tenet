@@ -66,6 +66,9 @@ jobs:
           case "$out" in
             *"not in"*) echo "directory target failed to resolve Nat.add_comm"; exit 1 ;;
           esac
+          # And the other direction: find the name without knowing it, by pattern.
+          dotnet run --no-build -c Release --project src/Tenet.Cli -- names "$LIB" --all add_comm \
+            | grep -qx "Nat.add_comm"
 
       - name: Build the Lean kernel oracle
         run: |

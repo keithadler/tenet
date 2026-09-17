@@ -298,6 +298,7 @@ Tenet reads export format 3.x (NDJSON), both the current 3.1 layout and the 3.0 
 | `tenet audit DIR` | which of a project's declarations are complete and which rest on `sorry` |
 | `tenet statement TARGET NAME...` | which constants a theorem's statement is built from, and which of them the project defines itself |
 | `tenet axioms TARGET NAME...` | print the axioms a declaration depends on, transitively, as Lean's `#print axioms` does |
+| `tenet names TARGET [PATTERN]...` | list the declarations a target defines, filtered by pattern; `--all` includes what it imports |
 | `tenet show TARGET NAME...` | print declarations in full: type, value, hints, constructor and recursor data |
 
 A `TARGET` is an export file, a single `Module.olean`, or a project directory. Given a directory,
