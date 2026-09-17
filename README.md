@@ -65,7 +65,36 @@ rather than re-deriving them, so it is the weaker statement. Note that Mathlib i
 project: a separate run over some other Mathlib checkout does not cover the one these proofs
 actually rest on.
 
-#### The other answer: a formalization in progress
+#### A third: a new result, checked on request
+
+[long-mathematics/rank-two-poisson-counterexample](https://github.com/long-mathematics/rank-two-poisson-counterexample)
+is Christopher D. Long's explicit counterexample to the rank-two Poisson conjecture
+([arXiv:2608.23777](https://arxiv.org/abs/2608.23777)), with a Lean formalization of the paper's
+core claims. Checked on commit `6ef94a5`, Lean 4.32.1:
+
+```
+$ tenet check rank-two-poisson-counterexample --all
+OK: 751482 checked in 10425 modules, 0 failed, 436.7s, 12 jobs
+
+$ tenet audit rank-two-poisson-counterexample
+  710 declarations defined by this project in 19 modules
+  unconditional: 710 (100.0%)
+  resting on an assumption: 0
+```
+
+Every one of its 710 declarations stands on nothing beyond `propext`, `Classical.choice` and
+`Quot.sound`. No `sorry`, no axiom of its own. The named results check out individually too:
+`main_complex` reaches 16,341 constants, `exact_fiber_complex` 14,620,
+`explicit_counterexample_complex` 14,247, and each reaches only the three standard axioms.
+
+Worth saying what that does and does not establish, because the repository itself is careful
+about exactly this. Its coverage ledger separates PROVED from PARTIAL and MISSING line by line
+against the paper, and states plainly that core claims are formalized while several supporting
+ones are not. So: the Lean that exists is complete and unconditional, and it does not cover
+every claim in the manuscript. Both halves are the author's own framing, and the audit agrees
+with it.
+
+### The other answer: a formalization in progress
 
 A green build does not mean a finished proof. `sorry` is a real term of any type, so a
 project full of holes compiles perfectly. Kevin Buzzard's
