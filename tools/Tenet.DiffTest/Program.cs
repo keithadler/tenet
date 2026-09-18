@@ -38,7 +38,7 @@ internal static class Program
 
     private static int Main(string[] args)
     {
-        string? export = null, tenet = null, oracle = null, outDir = null;
+        string? export = null, tenet = null, oracle = null, oracle2 = null, outDir = null;
         int variants = 20, mutations = 12;
         int seed = Environment.TickCount;
         bool keep = false, mutateOnly = false;
@@ -49,6 +49,7 @@ internal static class Program
                 case "--export": export = args[++i]; break;
                 case "--tenet": tenet = args[++i]; break;
                 case "--oracle": oracle = args[++i]; break;
+                case "--oracle2": oracle2 = args[++i]; break;
                 case "--variants": variants = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--mutations": mutations = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--seed": seed = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
@@ -117,6 +118,25 @@ internal static class Program
             Console.WriteLine("tenet could not read the export");
             return 2;
         }
+        bool useOracle2 = oracle2 is not null;
+        if (useOracle2)
+        {
+            var b2 = RunOracle2(oracle2!, export, outDir, "baseline");
+            if (!b2.Answered || !b2.Accepted)
+            {
+                // Not fatal: con-leche rejects any axiom beyond Lean's three, so some corpora are simply outside
+                // what it will look at. Say so and carry on with one oracle rather than reporting its silence as
+                // agreement.
+                Console.WriteLine("con-leche did not accept the untouched export, so it is not usable as a second");
+                Console.WriteLine("opinion on this corpus; continuing with Lean's kernel alone:");
+                Console.WriteLine("  " + FirstLine(b2.Raw, "").Trim());
+                useOracle2 = false;
+            }
+            else
+            {
+                Console.WriteLine("con-leche accepts the baseline; disagreements will be put to it as well");
+            }
+        }
         if (bt.Failed.Count > 0 || bo.Failed.Count > 0)
         {
             Console.WriteLine($"baseline disagreement or failure: tenet failed {bt.Failed.Count}, lean failed {bo.Failed.Count}");
@@ -127,6 +147,7 @@ internal static class Program
         Console.WriteLine($"baseline: both accept all {bo.All.Count} declarations");
 
         int soundness = 0, strict = 0, agreedRejections = 0, inconclusive = 0;
+        int thirdAsked = 0, thirdWithTenet = 0, thirdWithLean = 0, thirdSilent = 0;
         var kinds = new Dictionary<string, (int Applied, int Rejected)>();
         for (int v = 0; v < variants; v++)
         {
@@ -165,6 +186,49 @@ internal static class Program
                 Console.WriteLine("  SOUNDNESS: Tenet accepts but Lean rejects:");
                 foreach (string n in tenetAcceptsLeanRejects.Take(10)) Console.WriteLine("    " + n + "  |  " + FirstLine(o.Raw, "FAIL " + n));
             }
+            if (useOracle2 && (tenetAcceptsLeanRejects.Count > 0 || tenetRejectsLeanAccepts.Count > 0))
+            {
+                // Two checkers that differ tell you they differ. A third can tell you which one is alone, but only
+                // about the declaration actually in dispute. con-leche answers per file and stops at the first
+                // problem it finds, and a variant carries twelve mutations, so "it rejected the file" is almost
+                // always about some other declaration. Accepting the file does settle it, because accepting the
+                // file means accepting everything in it.
+                var third = RunOracle2(oracle2!, path, outDir, $"variant-{v:D3}");
+                var disputed = tenetAcceptsLeanRejects.Concat(tenetRejectsLeanAccepts).ToList();
+                if (!third.Answered)
+                {
+                    Console.WriteLine("  third opinion: con-leche did not answer (it declines unsupported features "
+                                    + "and any axiom beyond the three)");
+                }
+                else if (third.Accepted)
+                {
+                    thirdAsked++;
+                    if (tenetAcceptsLeanRejects.Count > 0) { thirdWithTenet++; } else { thirdWithLean++; }
+                    Console.WriteLine("  third opinion: con-leche ACCEPTS the whole variant, so it accepts the "
+                                    + "disputed declaration too");
+                }
+                else
+                {
+                    string reason = FirstLine(third.Raw, "con-leche: invalid").Trim();
+                    string? named = disputed.FirstOrDefault(n => third.Raw.Contains(n, StringComparison.Ordinal));
+                    if (named is not null)
+                    {
+                        thirdAsked++;
+                        if (tenetAcceptsLeanRejects.Contains(named)) { thirdWithLean++; } else { thirdWithTenet++; }
+                        Console.WriteLine($"  third opinion: con-leche rejects {named}, the declaration in dispute");
+                    }
+                    else
+                    {
+                        thirdSilent++;
+                        Console.WriteLine("  third opinion: con-leche rejects the variant over something else, so it "
+                                        + "says nothing about the disagreement");
+                    }
+                    if (reason.Length > 0)
+                    {
+                        Console.WriteLine("    " + reason);
+                    }
+                }
+            }
             if (tenetRejectsLeanAccepts.Count > 0)
             {
                 Console.WriteLine("  STRICT: Tenet rejects but Lean accepts:");
@@ -184,6 +248,13 @@ internal static class Program
         Console.WriteLine($"done: {variants} variants, {variants - inconclusive} compared, {inconclusive} inconclusive, "
                         + $"{agreedRejections} agreed rejections, {soundness} SOUNDNESS disagreements, {strict} STRICT disagreements");
         Console.WriteLine("mutations applied: " + string.Join(", ", kinds.OrderBy(k => k.Key).Select(k => $"{k.Key} x{k.Value.Applied}")));
+        if (useOracle2)
+        {
+            Console.WriteLine(thirdAsked == 0
+                ? "con-leche was available as a third opinion; no disagreement needed one"
+                : $"third opinion: con-leche settled {thirdAsked} disagreement(s), {thirdWithTenet} with Tenet, "
+                  + $"{thirdWithLean} with Lean; {thirdSilent} left open (it rejected the variant over another mutation)");
+        }
         if (inconclusive == variants)
         {
             // Zero disagreements across zero comparisons is not agreement. Without this the run is green whenever
@@ -201,6 +272,19 @@ internal static class Program
         int e = raw.IndexOf('\n', i);
         string line = e < 0 ? raw[i..] : raw[i..e];
         return line.Length > 160 ? line[..160] + "…" : line;
+    }
+
+    /// <summary>
+    /// con-leche's verdict for a whole file. It is proved in Lean not to accept a proof of False, which makes it
+    /// the strongest oracle available here, but it answers per file rather than per declaration: exit 0 accepts
+    /// everything, 1 rejects something, 2 declines a feature it does not support, 3 is a usage or parse error.
+    /// Only 0 and 1 are verdicts; the rest mean it did not answer.
+    /// </summary>
+    private static (bool Answered, bool Accepted, string Raw) RunOracle2(string exe, string export, string outDir, string tag)
+    {
+        string output = Run(exe, ["--jobs=4", export], out int code);
+        File.WriteAllText(Path.Combine(outDir, tag + ".conleche.txt"), output);
+        return (code is 0 or 1, code == 0, output);
     }
 
     private static Verdicts RunTenet(string tenet, string export, string outDir, string tag)

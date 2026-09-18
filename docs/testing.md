@@ -236,6 +236,42 @@ slice in 19.7 s against 63.1 s. con-leche's README states plainly that it is del
 because the annotation work is what makes its proof tractable, so this measures the price of
 the proof rather than a defect.
 
+### con-leche as a third opinion, and what it found
+
+Two checkers that differ tell you they differ. A third tells you which one is alone, so
+`difftest --oracle2` puts a Tenet-versus-Lean disagreement to con-leche as well.
+
+Reading its answer takes care. con-leche reports one verdict for a whole file and stops at the
+first problem it finds, and a variant carries a dozen mutations, so "con-leche rejected the
+variant" is usually about some other declaration entirely. The harness only counts it as having
+settled a disagreement when it accepts the whole file, which means it accepted the disputed
+declaration too, or when its message names that declaration. Otherwise it says the question was
+left open. The first version of this did not make that distinction and reported con-leche as
+siding with Lean on a disagreement it had said nothing about.
+
+Asked properly, it answered. Reducing the `PULift.up.inj` disagreement (see the triage section
+below) to the single mutation that causes it, one level in the shared table turning `max u v`
+into `imax u v`, gives three different verdicts on the same file:
+
+| Checker | Rejects |
+| --- | --- |
+| Lean's kernel | 3: `PULift.noConfusion`, `PULift.up.inj`, `PULift.up.injEq` |
+| Tenet | 1: `PULift.noConfusion` |
+| con-leche | 0, accepts all 3,482 declarations |
+
+All three are sound here and they differ in completeness, con-leche being the most complete.
+The level in dispute for `PULift.noConfusion` is `imax (imax s (max r 1)) u` against
+`imax (max (max 1 r) s) u`. The inner `max r 1` is at least 1 for every assignment, so the inner
+`imax s (max r 1)` is `max s (max r 1)`, which is the sorted `max (max 1 r) s`, and the two outer
+levels are therefore the same universe. con-leche sees this. Neither Lean nor Tenet does, and
+Tenet sees two of the three cases Lean does not.
+
+So Tenet carries a level-normalization completeness gap of its own, narrower than Lean's and in
+the safe direction: it rejects something valid, it does not accept something invalid. It cannot
+arise on a real export, because Lean's elaborator never stores an unsimplified `imax _ (max _ 1)`.
+It is recorded here because it is the first thing the third opinion found, and because a gap that
+only a proved checker can see is exactly what two testers agreeing with each other will miss.
+
 One difference in what each will accept. con-leche takes only Lean's three standard axioms and
 stops on anything else:
 
