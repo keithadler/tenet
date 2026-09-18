@@ -3,6 +3,30 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `tenet check` can **decline** a file instead of rejecting it: exit 4, printing `DECLINED`, when every
+  failure is a refusal to vouch rather than a finding that something is wrong. Refusing to believe the output
+  of compiled code (`Lean.reduceBool`, `Lean.reduceNat`) is the case that matters, and reporting it as a
+  rejection claimed the proof was invalid, which Tenet was never in a position to say. The negative corpus
+  records which outcome each case expects and the test fails if either collapses into the other.
+- A `flake.nix`, so the [Lean Kernel Arena](https://arena.lean-lang.org) has a .NET SDK to build with: its
+  environment has none, and a checker needing something else brings its own. A CI job runs the arena's build
+  and run lines verbatim over the negative corpus, so a broken flake goes red here rather than in a pull
+  request somewhere else.
+- `packaging/arena/`, the checker definition to submit, kept in this repo so the exit-code mapping is reviewed
+  when the CLI's exit codes change.
+
+### Fixed
+- The native AOT publish had been failing since it was introduced, and the release workflow falls back to a
+  self-contained build when it does, silently. Two releases shipped 32 MB binaries while the README promised
+  4 MB ones. `Trim="true"` on the DATAS runtime option makes it a feature switch, which ILC rejects outright;
+  the option is now set without it for AOT builds. Measured after the fix: 4.85 MB and 10 ms to start.
+- The GitHub Action and the sample point at 0.10.0. Both have to trail the repo's version until a release is
+  actually published, and bumping them inside the release commit made CI download a release that commit was
+  about to create.
+
 ## [0.10.0] - 2026-09-18
 
 The Lean Kernel Arena found a soundness bug in the first five minutes, and it is in every release
