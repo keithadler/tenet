@@ -157,9 +157,27 @@ rate, and deleting it is catastrophic: node visits go from 387M to 3,361M and th
 Lean's terms are shared DAGs, so each of those few hits is skipping an enormous subtree. Anyone looking at the
 hit rate and reaching for the delete key, as I did, should run it with `Replace`'s cache disabled first.
 
-**What is left to try**, and it is the only idea remaining that is worth the risk: the memo is a
-`Dictionary<(Expr,int),Expr>` allocated per call, 21M allocations serving 215M insertions through a custom
-comparer. Lean's C++ kernel does not do this; it memoizes on the expression node itself, turning a hash insert
-into a field write. That is plausibly a large win and it is genuinely dangerous here, because workers share
-expression nodes across threads and a mutable memo field would need to be per-thread or lock-free. It has not
-been tried.
+**What was done about it.** Lean's C++ kernel memoizes on the expression node itself, turning a hash insert
+into a field write. That does not port here: workers share expression nodes across threads, so a mutable memo
+field would need an allocation per entry to be written atomically, which costs more than it saves.
+
+The cheaper half of the same idea does port. The memo was a fresh `Dictionary` per call: 21 million
+allocations, each grown to about a dozen entries and discarded. It is now rented from a per-thread pool and
+cleared for reuse, which keeps the memo and drops the allocation. A stack rather than one slot, because
+`Replace` nests: `Instantiate`'s substitution calls `LiftLooseBVars`, which calls `Replace` again on the same
+thread, and the inner call must not clear the outer one's table. Tables that grow past 65,536 entries are
+dropped instead of pooled, so one pathological term does not park a huge table on every worker.
+
+Measured on all of `Init`, and these are counters rather than timings so they hold on a busy machine:
+
+| | before | after |
+| --- | --- | --- |
+| allocated | 54.6 GB | **31.5 GB** |
+| gen0 collections | 54 | 39 |
+| GC pause | 2.40s | **1.51s** |
+
+Same verdict, 64,814 declarations and 0 failures, 127 tests on both frameworks, and the arena suite still 70 of
+70 and 119 of 119. Wall-clock effect is not claimed here: every timing taken this day was on a machine busy
+exporting Mathlib, and this repository has already published three speed claims that turned out to be thermal
+drift. The 0.9 seconds of GC pause that stopped happening is real; what it is worth end to end should be
+measured on a quiet machine with `tools/bench`.

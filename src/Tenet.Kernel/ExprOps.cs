@@ -19,10 +19,51 @@ public static class ExprOps
     /// Rebuild <paramref name="e"/> bottom-up. <paramref name="f"/> receives each subterm with the number of binders
     /// above it; returning non-null replaces that subterm without descending. Results for shared subterms are cached.
     /// </summary>
+    /// <summary>
+    /// A per-thread pool of the memo tables <see cref="Replace"/> needs.
+    ///
+    /// The memo itself is load-bearing: without it, checking Init goes from 387M node visits to 3,361M,
+    /// because Lean's terms are shared DAGs and a hit skips a whole subtree. What is not load-bearing is
+    /// allocating a fresh table for each of the 21 million calls, growing it to a dozen entries, and
+    /// throwing it away. Reusing one per thread keeps the memo and drops the allocation.
+    ///
+    /// A stack rather than a single slot because Replace nests: `Instantiate`'s substitution calls
+    /// `LiftLooseBVars`, which calls Replace again on the same thread, and the inner call must not clear
+    /// the outer call's table.
+    /// </summary>
+    [ThreadStatic] private static Stack<Dictionary<(Expr, int), Expr>>? t_cachePool;
+
+    /// <summary>Tables that grew past this are dropped rather than pooled, so one huge term does not
+    /// leave a huge table parked on every worker for the rest of the run.</summary>
+    private const int MaxPooledCache = 1 << 16;
+
+    private static Dictionary<(Expr, int), Expr> RentCache()
+    {
+        Stack<Dictionary<(Expr, int), Expr>> pool = t_cachePool ??= new();
+        return pool.Count > 0 ? pool.Pop() : new Dictionary<(Expr, int), Expr>(RefOffsetComparer.Instance);
+    }
+
+    private static void ReturnCache(Dictionary<(Expr, int), Expr> cache)
+    {
+        if (cache.Count > MaxPooledCache)
+        {
+            return;
+        }
+        cache.Clear();
+        (t_cachePool ??= new()).Push(cache);
+    }
+
     public static Expr Replace(Expr e, Func<Expr, int, Expr?> f)
     {
-        var cache = new Dictionary<(Expr, int), Expr>(RefOffsetComparer.Instance);
-        return Go(e, 0, 0);
+        Dictionary<(Expr, int), Expr> cache = RentCache();
+        try
+        {
+            return Go(e, 0, 0);
+        }
+        finally
+        {
+            ReturnCache(cache);
+        }
 
         Expr Go(Expr t, int offset, int depth)
         {
