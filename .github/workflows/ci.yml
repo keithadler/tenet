@@ -79,9 +79,11 @@ jobs:
         run: |
           set -o pipefail
           # Exactly the mapping in packaging/arena/tenet.yaml: 0 accept, 1 reject, 4 decline -> 2.
+          # `|| c=$?` rather than a bare call then `c=$?`: the step runs under `bash -e`, where a command
+          # that returns non-zero ends the script before the next line assigns anything.
           check() {
-            ./arena-bin/tenet check "$1" --quiet >/dev/null 2>&1
-            c=$?
+            local c=0
+            ./arena-bin/tenet check "$1" --quiet >/dev/null 2>&1 || c=$?
             case $c in
               0|1) return $c ;;
               4)   return 2 ;;
@@ -91,7 +93,7 @@ jobs:
           # 1 is reject. Every file in the negative corpus must come back as one.
           fail=0
           for f in tests/fixtures/invalid/*.ndjson; do
-            check "$f"; c=$?
+            c=0; check "$f" || c=$?
             case $c in
               1) echo "rejected: $f" ;;
               2) echo "declined: $f" ;;
