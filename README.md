@@ -2,6 +2,17 @@
 
 **An independent implementation of the Lean 4 kernel on .NET, and a checker for Lean exports.**
 
+[![CI](https://github.com/keithadler/tenet/actions/workflows/ci.yml/badge.svg)](https://github.com/keithadler/tenet/actions/workflows/ci.yml)
+[![Nightly](https://github.com/keithadler/tenet/actions/workflows/nightly.yml/badge.svg)](https://github.com/keithadler/tenet/actions/workflows/nightly.yml)
+[![NuGet](https://img.shields.io/nuget/v/tenet.svg?label=tenet)](https://www.nuget.org/packages/tenet)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+
+The nightly badge is the one worth looking at. CI runs the unit tests, the negative corpus and a
+small differential campaign on every push; the nightly is where Mathlib is re-checked from master,
+where a Mathlib slice is put to a checker carrying a machine-checked consistency proof, and where
+that checker's own soundness proof is checked back. A green CI badge says the code builds. A green
+nightly badge says yesterday's Mathlib still checks.
+
 Tenet re-implements the trusted core of the [Lean 4](https://lean-lang.org) theorem
 prover in C#: expressions, universe levels, environments, type inference, definitional
 equality, inductive types (mutual and nested), quotients, and native `Nat` and `String`
