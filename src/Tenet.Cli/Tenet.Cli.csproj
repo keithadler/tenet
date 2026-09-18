@@ -30,7 +30,14 @@
 
   <ItemGroup>
     <!-- Reported upstream: https://github.com/dotnet/runtime/issues/134031 -->
-    <RuntimeHostConfigurationOption Include="System.GC.DynamicAdaptationMode" Value="0" Trim="true" />
+    <!-- Trim="true" turns this into a feature switch, and ILC rejects it with "Unexpected feature switch
+         pair", so the native AOT publish fails. The release workflow falls back to a self-contained build
+         when AOT fails, silently, which is how two releases shipped 32 MB binaries while the README
+         promised 4 MB ones. Keep the switch everywhere else; set the option plainly for AOT. -->
+    <RuntimeHostConfigurationOption Include="System.GC.DynamicAdaptationMode" Value="0" Trim="true"
+                                    Condition="'$(PublishAot)' != 'true'" />
+    <RuntimeHostConfigurationOption Include="System.GC.DynamicAdaptationMode" Value="0"
+                                    Condition="'$(PublishAot)' == 'true'" />
   </ItemGroup>
 
 </Project>
