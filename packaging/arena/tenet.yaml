@@ -24,11 +24,10 @@ version: "0.10.0"
 # kernel time across workers rises from 26s to 65s. Past four it buys almost nothing and burns CPU
 # that other checkers are entitled to.
 threads: 4
-# No .NET in the arena's own environment, so Tenet brings its own to build with, the way lean4cobol
-# does. --self-contained matters: lka.py runs the `build` command through the nix shell but runs the
-# `run` command with a plain copy of the environment, so the binary has to carry its own runtime or it
-# fails at the first test with "You must install .NET".
-build: nix develop path:. --ignore-environment -c dotnet publish src/Tenet.Cli -c Release -f net10.0 -p:TargetFrameworks=net10.0 --self-contained true -r linux-x64 -o arena-bin
+# The SDK comes from the arena's own flake, alongside elan and the rest.
+# --self-contained so the produced binary carries its runtime and does not depend on the shell it is
+# run from; it costs nothing at run time and one less assumption.
+build: dotnet publish src/Tenet.Cli -c Release -f net10.0 -p:TargetFrameworks=net10.0 --self-contained true -r linux-x64 -o arena-bin
 run: |
   # 0 accept, 1 reject, 2 decline. Tenet agrees on the first two and uses 4 for declining, which is
   # what it does when a file asks it to trust the output of compiled code: not a claim the proof is

@@ -66,20 +66,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
 
-      # The arena's environment has no .NET, so a checker needing one brings its own. This runs the exact
-      # build line from packaging/arena/tenet.yaml, so if it stops working it goes red here rather than in
-      # somebody else's repository after a submission.
-      #
-      # --self-contained is load-bearing. lka.py runs `build` through the nix shell and `run` with a plain
-      # copy of the environment, so a framework-dependent binary would die on the first test with
-      # "You must install .NET".
+      # The exact build line from packaging/arena/tenet.yaml. The arena supplies the SDK from its own flake,
+      # at the maintainer's request, so there is no nix here either: what is being tested is that this
+      # command produces a binary that scores what the submission says it scores.
       - name: Build the way the arena would
         run: |
-          nix develop path:. --ignore-environment -c \
-            dotnet publish src/Tenet.Cli -c Release -f net10.0 -p:TargetFrameworks=net10.0 \
-              --self-contained true -r linux-x64 -o arena-bin
+          dotnet publish src/Tenet.Cli -c Release -f net10.0 -p:TargetFrameworks=net10.0 \
+            --self-contained true -r linux-x64 -o arena-bin
 
       - name: Score the arena's published test suite
         run: |

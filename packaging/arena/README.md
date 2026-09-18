@@ -68,24 +68,27 @@ the board, where the official kernel is 7.6 GB and lean4lean 9.3 GB.
 
 ## Two things to settle before submitting
 
-**The arena's environment has no .NET.** Its nix flake provides elan, rustc, node, ocaml, zig, ghc
-and pypy, and nothing for .NET, so the build line uses `nix develop path:.` to bring Tenet's own, the
-way `lean4cobol` does. That flake now exists at the repo root and exists only for this.
+**The SDK comes from the arena's own flake.** The first version of this submission had Tenet shelling
+out to its own nix shell with `nix develop path:.`, the way `lean4cobol` does. The maintainer asked
+for the dependency to go in the arena's flake instead, alongside elan and rustc and the rest, and he
+is right: it puts Tenet's requirement in the file that lists everyone else's rather than hiding it
+inside one checker's build line. The PR adds `dotnet-sdk_10` there and the build line is a plain
+`dotnet publish`.
 
-It uses `dotnetCorePackages.sdk_10_0`, not the .NET 8 SDK. Targeting `net8.0` looked easier, since
-Tenet multi-targets and nixpkgs has an 8 SDK, but `global.json` pins the SDK to 10.0.1xx with
-`rollForward: latestFeature`, so an older SDK does not build slowly, it refuses to start.
+It has to be the .NET 10 SDK, not 8. Targeting `net8.0` looked easier, since Tenet multi-targets and
+nixpkgs has an 8 SDK, but `global.json` pins the SDK to 10.0.1xx with `rollForward: latestFeature`,
+so an older SDK does not build slowly, it refuses to start.
 
-`--self-contained true -r linux-x64` is load-bearing, and finding out why is the reason to read
-`lka.py` rather than guess. It runs `build` through the nix shell and `run` with a plain copy of the
-environment, so a framework-dependent publish would have died on the very first test with "You must
-install .NET" and looked like a broken checker rather than a missing flag.
+`--self-contained true -r linux-x64` is kept, and the first version of this file was wrong about why.
+It claimed the flag was load-bearing because `run` executes with a plain copy of the environment. It
+does, but `lka.py` itself runs inside the dev shell, so that copy already has the runtime in it and a
+framework-dependent publish would have worked. The flag stays because a binary carrying its own
+runtime does not depend on how it is invoked, which is a smaller claim than the one made before.
 
 The `arena` job in CI downloads the arena's own published test suite on every push, runs all 189
 files through the binary with `env -i`, applies the same exit-code mapping, and fails on anything
 short of a perfect score. Running with an empty environment is what proves the binary needs nothing
-installed. There is no nix on the development machine this was written on, so CI is the only thing
-that has ever executed the flake.
+installed.
 
 **Declining.** Done. The arena reserves exit 2 for "cannot handle this proof", distinct from
 rejecting it. Tenet refuses `Lean.reduceBool` and `Lean.reduceNat` rather than trusting compiled
