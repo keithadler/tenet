@@ -14,6 +14,12 @@ public sealed record Import(Name Module, bool ImportAll, bool IsExported, bool I
 /// </summary>
 public sealed record SourceRange(int Line, int Column, int EndLine, int EndColumn);
 
+/// <summary>
+/// What <c>@[deprecated]</c> recorded: the replacement to use, the author's note, and the version it was
+/// deprecated in. All three are optional, as they are in Lean.
+/// </summary>
+public sealed record Deprecation(Name? NewName, string? Text, string? Since);
+
 /// <summary>One memory-mapped part of a module: <c>.olean</c>, <c>.olean.private</c>, or <c>.olean.server</c>.</summary>
 internal sealed unsafe class Region : IDisposable
 {
@@ -280,9 +286,12 @@ public sealed unsafe class OleanModule : IDisposable
 
     private const string DocStringExtension = "Lean.docStringExt";
     private const string DeclRangeExtension = "Lean.declRangeExt";
+    private const string DeprecatedExtension = "Lean.Linter.deprecatedAttr";
     private readonly object _extensionLock = new();
     private Name[]? _extensionNames;
     private Dictionary<Name, SourceRange>? _sourceRanges;
+    private Dictionary<Name, Deprecation>? _deprecations;
+    private Dictionary<string, Name[]>? _extensionKeys;
     private volatile Dictionary<Name, string>? _docStrings; // assigned last: it is the "loaded" flag
 
     /// <summary>
@@ -308,6 +317,26 @@ public sealed unsafe class OleanModule : IDisposable
     {
         LoadExtensions();
         return _docStrings!.GetValueOrDefault(n);
+    }
+
+    /// <summary>What <c>@[deprecated]</c> says about this declaration, or null when it is not deprecated.</summary>
+    public Deprecation? DeprecationOf(Name n)
+    {
+        LoadExtensions();
+        return _deprecations!.GetValueOrDefault(n);
+    }
+
+    /// <summary>
+    /// The declarations an extension has an entry for. Lean stores a <c>MapDeclarationExtension</c> and a
+    /// <c>ParametricAttribute</c> alike as an array of <c>(Name × payload)</c>, so the keys are readable without
+    /// knowing the payload: this is how to ask which declarations carry an attribute. Extensions that store
+    /// something else are reported as having no keys rather than guessed at, which is decided by requiring every
+    /// key to be a constant this module declares.
+    /// </summary>
+    public IReadOnlyList<Name> KeysInExtension(Name extension)
+    {
+        LoadExtensions();
+        return _extensionKeys!.GetValueOrDefault(extension.ToString(), []);
     }
 
     /// <summary>
@@ -344,6 +373,8 @@ public sealed unsafe class OleanModule : IDisposable
             var names = new List<Name>();
             var docs = new Dictionary<Name, string>();
             var ranges = new Dictionary<Name, SourceRange>();
+            var deprecated = new Dictionary<Name, Deprecation>();
+            var keys = new Dictionary<string, Name[]>(StringComparer.Ordinal);
             foreach (Region region in _regions)
             {
                 ulong root = region.RootAddr;
@@ -380,13 +411,86 @@ public sealed unsafe class OleanModule : IDisposable
                             ranges[key] = DecodeSourceRange(value);
                         }
                     }
+                    else if (which == DeprecatedExtension)
+                    {
+                        foreach ((Name key, ulong value) in NamedEntries(Field(pair, 1)))
+                        {
+                            deprecated[key] = DecodeDeprecation(value);
+                        }
+                    }
+                    if (!keys.ContainsKey(which) && KeysOf(Field(pair, 1)) is Name[] k)
+                    {
+                        keys[which] = k;
+                    }
                 }
             }
             _extensionNames = names.ToArray();
             _sourceRanges = ranges;
+            _deprecations = deprecated;
+            _extensionKeys = keys;
             _docStrings = docs;
         }
     }
+
+    /// <summary>
+    /// The declarations an extension's entries are keyed by, or null when they are not keyed by a declaration of
+    /// this module. An entry of a name-keyed extension is a two-field constructor whose first field is the name;
+    /// an extension storing anything else will either fail to decode that way or yield names this module does not
+    /// declare, and both are answered with null rather than a guess.
+    /// </summary>
+    private Name[]? KeysOf(ulong arrayV)
+    {
+        try
+        {
+            var found = new List<Name>();
+            ulong arr = Ptr(arrayV);
+            long n = ArrayLength(arr);
+            for (long i = 0; i < n; i++)
+            {
+                ulong entry = Ptr(ArrayElement(arr, i));
+                if (Tag(entry) > TagMaxCtor || NumObjs(entry) < 2)
+                {
+                    return null;
+                }
+                Name key = DecodeName(Field(entry, 0));
+                if (!_constAddr.ContainsKey(key))
+                {
+                    return null;
+                }
+                found.Add(key);
+            }
+            return found.ToArray();
+        }
+        catch (OleanFormatException)
+        {
+            return null; // not a shape this reads; the caller wanted keys, not an error
+        }
+    }
+
+    /// <summary>
+    /// A <c>DeprecationEntry</c>: three optional fields, a replacement name, a note, and the version it was
+    /// deprecated in, stored as <c>Option</c>s, which Lean writes as a boxed scalar for none and a one-field
+    /// constructor for some.
+    /// </summary>
+    private Deprecation DecodeDeprecation(ulong v)
+    {
+        if (IsScalar(v))
+        {
+            return new Deprecation(null, null, null);
+        }
+        ulong e = Ptr(v);
+        if (Tag(e) > TagMaxCtor || NumObjs(e) < 3)
+        {
+            throw new OleanFormatException(Path, $"a {DeprecatedExtension} entry has {NumObjs(e)} fields, expected 3");
+        }
+        return new Deprecation(
+            Option(Field(e, 0)) is ulong nn ? DecodeName(nn) : null,
+            Option(Field(e, 1)) is ulong t ? DecodeString(t) : null,
+            Option(Field(e, 2)) is ulong s ? DecodeString(s) : null);
+    }
+
+    /// <summary>The payload of an <c>Option</c>, or null for <c>none</c>, which is stored as the scalar 0.</summary>
+    private ulong? Option(ulong v) => IsScalar(v) ? null : Field(Ptr(v), 0);
 
     /// <summary>The entries of a <c>MapDeclarationExtension</c>: an <c>Array (Name × α)</c>, each pair a two-field constructor.</summary>
     private IEnumerable<(Name Key, ulong Value)> NamedEntries(ulong arrayV)

@@ -90,8 +90,13 @@ constants it reaches; those are all present before the declaration using them is
 grows and refuses to redefine a name. So the answer cannot change once computed. Lean checks against an
 environment that is still being built one declaration at a time, and has no such guarantee.
 
-It was implemented and measured, and it is worth about 3%: the median of five runs on all of `Init` at twelve
-jobs went from 11.04s to 10.74s. Instrumenting the shared cache says why:
+It was implemented and measured, and it is worth **nothing measurable**. The first measurement said 3%, from
+five runs of one build against five runs of the other. That method is worthless on this machine: a later
+interleaved A/B of an unrelated change, alternating the two binaries within each pair to cancel thermal drift,
+found the *unchanged* binary winning four pairs of six and posting the fastest single run. Run-to-run spread on
+this workload is around 10%, which swamps anything either change did.
+
+Instrumenting the shared cache says why there was nothing to find:
 
 | | |
 | --- | --- |
@@ -107,7 +112,13 @@ is closed terms, and those simply do not recur often enough.
 
 It was reverted. Five subtle conditions (closed terms only, safe checkers only, not under `eagerReduce`, not in
 a faithful retry, and not while counting rules, since a reused result fires none) guarding the hottest path in
-the kernel is a poor trade for 3% in a project whose first claim is that its decisions can be audited.
+the kernel would have been a poor trade for 3%, and it was not even 3%.
+
+**The lesson is about the measurement, not the cache.** Three separate performance claims were made here and all
+three dissolved under a better method: a recursor pre-filter "worth 2%", this "worth 3%", and a GC heap-count
+setting "worth 10%" that came from three samples. Anything measured on this workload needs interleaved pairs
+and enough of them, because the noise is larger than any of the effects being claimed. `tools/bench` exists for
+exactly this and should be used rather than a loop around `--timing`.
 
 Where the time actually goes, for anyone who wants to try again: 7.2 million definition unfoldings on `Init`,
 and a parallel speedup that stops paying at about four workers. Wall time goes 30.1s at one job to 13.3s at
