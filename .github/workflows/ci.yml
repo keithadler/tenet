@@ -62,46 +62,84 @@ jobs:
           exit $fail
 
   arena:
-    name: The arena's own build and run lines work
+    name: The arena's own tests, scored the arena's way
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
 
-      # The arena has no .NET in its environment, so a checker that needs one brings its own. This runs the
-      # exact lines from packaging/arena/tenet.yaml: if they stop working, this goes red here rather than in
+      # The arena's environment has no .NET, so a checker needing one brings its own. This runs the exact
+      # build line from packaging/arena/tenet.yaml, so if it stops working it goes red here rather than in
       # somebody else's repository after a submission.
+      #
+      # --self-contained is load-bearing. lka.py runs `build` through the nix shell and `run` with a plain
+      # copy of the environment, so a framework-dependent binary would die on the first test with
+      # "You must install .NET".
       - name: Build the way the arena would
         run: |
-          nix develop path:. --ignore-environment -c dotnet publish src/Tenet.Cli -c Release             -f net10.0 -p:TargetFrameworks=net10.0 -o arena-bin
+          nix develop path:. --ignore-environment -c \
+            dotnet publish src/Tenet.Cli -c Release -f net10.0 -p:TargetFrameworks=net10.0 \
+              --self-contained true -r linux-x64 -o arena-bin
 
-      - name: Run the way the arena would, over its own scoring convention
+      - name: Score the arena's published test suite
         run: |
-          set -o pipefail
-          # Exactly the mapping in packaging/arena/tenet.yaml: 0 accept, 1 reject, 4 decline -> 2.
-          # `|| c=$?` rather than a bare call then `c=$?`: the step runs under `bash -e`, where a command
-          # that returns non-zero ends the script before the next line assigns anything.
+          curl -sSfL -o tests.tar.gz https://arena.lean-lang.org/lean-arena-tests.tar.gz
+          mkdir -p arena-tests && tar xzf tests.tar.gz -C arena-tests
+
+          # The mapping in packaging/arena/tenet.yaml, verbatim: 0 accept, 1 reject, 4 decline -> 2.
+          # `env -i` is deliberate. The arena runs the checker with whatever environment it has, and running
+          # with none at all proves the binary needs nothing installed.
+          # `|| c=$?` rather than a bare call: this step runs under `bash -e`, where a non-zero return ends
+          # the script before the next line can read $?.
           check() {
             local c=0
-            ./arena-bin/tenet check "$1" --quiet >/dev/null 2>&1 || c=$?
+            env -i "$PWD/arena-bin/tenet" check "$1" --quiet >/dev/null 2>&1 || c=$?
             case $c in
               0|1) return $c ;;
               4)   return 2 ;;
-              *)   echo "::error::$1 gave exit $c, which the arena reads as neither accept, reject nor decline"; exit 9 ;;
+              *)   echo "::error::$1 gave exit $c, which is neither accept, reject nor decline"; return 9 ;;
             esac
           }
-          # 1 is reject. Every file in the negative corpus must come back as one.
+
+          bad_ok=0; bad_bad=0
+          for f in $(find arena-tests/bad -type f | sort); do
+            c=0; check "$f" || c=$?
+            # A decline is not a rejection: the arena scores it as ignored, so it is not a pass here.
+            if [ "$c" = 1 ]; then bad_ok=$((bad_ok+1)); else bad_bad=$((bad_bad+1)); echo "::error::must reject but came back $c: ${f#arena-tests/}"; fi
+          done
+
+          good_ok=0; good_bad=0
+          for f in $(find arena-tests/good -type f | sort); do
+            c=0; check "$f" || c=$?
+            if [ "$c" = 0 ]; then good_ok=$((good_ok+1)); else good_bad=$((good_bad+1)); echo "::error::must accept but came back $c: ${f#arena-tests/}"; fi
+          done
+
+          {
+            echo "## Lean Kernel Arena, published test suite"
+            echo
+            echo "| | result |"
+            echo "| --- | --- |"
+            echo "| \`bad/\`, must reject | **$bad_ok / $((bad_ok+bad_bad))** |"
+            echo "| \`good/\`, must accept | **$good_ok / $((good_ok+good_bad))** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "bad/  $bad_ok rejected, $bad_bad missed"
+          echo "good/ $good_ok accepted, $good_bad missed"
+          # A perfect score is the claim being made in packaging/arena/README.md, so anything less is red.
+          [ "$bad_bad" = 0 ] && [ "$good_bad" = 0 ]
+
+      - name: And this repo's own negative corpus, through the same binary
+        run: |
           fail=0
           for f in tests/fixtures/invalid/*.ndjson; do
-            c=0; check "$f" || c=$?
+            c=0
+            env -i "$PWD/arena-bin/tenet" check "$f" --quiet >/dev/null 2>&1 || c=$?
             case $c in
               1) echo "rejected: $f" ;;
-              2) echo "declined: $f" ;;
+              4) echo "declined: $f" ;;
               *) echo "::error::$f came back $c; every file in the negative corpus must be rejected or declined"; fail=1 ;;
             esac
           done
-          # 0 is accept, on a file that is fine.
-          if check tests/fixtures/Nat.add_succ.ndjson; then echo "accepted: Nat.add_succ"; else echo "::error::a valid export was rejected"; fail=1; fi
           exit $fail
 
   check-prelude:
