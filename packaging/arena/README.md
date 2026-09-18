@@ -52,11 +52,19 @@ Not verified, and so not claimed:
 
 - **`cedar`.** Never built here.
 - **Timing and memory on the arena's hardware.** Every number above is one laptop.
-- **The large corpora through the NDJSON reader rather than the `.olean` reader.** The four rows above
-  all came through the `.olean` path, and the arena feeds exports. The kernel is the same either way and
-  the reader is not, and the largest export Tenet had ever been run on was 794 MB against the arena's
-  5.2 GB `mathlib`. That gap is being closed by exporting all of Mathlib and checking it end to end
-  before the submission goes out.
+~~The large corpora through the NDJSON reader.~~ **Closed.** All of Mathlib was exported with
+`lean4export` and put through the reader the arena actually feeds:
+
+| | |
+| --- | --- |
+| export | 4.8 GB, 91,571,400 lines |
+| result | **611,878 declarations, 0 failed** |
+| time | 652s at `--jobs 4`, one laptop |
+| peak resident | **5.7 GB** |
+
+The memory is the number that was worth finding out, because a 17 GB laptop says nothing about an 8 GB
+runner. 5.7 GB is lower than this checker's own `.olean` path uses and sits inside the range already on
+the board, where the official kernel is 7.6 GB and lean4lean 9.3 GB.
 
 ## Two things to settle before submitting
 
