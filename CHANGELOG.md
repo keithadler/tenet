@@ -6,6 +6,14 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `OleanModule.DeprecationOf` reads `@[deprecated]`: the replacement name, the note and the version, which is
+  what a reader needs before acting on a lemma that Mathlib has moved on from.
+- `OleanModule.KeysInExtension` answers which declarations an environment extension has an entry for, without
+  decoding the payload, which is how to ask whether a declaration is protected, noncomputable, a class, or
+  carries any other name-keyed attribute. An extension whose entries are not name-keyed reports none rather
+  than guessing; the rule and why it is not stricter are in the method's own documentation.
+
+### Added
 - `tenet check` can **decline** a file instead of rejecting it: exit 4, printing `DECLINED`, when every
   failure is a refusal to vouch rather than a finding that something is wrong. Refusing to believe the output
   of compiled code (`Lean.reduceBool`, `Lean.reduceNat`) is the case that matters, and reporting it as a

@@ -16,6 +16,14 @@ description: |
 url: https://github.com/keithadler/tenet
 ref: main
 rev: REPLACE_WITH_REV
+version: "0.10.0"
+
+# Tenet checks declarations on several threads, so it has to say how many or the runner will
+# oversubscribe the machine and spoil everyone else's timings. Four, not twelve: measured on all of
+# Init, wall time goes 30.1s at one worker to 13.3s at four and only 11.0s at twelve, while summed
+# kernel time across workers rises from 26s to 65s. Past four it buys almost nothing and burns CPU
+# that other checkers are entitled to.
+threads: 4
 # No .NET in the arena's own environment, so Tenet brings its own to build with, the way lean4cobol
 # does. --self-contained matters: lka.py runs the `build` command through the nix shell but runs the
 # `run` command with a plain copy of the environment, so the binary has to carry its own runtime or it
@@ -29,7 +37,7 @@ run: |
   # `|| c=$?` rather than a bare call: the arena runs this through /bin/sh without -e, so a bare call
   # would be fine, but this is correct under either and the difference is invisible until it is not.
   c=0
-  ./arena-bin/tenet check "$IN" --quiet || c=$?
+  ./arena-bin/tenet check "$IN" --quiet --jobs 4 || c=$?
   case $c in
     0|1) exit $c ;;
     4)   exit 2 ;;

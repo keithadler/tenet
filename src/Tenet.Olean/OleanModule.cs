@@ -291,6 +291,7 @@ public sealed unsafe class OleanModule : IDisposable
     private Name[]? _extensionNames;
     private Dictionary<Name, SourceRange>? _sourceRanges;
     private Dictionary<Name, Deprecation>? _deprecations;
+    /// <summary>Extension name to the declarations it has entries for; absent when the entries are not name-keyed.</summary>
     private Dictionary<string, Name[]>? _extensionKeys;
     private volatile Dictionary<Name, string>? _docStrings; // assigned last: it is the "loaded" flag
 
@@ -418,9 +419,11 @@ public sealed unsafe class OleanModule : IDisposable
                             deprecated[key] = DecodeDeprecation(value);
                         }
                     }
-                    if (!keys.ContainsKey(which) && KeysOf(Field(pair, 1)) is Name[] k)
+                    // An extension can have entries in several parts (declRangeExt is in both .server and
+                    // .private), so the keys are the union across parts, as the decoded values are.
+                    if (KeysOf(Field(pair, 1)) is Name[] k)
                     {
-                        keys[which] = k;
+                        keys[which] = keys.TryGetValue(which, out Name[]? had) ? had.Concat(k).Distinct().ToArray() : k;
                     }
                 }
             }
@@ -433,16 +436,20 @@ public sealed unsafe class OleanModule : IDisposable
     }
 
     /// <summary>
-    /// The declarations an extension's entries are keyed by, or null when they are not keyed by a declaration of
-    /// this module. An entry of a name-keyed extension is a two-field constructor whose first field is the name;
-    /// an extension storing anything else will either fail to decode that way or yield names this module does not
-    /// declare, and both are answered with null rather than a guess.
+    /// The declarations an extension's entries are keyed by, or null when the entries are not name-keyed.
+    ///
+    /// An entry of a name-keyed extension is a constructor with at least two fields whose first is the name, so
+    /// every entry must decode that way, and at least one of the names must be a declaration this module stores.
+    /// Requiring all of them would be wrong: Lean records source ranges for names it realizes on demand and never
+    /// writes as constants. Requiring one rules out an extension whose entries merely happen to start with a
+    /// field that decodes as some name, which is what the payload of a simp set or an instance looks like.
     /// </summary>
     private Name[]? KeysOf(ulong arrayV)
     {
         try
         {
             var found = new List<Name>();
+            bool anyDeclared = false;
             ulong arr = Ptr(arrayV);
             long n = ArrayLength(arr);
             for (long i = 0; i < n; i++)
@@ -453,13 +460,10 @@ public sealed unsafe class OleanModule : IDisposable
                     return null;
                 }
                 Name key = DecodeName(Field(entry, 0));
-                if (!_constAddr.ContainsKey(key))
-                {
-                    return null;
-                }
+                anyDeclared |= _constAddr.ContainsKey(key);
                 found.Add(key);
             }
-            return found.ToArray();
+            return anyDeclared || found.Count == 0 ? found.ToArray() : null;
         }
         catch (OleanFormatException)
         {

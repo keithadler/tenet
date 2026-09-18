@@ -121,6 +121,43 @@ public class OleanTests
     }
 
     [Fact]
+    public void ExtensionKeysAgreeWithWhatTheExtensionDecoded()
+    {
+        string? lib = ToolchainLib();
+        if (lib is null)
+        {
+            return;
+        }
+        using var m = new OleanModule(Path.Combine(lib, "Init", "Prelude.olean"));
+
+        // The general key walk and the specific decoders must agree: every declaration the reader decoded a
+        // docstring for is a key of that extension, and nothing else is.
+        var withDoc = m.ConstantNames.Where(n => m.DocStringOf(n) is not null).ToHashSet();
+        Assert.Equal(withDoc.OrderBy(n => n.ToString(), StringComparer.Ordinal),
+                     m.KeysInExtension(Name.Of("Lean", "docStringExt")).Distinct().OrderBy(n => n.ToString(), StringComparer.Ordinal));
+
+        // Source ranges are a superset: Lean records them for names it realizes on demand and never stores as
+        // constants, so those are keys of the extension with no constant of this module to hang them on.
+        var withRange = m.ConstantNames.Where(n => m.SourceRangeOf(n) is not null).ToHashSet();
+        var rangeKeys = m.KeysInExtension(Name.Of("Lean", "declRangeExt")).ToHashSet();
+        Assert.True(withRange.Count > 100, $"only {withRange.Count} declarations have a source range");
+        Assert.Empty(withRange.Except(rangeKeys));
+
+        // An extension whose entries are not keyed by a name reports none rather than guessing, and so does one
+        // nothing wrote. Both are how a caller tells "no entries" from "a shape this does not read".
+        Assert.Empty(m.KeysInExtension(Name.Of("Lean", "Meta", "simpExtension")));
+        Assert.Empty(m.KeysInExtension(Name.Of("Lean", "Meta", "instanceExtension")));
+        Assert.Empty(m.KeysInExtension(Name.Of("No", "Such", "Extension")));
+
+        // One that is name-keyed and that nothing here decodes specially: the protected declarations.
+        Assert.NotEmpty(m.KeysInExtension(Name.Of("Lean", "protectedExt")));
+
+        // Lean's prelude deprecates nothing, and asking about a name that is not there is not an error.
+        Assert.Null(m.DeprecationOf(Name.Of("Nat")));
+        Assert.Null(m.DeprecationOf(Name.Of("No", "Such", "Declaration")));
+    }
+
+    [Fact]
     public void PreludeHeaderAndImports()
     {
         string? lib = ToolchainLib();
