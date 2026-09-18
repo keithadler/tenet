@@ -137,6 +137,34 @@ public class SafetyTests
         Assert.Contains("too deep", caught!.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// FirstDifference answers what one decoder produced against what another did, so it must not call two terms
+    /// equal when the kernel's own equality calls them different. It used to do exactly that for a let's nonDep
+    /// flag, and to answer "(equal)" for binder-only differences before the comparison naming them could run,
+    /// which left crosscheck unable to report either class of reader defect.
+    /// </summary>
+    [Fact]
+    public void FirstDifferenceSeesWhatKernelEqualityIgnoresAndWhatItDoesNot()
+    {
+        Expr letDep = Expr.Let(Name.Of("x"), NatE, Expr.NatLit(1), Expr.BVar(0), nonDep: false);
+        Expr letNon = Expr.Let(Name.Of("x"), NatE, Expr.NatLit(1), Expr.BVar(0), nonDep: true);
+        Assert.False(letDep.Equals(letNon));   // the kernel's equality distinguishes the flag
+        Assert.Contains("nonDep", ExprOps.FirstDifference(letDep, letNon), StringComparison.Ordinal);
+
+        Expr piA = Expr.Pi(Name.Of("a"), NatE, NatE);
+        Expr piB = Expr.Pi(Name.Of("b"), NatE, NatE);
+        Assert.True(piA.Equals(piB));          // the kernel ignores binder names, and must keep ignoring them
+        Assert.False(Expr.EqStrict(piA, piB));
+        Assert.Contains("binder", ExprOps.FirstDifference(piA, piB), StringComparison.Ordinal);
+
+        Expr impl = Expr.Pi(Name.Of("a"), NatE, NatE, BinderInfo.Implicit);
+        Assert.True(piA.Equals(impl));
+        Assert.Contains("binder", ExprOps.FirstDifference(piA, impl), StringComparison.Ordinal);
+
+        // And nothing is invented where nothing differs.
+        Assert.Equal("(equal)", ExprOps.FirstDifference(piA, Expr.Pi(Name.Of("a"), NatE, NatE)));
+    }
+
     /// <summary>Build f (f (f ... x)) nested in the argument position, which is where each level costs a frame.</summary>
     private static Expr DeepTerm(int depth)
     {

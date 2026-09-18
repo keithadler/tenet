@@ -384,8 +384,11 @@ internal static class Program
         // Classify, because not every difference means the same thing. A binder's name and its implicit/explicit
         // marking are elaboration metadata that the kernel ignores entirely, so they cannot change a verdict. Two
         // private auxiliaries with the same tail and different module prefixes are the same declaration realized in
-        // different places. Anything else would be a reader defect.
+        // different places. A let's nonDep flag is normalized to false by lean4export on purpose, to keep two
+        // expressions that differ only in that hint from taking two indices in its table, so a disagreement there
+        // is the exporter discarding it and not this reader inventing it. Anything else would be a reader defect.
         var cosmetic = new List<(Name, string)>();
+        var normalized = new List<(Name, string)>();
         var realization = new List<(Name, string)>();
         var substantive = new List<(Name, string)>();
         foreach ((Name n, string what) in differences)
@@ -393,6 +396,10 @@ internal static class Program
             if (what.Contains(": binder ", StringComparison.Ordinal))
             {
                 cosmetic.Add((n, what));
+            }
+            else if (what.Contains(": let nonDep ", StringComparison.Ordinal))
+            {
+                normalized.Add((n, what));
             }
             else if (SamePrivateTail(what))
             {
@@ -415,7 +422,8 @@ internal static class Program
         {
             Console.WriteLine(Json(
                 ("command", "crosscheck"), ("modules", files.Count), ("compared", compared),
-                ("identical", agreed), ("cosmetic", cosmetic.Count), ("realizedElsewhere", realization.Count),
+                ("identical", agreed), ("cosmetic", cosmetic.Count), ("normalizedByExporter", normalized.Count),
+                ("realizedElsewhere", realization.Count),
                 ("substantive", substantive.Count), ("notInExport", absent),
                 ("seconds", Math.Round(sw.Elapsed.TotalSeconds, 1)),
                 ("ok", substantive.Count == 0)));
@@ -424,10 +432,11 @@ internal static class Program
         Console.WriteLine($"crosscheck: {files.Count} module{(files.Count == 1 ? "" : "s")}, {compared} constants compared against the export in {sw.Elapsed.TotalSeconds:F1}s");
         Console.WriteLine($"  identical:                          {agreed}");
         Console.WriteLine($"  binder names or implicitness only:  {cosmetic.Count}   (elaboration metadata; the kernel ignores it)");
+        Console.WriteLine($"  let nonDep hint only:               {normalized.Count}   (lean4export normalizes it to false on purpose)");
         Console.WriteLine($"  same auxiliary, realized elsewhere: {realization.Count}   (a private name differing only in its module prefix)");
         Console.WriteLine($"  substantive:                        {substantive.Count}");
         Console.WriteLine($"  not in the export:                  {absent}   (the exporter omits unsafe and some compiler-generated declarations)");
-        foreach ((Name n, string what) in substantive.Concat(realization).Concat(cosmetic).Take(show))
+        foreach ((Name n, string what) in substantive.Concat(realization).Concat(normalized).Concat(cosmetic).Take(show))
         {
             Console.WriteLine();
             Console.WriteLine($"  {n}: {what}");

@@ -92,9 +92,58 @@ drops a hypothesis yields a weaker theorem, and both kernels accept it, honestly
 same reason. `tenet crosscheck` covers that path by comparing every constant the reader decodes
 against the same constant as `lean4export` wrote it.
 
+Crosscheck therefore carries the whole weight of the claim that the reader is faithful, and
+until `tools/readercheck/readercheck.sh` existed it had only ever been given undamaged input,
+where it answers "no differences" whether or not it is capable of seeing one. Readercheck
+damages the export one mutation kind at a time and asks whether crosscheck says so. Any kind it
+misses is a class of reader defect that would go unreported.
+
+The first run found two, both in `ExprOps.FirstDifference`:
+
+- It began with `a.Equals(b)`, which ignores binder names and binder infos the way the kernel
+  does. A pair differing only in binder metadata was answered "(equal)" before the comparison
+  that names the difference could run, so the "binder names or implicitness only" line that
+  crosscheck prints could never be reached by a binder-only difference. It now uses
+  `Expr.EqStrict`, which compares that metadata, because this is a reader being checked against
+  a reference and not a proof against a type.
+- A `let`'s `nonDep` flag was ignored outright, with a comment saying so. `Expr.Equals`
+  distinguishes it, so `FirstDifference` was answering "(equal)" about terms the kernel's own
+  equality calls different.
+
+Fixing both surfaced 619 binder differences and 18 `nonDep` differences on an undamaged
+`Init.Prelude`, all of them previously invisible. The `nonDep` ones are not a reader defect:
+`lean4export` normalizes the flag to `false` on purpose, so that two expressions differing only
+in that hint do not take two indices in its table (`Export.lean`, `removeMData`). Tenet's reader
+preserves what the `.olean` holds, which is the stricter and more faithful behavior, so
+crosscheck now reports these in their own line rather than counting them as identical.
+
+Readercheck exercises 28 of the 29 mutation kinds; `drop-safety` cannot apply, because
+`lean4export` omits unsafe declarations entirely and no export contains one. A mutation is only
+visible if it lands in a declaration the target `.olean` actually holds, so give it the whole
+module tree (`$LEAN_SYSROOT/lib/lean/Init`) rather than a single module when the export covers
+an import closure.
+
+
+Re-measuring `Init` with the strict comparison shows how blind the old one was, and that the
+answer that matters did not move:
+
+| `Init`, 652 modules | Compared | Cosmetic | nonDep | Realized elsewhere | Substantive |
+| --- | --- | --- | --- | --- | --- |
+| before the fix | 59,720 | 41 | not visible | 16 | **0** |
+| after the fix | 59,477 | 18,499 | 1,589 | 1 | **0** |
+
+Eighteen thousand binder differences were there the whole time and could not be reported. None
+of them can change a verdict, which is why they are cosmetic, but a check that cannot see them
+also could not have seen a reader that got them wrong. The substantive column is still zero,
+now under a comparison strong enough for that to mean something. (The two rows are different
+Lean versions, hence the small difference in constants compared.)
+
+The Mathlib rows below still carry the old, weaker measurement. Their substantive column is
+unaffected, since nothing in it was hidden by either defect, but read the cosmetic column as an
+undercount.
+
 | Export | Compared | Cosmetic | Realized elsewhere | Substantive |
 | --- | --- | --- | --- | --- |
-| `Init` (648 modules) | 59,720 | 41 | 16 | **0** |
 | `Analysis.SpecialFunctions.Trigonometric.Basic` | 153,687 | 64 | 6 | **0** |
 | `CategoryTheory.Limits.Shapes.Products` | 29,113 | 30 | 0 | **0** |
 | `LinearAlgebra.Matrix.Determinant.Basic` | 111,992 | 59 | 8 | **0** |

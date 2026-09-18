@@ -79,13 +79,17 @@ public static class ExprOps
     public static string FirstDifference(Expr a, Expr b, string path = "")
     {
         StackGuard.Check();
-        if (a.Equals(b))
+        // Strict, because this reports what one decoder produced against what another did. Expr.Equals ignores
+        // binder names and binder infos the way the kernel does, and using it here made the binder case below
+        // unreachable: a pair differing only in binder metadata was answered "(equal)" before the comparison
+        // that names the difference ever ran.
+        if (Expr.EqStrict(a, b))
         {
             return "(equal)";
         }
         if (a is LetExpr && b is LetExpr)
         {
-            // fall through to the field-wise comparison below, which ignores nonDep
+            // fall through to the field-wise comparison below, which handles nonDep itself
         }
         else if (a.Kind != b.Kind)
         {
@@ -109,6 +113,14 @@ public static class ExprOps
                 }
             case LetExpr x when b is LetExpr y:
                 {
+                    if (x.NonDep != y.NonDep)
+                    {
+                        return $"{path}: let nonDep {x.NonDep} vs {y.NonDep}";
+                    }
+                    if (!x.Name.Equals(y.Name))
+                    {
+                        return $"{path}: binder {x.Name} vs {y.Name}";
+                    }
                     string t = FirstDifference(x.Type, y.Type, path + "/type");
                     if (t != "(equal)")
                     {

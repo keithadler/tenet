@@ -70,6 +70,17 @@ jobs:
           dotnet run --no-build -c Release --project src/Tenet.Cli -- names "$LIB" --all add_comm \
             | grep -qx "Nat.add_comm"
 
+      - name: Does crosscheck notice a damaged declaration?
+        run: |
+          cd tools/leancheck
+          LIB="$(lake env printenv LEAN_SYSROOT)/lib/lean"
+          cd ../..
+          dotnet build -c Release tools/Tenet.DiffTest
+          # Crosscheck carries the whole claim that the .olean reader is faithful, because comparing verdicts
+          # cannot catch a reader bug. Until this ran, it had only ever been given undamaged input, where it
+          # says "no differences" whether or not it is able to see one.
+          tools/readercheck/readercheck.sh exports/Init.Prelude.ndjson "$LIB/Init/Prelude.olean"
+
       - name: Build the Lean kernel oracle
         run: |
           cd tools/leancheck && lake build

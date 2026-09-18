@@ -262,10 +262,24 @@ public abstract class Expr : IEquatable<Expr>
         return fn.Apply(a, b);
     }
 
+    /// <summary>
+    /// Structural equality that also compares binder names and binder infos. The kernel ignores those, which is
+    /// why <see cref="Eq"/> does; a check that one decoder reproduced what another wrote must not, because a
+    /// reader is being tested against a reference and not a proof against a type.
+    /// </summary>
+    public static bool EqStrict(Expr a, Expr b)
+    {
+        var fn = new EqFn { Strict = true };
+        return fn.Apply(a, b);
+    }
+
     private struct EqFn
     {
         private HashSet<(Expr, Expr)>? _cache;
         private int _steps;
+
+        /// <summary>Also compare binder names and binder infos, which the kernel ignores.</summary>
+        public bool Strict { get; init; }
 
         /// <summary>
         /// Recurse into a child off the spine. Every caller of this is a real stack frame, unlike the spine, which
@@ -342,6 +356,10 @@ public abstract class Expr : IEquatable<Expr>
                     case BindingExpr x:
                         {
                             var y = (BindingExpr)b;
+                            if (Strict && (!x.BinderName.Equals(y.BinderName) || x.Info != y.Info))
+                            {
+                                return false;
+                            }
                             if (!Nested(x.Domain, y.Domain))
                             {
                                 return false;

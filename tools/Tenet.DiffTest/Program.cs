@@ -29,7 +29,9 @@ internal static class Program
           --kinds      restrict to these mutation kinds, comma separated (see --list-kinds)
           --tail N     only mutate within the last N lines, where a small appended corpus lives
           --list-kinds print the available mutation kinds and exit
-          --timeout    kill a checker run after this many seconds and count it as incomplete (default 1800)
+          --timeout    kill a checker run after this many seconds and count it as incomplete (default 90)
+          --mutate-only write the variants and stop, without running either checker. Feeds a harness that asks a
+                       different question, such as whether `tenet crosscheck` notices a damaged declaration.
         """;
 
     private sealed record Verdicts(HashSet<string> Failed, HashSet<string> All, bool Incomplete, string Raw);
@@ -39,7 +41,7 @@ internal static class Program
         string? export = null, tenet = null, oracle = null, outDir = null;
         int variants = 20, mutations = 12;
         int seed = Environment.TickCount;
-        bool keep = false;
+        bool keep = false, mutateOnly = false;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -52,6 +54,7 @@ internal static class Program
                 case "--seed": seed = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--out": outDir = args[++i]; break;
                 case "--keep": keep = true; break;
+                case "--mutate-only": mutateOnly = true; break;
                 case "--timeout": TimeoutSeconds = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--kinds": Mutator.Restrict = new HashSet<string>(args[++i].Split(','), StringComparer.Ordinal); break;
                 case "--tail": Mutator.TailLines = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
@@ -64,7 +67,7 @@ internal static class Program
                 default: Console.Error.WriteLine(Usage); return 2;
             }
         }
-        if (export is null || tenet is null || oracle is null)
+        if (export is null || (!mutateOnly && (tenet is null || oracle is null)))
         {
             Console.Error.WriteLine(Usage);
             return 2;
@@ -75,6 +78,29 @@ internal static class Program
 
         string[] lines = File.ReadAllLines(export);
         var rng = new Random(seed);
+
+        if (mutateOnly)
+        {
+            for (int v = 0; v < variants; v++)
+            {
+                string[] mutated = (string[])lines.Clone();
+                var applied = new List<string>();
+                int attempts = 0;
+                while (applied.Count < mutations && attempts++ < mutations * 20)
+                {
+                    string? kind = Mutator.Apply(mutated, rng);
+                    if (kind is not null) applied.Add(kind);
+                }
+                string p = Path.Combine(outDir, $"variant-{v:D3}.ndjson");
+                File.WriteAllLines(p, mutated);
+                Console.WriteLine($"{p}\t{string.Join(",", applied)}");
+            }
+            return 0;
+        }
+
+        // Past the mutate-only return, both checkers are present.
+        ArgumentNullException.ThrowIfNull(tenet);
+        ArgumentNullException.ThrowIfNull(oracle);
 
         // Baseline: both must accept the untouched export.
         Console.WriteLine("baseline...");
