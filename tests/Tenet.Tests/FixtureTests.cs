@@ -173,14 +173,64 @@ public class ReaderRobustnessTests
         Assert.NotNull(r.Environment.Find(Name.Of("Nat", "rec")));
     }
 
-    [Fact]
-    public void OutOfSequenceIndexIsAFormatError()
+    private const string Header = "{\"meta\":{\"exporter\":{\"name\":\"x\",\"version\":\"3.1.0\"},\"lean\":{\"githash\":\"\",\"version\":\"\"},\"format\":{\"version\":\"3.1.0\"}}}\n";
+
+    private static ExportFile ReadText(string body)
     {
-        string text = "{\"meta\":{\"exporter\":{\"name\":\"x\",\"version\":\"3.1.0\"},\"lean\":{\"githash\":\"\",\"version\":\"\"},\"format\":{\"version\":\"3.1.0\"}}}\n"
-                    + "{\"in\":2,\"str\":{\"pre\":0,\"str\":\"Nat\"}}\n";
-        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text));
-        var ex = Assert.Throws<ExportFormatException>(() => NdjsonReader.Read(ms));
-        Assert.Contains("out of sequence", ex.Message, StringComparison.Ordinal);
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(Header + body));
+        return NdjsonReader.Read(ms);
+    }
+
+    /// <summary>
+    /// The format numbers names, levels and expressions; it does not require the numbers to be dense or to
+    /// arrive in order. Every real exporter emits them densely and in order, which is how requiring that went
+    /// unnoticed, and this test used to assert the requirement as though it were the rule. The arena's
+    /// `sparse-name-index` and `level-index-out-of-order` are exports a checker must accept, and Tenet rejected
+    /// both.
+    /// </summary>
+    [Fact]
+    public void SparseAndOutOfOrderIndicesAreLegal()
+    {
+        // A gap before the entry, which no earlier reader position could have predicted.
+        ExportFile sparse = ReadText("{\"in\":4,\"str\":{\"pre\":0,\"str\":\"Nat\"}}\n");
+        Assert.Equal(Name.Of("Nat"), sparse.Names[4]);
+
+        // A level defined after the one that refers to it, which is legal because the reference resolves by
+        // the time it is used.
+        ExportFile ooo = ReadText("{\"il\":2,\"succ\":0}\n{\"il\":1,\"succ\":2}\n");
+        Assert.NotNull(ooo.Levels[1]);
+        Assert.NotNull(ooo.Levels[2]);
+    }
+
+    /// <summary>
+    /// Allowing gaps must not turn a reference to a gap into something the reader hands on. Before the second
+    /// half of this was in place, an axiom naming an index nobody had defined reached the checker with a null
+    /// name and took the process down with an ArgumentNullException rather than an export format error.
+    /// </summary>
+    [Fact]
+    public void AReferenceToAnIndexNobodyDefinedIsAFormatError()
+    {
+        var ex = Assert.Throws<ExportFormatException>(() => ReadText(
+            "{\"in\":5,\"str\":{\"pre\":0,\"str\":\"foo\"}}\n"
+            + "{\"ie\":0,\"sort\":0}\n"
+            + "{\"axiom\":{\"isUnsafe\":false,\"levelParams\":[],\"name\":3,\"type\":0}}\n"));
+        Assert.Contains("undefined name 3", ex.Message, StringComparison.Ordinal);
+
+        var ex2 = Assert.Throws<ExportFormatException>(() => ReadText(
+            "{\"in\":1,\"str\":{\"pre\":0,\"str\":\"foo\"}}\n"
+            + "{\"ie\":7,\"sort\":0}\n"
+            + "{\"axiom\":{\"isUnsafe\":false,\"levelParams\":[],\"name\":1,\"type\":2}}\n"));
+        Assert.Contains("undefined expression 2", ex2.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Filling a gap is fine; defining the same index twice is a file that contradicts itself.</summary>
+    [Fact]
+    public void AnIndexDefinedTwiceIsAFormatError()
+    {
+        var ex = Assert.Throws<ExportFormatException>(() => ReadText(
+            "{\"in\":1,\"str\":{\"pre\":0,\"str\":\"foo\"}}\n"
+            + "{\"in\":1,\"str\":{\"pre\":0,\"str\":\"bar\"}}\n"));
+        Assert.Contains("already defined", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

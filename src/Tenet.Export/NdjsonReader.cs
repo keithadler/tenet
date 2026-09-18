@@ -513,7 +513,7 @@ public static class NdjsonReader
 
     private static Name NameAt(ExportFile file, int i, long lineNo)
     {
-        if (i < 0 || i >= file.Names.Count)
+        if (i < 0 || i >= file.Names.Count || file.Names[i] is null)
         {
             throw new ExportFormatException(lineNo, $"reference to undefined name {i}");
         }
@@ -522,7 +522,7 @@ public static class NdjsonReader
 
     private static Level LevelAt(ExportFile file, int i, long lineNo)
     {
-        if (i < 0 || i >= file.Levels.Count)
+        if (i < 0 || i >= file.Levels.Count || file.Levels[i] is null)
         {
             throw new ExportFormatException(lineNo, $"reference to undefined level {i}");
         }
@@ -531,7 +531,7 @@ public static class NdjsonReader
 
     private static Expr ExprAt(ExportFile file, int i, long lineNo)
     {
-        if (i < 0 || i >= file.Exprs.Count)
+        if (i < 0 || i >= file.Exprs.Count || file.Exprs[i] is null)
         {
             throw new ExportFormatException(lineNo, $"reference to undefined expression {i}");
         }
@@ -567,13 +567,37 @@ public static class NdjsonReader
         return ParseDecl(file, root, lineNo);
     }
 
-    private static void AddAt<T>(List<T> table, int idx, T item, long lineNo, string what)
+    /// <summary>
+    /// Store an entry at its stated index. The format numbers names, levels and expressions but does not require
+    /// the numbers to be dense or to arrive in order, and real exporters happen to emit them densely and in
+    /// order, which is why requiring that went unnoticed. A gap is left as a hole; referring to one is still an
+    /// error, and so is defining the same index twice.
+    /// </summary>
+    private static void AddAt<T>(List<T> table, int idx, T item, long lineNo, string what) where T : class
     {
-        if (idx != table.Count)
+        if (idx < 0)
         {
-            throw new ExportFormatException(lineNo, $"{what} index {idx} is out of sequence (expected {table.Count})");
+            throw new ExportFormatException(lineNo, $"{what} index {idx} is negative");
         }
-        table.Add(item);
+        if (idx == table.Count)
+        {
+            table.Add(item);
+            return;
+        }
+        if (idx > table.Count)
+        {
+            while (table.Count < idx)
+            {
+                table.Add(null!);
+            }
+            table.Add(item);
+            return;
+        }
+        if (table[idx] is not null)
+        {
+            throw new ExportFormatException(lineNo, $"{what} index {idx} is already defined");
+        }
+        table[idx] = item;
     }
 
     private static void ParseMeta(ExportFile file, JsonElement meta, long lineNo)
@@ -596,7 +620,7 @@ public static class NdjsonReader
     private static Name NameAt(ExportFile file, JsonElement idx, long lineNo)
     {
         int i = idx.GetInt32();
-        if (i < 0 || i >= file.Names.Count)
+        if (i < 0 || i >= file.Names.Count || file.Names[i] is null)
         {
             throw new ExportFormatException(lineNo, $"reference to undefined name {i}");
         }
@@ -606,7 +630,7 @@ public static class NdjsonReader
     private static Level LevelAt(ExportFile file, JsonElement idx, long lineNo)
     {
         int i = idx.GetInt32();
-        if (i < 0 || i >= file.Levels.Count)
+        if (i < 0 || i >= file.Levels.Count || file.Levels[i] is null)
         {
             throw new ExportFormatException(lineNo, $"reference to undefined level {i}");
         }
@@ -616,7 +640,7 @@ public static class NdjsonReader
     private static Expr ExprAt(ExportFile file, JsonElement idx, long lineNo)
     {
         int i = idx.GetInt32();
-        if (i < 0 || i >= file.Exprs.Count)
+        if (i < 0 || i >= file.Exprs.Count || file.Exprs[i] is null)
         {
             throw new ExportFormatException(lineNo, $"reference to undefined expression {i}");
         }
