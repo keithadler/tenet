@@ -45,7 +45,7 @@ jobs:
           # --low-memory switches to the workstation collector, which uses roughly a third of the
           # memory and takes longer. The server collector peaks near 9 GB on Mathlib, which is
           # more headroom than a hosted runner reliably has.
-          dotnet run --no-build -c Release --project src/Tenet.Cli -- \
+          dotnet run --no-build -c Release -f net10.0 --project src/Tenet.Cli -- \
             check "$MATHLIB/.lake/build/lib/lean/Mathlib.olean" --all --quiet --low-memory \
             --report "$RUNNER_TEMP/mathlib.json"
 

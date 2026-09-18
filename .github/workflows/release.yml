@@ -32,10 +32,11 @@ jobs:
         # That is the difference between "install an SDK first" and "download and run".
         run: |
           for rid in linux-x64 osx-arm64 win-x64; do
-            dotnet publish src/Tenet.Cli -c Release -r "$rid" -p:PublishAot=true \
+            # -f is required now that the project multi-targets; the standalone binary is the newer runtime.
+            dotnet publish src/Tenet.Cli -c Release -f net10.0 -r "$rid" -p:PublishAot=true \
               -o "artifacts/$rid" 2>/dev/null || {
                 echo "AOT unavailable for $rid on this runner; falling back to self-contained"
-                dotnet publish src/Tenet.Cli -c Release -r "$rid" --self-contained true \
+                dotnet publish src/Tenet.Cli -c Release -f net10.0 -r "$rid" --self-contained true \
                   -p:PublishSingleFile=true -o "artifacts/$rid"
               }
             ( cd "artifacts/$rid" && tar czf "../tenet-${GITHUB_REF_NAME}-$rid.tar.gz" tenet* 2>/dev/null || true )

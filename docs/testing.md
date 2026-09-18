@@ -27,7 +27,7 @@ lake env .lake/build/bin/lean4export Init         > ~/tenet-exports/Init.ndjson
 Then either run the checker directly:
 
 ```bash
-dotnet run -c Release --project src/Tenet.Cli -- check ~/tenet-exports/Init.Prelude.ndjson
+dotnet run -c Release -f net10.0 --project src/Tenet.Cli -- check ~/tenet-exports/Init.Prelude.ndjson
 ```
 
 or let the integration tests pick them up:

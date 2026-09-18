@@ -279,14 +279,21 @@ from nuget.org rather than by project reference, and CI builds it that way, so i
 standing check that what was published is still usable.
 
 
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+Building requires the [.NET 10 SDK](https://dotnet.microsoft.com/download). What gets built runs
+on .NET 8 or later: every project targets `net8.0` and `net10.0`, so the packages carry both and
+you can reference them from a project that has not moved off .NET 8. Because there are two
+targets, `dotnet run` and `dotnet publish` need `-f` to say which one.
 
 ```bash
 git clone https://github.com/keithadler/tenet
 cd tenet
 dotnet build -c Release
-dotnet run -c Release --project src/Tenet.Cli -- check path/to/export.ndjson
+dotnet run -c Release -f net10.0 --project src/Tenet.Cli -- check path/to/export.ndjson
 ```
+
+The two builds decide the same thing, and CI runs the test suite and the CLI on both. .NET 10 is
+the faster of them: checking all of `Init` takes 12.5s there against 16.5s on .NET 8 on the same
+machine, so prefer it when you have the choice. The published standalone binaries are .NET 10.
 
 Or as a global tool: `dotnet tool install -g tenet` (see **Install** above if it cannot find
 .NET afterwards).
