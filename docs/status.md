@@ -1,6 +1,40 @@
 # Status
 
-Updated 2026-09-08.
+Updated 2026-09-18.
+
+## What the evidence is, in one place
+
+Tenet is an independent implementation, so the question is never whether it runs but whether its answers can be
+trusted. Four kinds of evidence, in descending order of what they are worth.
+
+**A checker that carries a proof agrees with it.** con-leche's `no_False_declaration` is a machine-checked theorem
+that it never accepts a file declaring a theorem of type `False`. Across five Mathlib slices, 312,904 distinct
+declarations, both checkers accepted every file in full. So Tenet accepted nothing in those corpora that would
+have made a proved checker reject. One side of that rests on a proof rather than on having been run a lot, which
+no amount of agreement between two tested implementations reaches. It is a statement about those corpora and not
+about the kernel: see [testing.md](testing.md) for the four things it does not license.
+
+**It is written down against the reference, rule by rule.** [specification.md](specification.md) gives all 40
+rules, the judgment each implements, the method here and the function in Lean's `src/kernel/type_checker.cpp`, so
+a reader can audit the correspondence instead of believing it. [divergences.md](divergences.md) names every place
+Tenet decides differently on purpose. A test keeps the first complete and the build fails without it.
+
+**It has been attacked, not only fuzzed.** The mutation harness breaks valid exports and has found two real Lean
+kernel bugs. It could not have found either of the two soundness bugs found in Tenet itself, which came from files
+written to exploit what the checker assumes rather than from damaging valid ones. `HostileTests` covers the whole
+trust surface, which is enumerable: every name the kernel hardcodes. See [testing.md](testing.md).
+
+**The coverage is measured rather than assumed.** `tenet check --rules` counts each of the 40 rules and reports
+which a run never reached. Across all of `Init`, 36 of 40 fire, and `Quot.ind` fires once in 64,814 declarations.
+Passing a large corpus is strong evidence about some rules and almost none about others, and nothing in a green
+run distinguishes them.
+
+Two soundness bugs were found in Tenet on 2026-09-17, both by reading what other checkers check rather than by
+running anything: a numeric literal was given the type `Nat` without asking the environment what `Nat` is, which
+let a file prove `False` with no axioms; and fifteen arithmetic operations were computed from the name alone,
+which let a file make `2 + 2 = 4` and `2 + 2 = 2` swap places. Both are fixed, both have regression tests that
+reproduce them with the defense off, and the class is now covered systematically.
+
 
 | Export | Declarations | Result |
 | --- | --- | --- |
