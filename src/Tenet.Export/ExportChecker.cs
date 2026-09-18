@@ -5,7 +5,12 @@ using Environment = Tenet.Kernel.Environment;
 namespace Tenet.Export;
 
 /// <summary>A declaration that failed to check, with the kernel's message.</summary>
-public sealed record CheckFailure(Name Name, string Kind, string Message, TimeSpan Elapsed, string? RaisedAt = null);
+/// <summary>
+/// A declaration the checker would not accept. <paramref name="Unsupported"/> separates the two reasons that
+/// look alike from outside: the proof is wrong, or this checker will not vouch for it. Refusing to believe the
+/// output of compiled code is the second, and reporting it as the first claims something untrue about the file.
+/// </summary>
+public sealed record CheckFailure(Name Name, string Kind, string Message, TimeSpan Elapsed, string? RaisedAt = null, bool Unsupported = false);
 
 /// <summary>Progress callback data.</summary>
 public sealed record CheckProgress(int Index, int Total, Name Current, int Failed, TimeSpan Elapsed);
@@ -97,7 +102,7 @@ public static class ExportChecker
                 }
                 catch (KernelException e)
                 {
-                    result.Failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed, e.RaisedAt));
+                    result.Failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed, e.RaisedAt, e is UnsupportedException));
                     if (!options.ContinueOnError)
                     {
                         break;
@@ -395,7 +400,7 @@ public static class ExportChecker
             {
                 lock (tally.Sync)
                 {
-                    tally.Failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed, e.RaisedAt));
+                    tally.Failures.Add(new CheckFailure(decl.DisplayName, decl.Kind, e.Message, sw.Elapsed, e.RaisedAt, e is UnsupportedException));
                 }
                 if (!options.ContinueOnError)
                 {

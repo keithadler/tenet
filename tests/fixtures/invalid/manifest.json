@@ -15,63 +15,72 @@
       "why": "Declares its own Nat as a def of type Prop whose value is False, then boom : False := 3. The literal's type was asserted rather than derived, so 3 became a proof of False in a file with no axioms and no sorry.",
       "rejects": "boom",
       "defenseOff": "TENET_NO_PRIMITIVE_CHECK",
-      "found": "Real bug, fixed in 0.9.0. Found by reading lean4lean's divergences file; not reachable by mutation."
+      "found": "Real bug, fixed in 0.9.0. Found by reading lean4lean's divergences file; not reachable by mutation.",
+      "outcome": "rejected"
     },
     {
       "file": "primitive-body.ndjson",
       "why": "Declares Nat.add at the right type with a body returning its first argument, then bad : P 4 := h where h : P (Nat.add 2 2). Taking the arithmetic shortcut on the name makes Nat.add 2 2 reduce to 4, which the body it was given does not.",
       "rejects": "bad",
       "defenseOff": "TENET_NO_PRIMITIVE_CHECK",
-      "found": "Real bug, fixed in 0.9.0. Found by reading lean4lean's divergences file; not reachable by mutation."
+      "found": "Real bug, fixed in 0.9.0. Found by reading lean4lean's divergences file; not reachable by mutation.",
+      "outcome": "rejected"
     },
     {
       "file": "self-proof.ndjson",
       "why": "theorem selfProof : forall (p : Prop), p := selfProof. A theorem proved by itself proves anything, so this is a proof of False with no axioms. Accepted before 0.10.0 because the checker adds every declaration to the environment up front so workers can check out of order, and the ordering guard rejected only constants declared LATER, never a declaration referring to itself.",
       "rejects": "selfProof",
       "defenseOff": null,
-      "found": "Real bug, found by test 014 of the Lean Kernel Arena's tutorial suite. Its own negative corpus of 8 files, its mutation harness and both other checkers it is compared against had all missed it."
+      "found": "Real bug, found by test 014 of the Lean Kernel Arena's tutorial suite. Its own negative corpus of 8 files, its mutation harness and both other checkers it is compared against had all missed it.",
+      "outcome": "rejected"
     },
     {
       "file": "type-in-type.ndjson",
       "why": "def typeInType : Type := Type. Universes are what stop Girard's paradox, so a kernel that accepts Type : Type is inconsistent outright.",
       "rejects": "typeInType",
       "defenseOff": null,
-      "found": "Classic. Here so the guard is exercised by a file rather than only by construction in C#."
+      "found": "Classic. Here so the guard is exercised by a file rather than only by construction in C#.",
+      "outcome": "rejected"
     },
     {
       "file": "nonpositive.ndjson",
       "why": "inductive Bad with mk : (Bad -> False) -> Bad. A non-positive occurrence makes the type its own negation, which yields False; the strict positivity check is what forbids it.",
       "rejects": "Bad",
       "defenseOff": null,
-      "found": "Classic. The oldest known route to inconsistency in a type theory with inductives."
+      "found": "Classic. The oldest known route to inconsistency in a type theory with inductives.",
+      "outcome": "rejected"
     },
     {
       "file": "large-elimination.ndjson",
       "why": "S : Prop carries data (mk : A -> S) and the file supplies a recursor with a universe parameter, eliminating into Sort u. With proof irrelevance that is inconsistent: two proofs are equal, so anything read out of them must be too.",
       "rejects": "S",
       "defenseOff": null,
-      "found": "Classic. Tenet derives the recursor itself and rejects the file's, which claims [u] where the kernel's has []."
+      "found": "Classic. Tenet derives the recursor itself and rejects the file's, which claims [u] where the kernel's has [].",
+      "outcome": "rejected"
     },
     {
       "file": "swapped-proof.ndjson",
       "why": "theorem bad : Q := hp, where hp : P. The canonical tampered proof: a valid term of the wrong type.",
       "rejects": "bad",
       "defenseOff": null,
-      "found": "The single-file form of the prelude-wide tamper campaign in LargeExportTests."
+      "found": "The single-file form of the prelude-wide tamper campaign in LargeExportTests.",
+      "outcome": "rejected"
     },
     {
       "file": "reserved-namespace.ndjson",
       "why": "Declares _nested.squatter, occupying a name the kernel derives auxiliary types into when eliminating a nested inductive.",
       "rejects": "_nested.squatter",
       "defenseOff": null,
-      "found": "A divergence from lean4lean, which checks only constructor types. Lean reserves the whole namespace and so does Tenet."
+      "found": "A divergence from lean4lean, which checks only constructor types. Lean reserves the whole namespace and so does Tenet.",
+      "outcome": "rejected"
     },
     {
       "file": "compiled-code.ndjson",
-      "why": "bad : P true := h, where h : P (Lean.reduceBool b). Accepting it means believing the output of a compiled program the checker cannot see.",
+      "why": "bad : P true := h, where h : P (Lean.reduceBool b). Accepting it means believing the output of a compiled program the checker cannot see. Tenet declines rather than rejects it: it is not claiming the proof is invalid, only that it will not vouch for something it cannot see.",
       "rejects": "bad",
       "defenseOff": null,
-      "found": "Tenet refuses rather than reducing, so this is a rejection and not a reduction. Also pins that the refusal is reported as a failed declaration rather than crashing the run."
+      "found": "Tenet refuses rather than reducing, so this is a rejection and not a reduction. Also pins that the refusal is reported as a failed declaration rather than crashing the run.",
+      "outcome": "declined"
     }
   ]
 }

@@ -20,7 +20,7 @@ namespace Tenet.Tests;
 /// </summary>
 public class NegativeCorpusTests
 {
-    private sealed record Case(string File, string Why, string Rejects, string? DefenseOff, string Found);
+    private sealed record Case(string File, string Why, string Rejects, string? DefenseOff, string Found, string Outcome);
 
     private static string? FindCorpus()
     {
@@ -48,7 +48,8 @@ public class NegativeCorpusTests
                 c.GetProperty("why").GetString()!,
                 c.GetProperty("rejects").GetString()!,
                 c.TryGetProperty("defenseOff", out JsonElement d) ? d.GetString() : null,
-                c.GetProperty("found").GetString()!));
+                c.GetProperty("found").GetString()!,
+                c.GetProperty("outcome").GetString()!));
         }
         return cases;
     }
@@ -74,6 +75,13 @@ public class NegativeCorpusTests
             // not testing what it says it tests.
             Assert.False(r.Success, $"{c.File} was accepted; it must be rejected ({c.Why})");
             Assert.Contains(r.Failures, f => f.Name.ToString() == c.Rejects);
+
+            // Rejecting and declining look alike from outside and mean different things. A case marked
+            // declined must be refused only because the checker will not vouch for it, and a case marked
+            // rejected must not be able to hide behind that.
+            bool declined = r.Failures.All(f => f.Unsupported);
+            Assert.True(declined == (c.Outcome == "declined"),
+                $"{c.File} is marked {c.Outcome} but came back {(declined ? "declined" : "rejected")}");
 
             // And the file is otherwise sound enough to reach that declaration: it parsed to the end, and
             // nothing before the attack failed. Without this a truncated file would count as a pass.

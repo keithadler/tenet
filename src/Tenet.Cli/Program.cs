@@ -56,7 +56,9 @@ internal static class Program
           --all                       check every module in the import closure, not just the targets
 
         exit status: 0 all declarations checked, 1 some failed, 2 usage or file error,
-                     3 the export is truncated or malformed (declarations before the problem were checked)
+                     3 the export is truncated or malformed (declarations before the problem were checked),
+                     4 declined: nothing was found wrong, but the file asks this checker to trust
+                       something it will not, such as the output of compiled code
         """;
 
     private static int Main(string[] args)
@@ -1638,9 +1640,13 @@ internal static class Program
         {
             WriteReport(report, path, result, jobs, stats);
         }
-        string verdict = result.Failures.Count > 0 ? "FAILED" : result.ReadError is not null ? "INCOMPLETE" : "OK";
+        // A file this checker will not vouch for is not a file it says is wrong. Everything that failed
+        // being a refusal to trust compiled code is the one case where saying "rejected" would be a claim
+        // about the proof that Tenet is not making.
+        bool declined = result.Failures.Count > 0 && result.Failures.All(f => f.Unsupported);
+        string verdict = declined ? "DECLINED" : result.Failures.Count > 0 ? "FAILED" : result.ReadError is not null ? "INCOMPLETE" : "OK";
         Console.WriteLine($"{verdict}: {result.Checked} checked, {result.Failures.Count} failed, {result.Skipped} skipped, {result.Environment.Count} constants, {result.Elapsed.TotalSeconds:F1}s, {jobs} job{(jobs == 1 ? "" : "s")}");
-        return result.Failures.Count > 0 ? 1 : result.ReadError is not null ? 3 : 0;
+        return declined ? 4 : result.Failures.Count > 0 ? 1 : result.ReadError is not null ? 3 : 0;
     }
 
     /// <summary>

@@ -36,8 +36,12 @@ negative corpus and a valid export, checking the arena's own convention that 0 i
 reject and anything else is neither. There is no nix on the development machine this was written on,
 so CI is the only thing that has ever executed the flake.
 
-**Declining.** The arena reserves exit 2 for "cannot handle this proof", distinct from rejecting it.
-Tenet refuses `Lean.reduceBool` and `Lean.reduceNat` rather than trusting compiled code, and reports
-that as a failed declaration, which reads as a claim the proof is invalid. It is not; it is a claim
-that this checker will not vouch for it. No test in the published suite exercises it, so it does not
-affect the score, but the honest mapping is a decline and Tenet has no way to say so yet.
+**Declining.** Done. The arena reserves exit 2 for "cannot handle this proof", distinct from
+rejecting it. Tenet refuses `Lean.reduceBool` and `Lean.reduceNat` rather than trusting compiled
+code, and used to report that as a failed declaration, which reads as a claim the proof is invalid.
+It is not; it is a claim that this checker will not vouch for it.
+
+`tenet check` now exits **4** and prints `DECLINED` when every failure is of that kind, and the run
+line maps 4 to the arena's 2. The negative corpus records which outcome each case expects, and the
+test fails if a rejection comes back as a decline or the other way round, so the distinction cannot
+quietly collapse in either direction.

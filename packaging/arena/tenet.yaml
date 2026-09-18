@@ -19,10 +19,14 @@ rev: REPLACE_WITH_REV
 # No .NET in the arena's own environment, so Tenet brings its own, the way lean4cobol does.
 build: nix develop path:. --ignore-environment -c dotnet publish src/Tenet.Cli -c Release -f net10.0 -p:TargetFrameworks=net10.0 -o arena-bin
 run: |
-  # 0 accept, 1 reject. Tenet's own exit codes agree on those two. Anything else means it could not
-  # process the file, which is an error in the checker rather than a decline: Tenet has nothing it
-  # means to decline, so hiding a failure as a decline would be hiding it.
+  # 0 accept, 1 reject, 2 decline. Tenet agrees on the first two and uses 4 for declining, which is
+  # what it does when a file asks it to trust the output of compiled code: not a claim the proof is
+  # invalid, a refusal to vouch for it. Anything else means the checker could not process the file,
+  # which is an error and is left to surface as one rather than being hidden as a decline.
   ./arena-bin/tenet check "$IN" --quiet
   c=$?
-  if [ "$c" = 0 ] || [ "$c" = 1 ]; then exit $c; fi
-  exit 9
+  case $c in
+    0|1) exit $c ;;
+    4)   exit 2 ;;
+    *)   exit 9 ;;
+  esac
