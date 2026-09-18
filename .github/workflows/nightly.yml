@@ -72,6 +72,61 @@ jobs:
           path: ${{ runner.temp }}/mathlib.json
           if-no-files-found: ignore
 
+  proved-checker:
+    name: Everything Tenet accepts, put to a checker with a consistency proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build -c Release
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Make room
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/swift /opt/hostedtoolcache/CodeQL || true
+          df -h / | tail -1
+
+      - name: Build Mathlib from its own cache
+        run: |
+          git clone --depth 1 https://github.com/leanprover-community/mathlib4 "$RUNNER_TEMP/mathlib4"
+          cd "$RUNNER_TEMP/mathlib4"
+          lake exe cache get
+          lake build Mathlib.Init
+
+      - name: Build the exporter and con-leche on their own toolchains
+        run: |
+          git clone --depth 1 https://github.com/leanprover/lean4export "$RUNNER_TEMP/lean4export"
+          # The exporter has to run on Mathlib's toolchain, not its own.
+          cp "$RUNNER_TEMP/mathlib4/lean-toolchain" "$RUNNER_TEMP/lean4export/lean-toolchain"
+          (cd "$RUNNER_TEMP/lean4export" && lake build)
+          git clone --depth 1 https://github.com/leanprover/con-leche "$RUNNER_TEMP/con-leche"
+          (cd "$RUNNER_TEMP/con-leche" && lake build con-leche)
+
+      - name: Export a Mathlib slice and put it to both
+        run: |
+          MOD=Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
+          cd "$RUNNER_TEMP/mathlib4"
+          lake env "$RUNNER_TEMP/lean4export/.lake/build/bin/lean4export" "$MOD" > "$RUNNER_TEMP/slice.ndjson"
+          cd "$GITHUB_WORKSPACE"
+          wc -l < "$RUNNER_TEMP/slice.ndjson"
+
+          # con-leche carries a Lean proof that it never accepts a file declaring a theorem of type False. Both
+          # accepting the same file in full is what transfers that to everything Tenet accepted in it.
+          src/Tenet.Cli/bin/Release/net10.0/tenet check "$RUNNER_TEMP/slice.ndjson" --quiet | tee "$RUNNER_TEMP/t.txt"
+          "$RUNNER_TEMP/con-leche/.lake/build/bin/con-leche" --jobs=4 "$RUNNER_TEMP/slice.ndjson" | tee "$RUNNER_TEMP/c.txt"
+
+          {
+            echo "## A proved checker agrees"
+            echo
+            echo "- tenet: $(grep -E '^(OK|FAILED)' "$RUNNER_TEMP/t.txt" | tail -1)"
+            echo "- con-leche: $(tail -1 "$RUNNER_TEMP/c.txt")"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   three-way:
     name: Tenet vs Lean's kernel vs con-leche
     runs-on: ubuntu-latest
