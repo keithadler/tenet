@@ -28,6 +28,12 @@ public sealed class TypeChecker
 
     private long _unfolds;
 
+    /// <summary>
+    /// Take the accelerated paths on the name alone, without checking the primitive's equations. Set while those
+    /// equations are themselves being checked, so a primitive cannot license itself.
+    /// </summary>
+    public bool SkipPrimitives { get; init; }
+
     public Environment Env { get; }
     public LocalContext Lctx { get; }
     private readonly DefinitionSafety _safety;
@@ -848,13 +854,20 @@ public sealed class TypeChecker
         return Expr.NatLit(v << k);
     }
 
+    /// <summary>
+    /// Whether the constant behind an accelerated path is the primitive it is named after. See <see cref="Primitives"/>:
+    /// dispatching on the name alone lets an export declare <c>Nat.add</c> as something else and have the kernel
+    /// compute addition anyway.
+    /// </summary>
+    private bool Shortcut(Primitive p) => SkipPrimitives || Env.PrimitiveOk(p);
+
     private Expr? ReduceNat(Expr e)
     {
         int nargs = e.GetAppNumArgs();
         if (nargs == 1)
         {
             var a = (AppExpr)e;
-            if (a.Fn.IsConstOf(NatSucc) && a.Fn is ConstExpr { Levels.Length: 0 })
+            if (a.Fn.IsConstOf(NatSucc) && a.Fn is ConstExpr { Levels.Length: 0 } && Shortcut(Primitive.NatSucc))
             {
                 Expr arg = Whnf(a.Arg);
                 if (!IsNatLitExt(arg))
@@ -874,59 +887,59 @@ public sealed class TypeChecker
                 return null;
             }
             Name n = f.Name;
-            if (n.Equals(NatAdd))
+            if (n.Equals(NatAdd) && Shortcut(Primitive.NatAdd))
             {
                 return ReduceBinNatOp((x, y) => x + y, a, checkSize: true);
             }
-            if (n.Equals(NatSub))
+            if (n.Equals(NatSub) && Shortcut(Primitive.NatSub))
             {
                 return ReduceBinNatOp((x, y) => x >= y ? x - y : BigInteger.Zero, a, checkSize: true);
             }
-            if (n.Equals(NatMul))
+            if (n.Equals(NatMul) && Shortcut(Primitive.NatMul))
             {
                 return ReduceBinNatOp((x, y) => x * y, a, checkSize: true);
             }
-            if (n.Equals(NatPow))
+            if (n.Equals(NatPow) && Shortcut(Primitive.NatPow))
             {
                 return ReducePow(a);
             }
-            if (n.Equals(NatGcd))
+            if (n.Equals(NatGcd) && Shortcut(Primitive.NatGcd))
             {
                 return ReduceBinNatOp(BigInteger.GreatestCommonDivisor, a);
             }
-            if (n.Equals(NatMod))
+            if (n.Equals(NatMod) && Shortcut(Primitive.NatMod))
             {
                 return ReduceBinNatOp((x, y) => y.IsZero ? x : x % y, a);
             }
-            if (n.Equals(NatDiv))
+            if (n.Equals(NatDiv) && Shortcut(Primitive.NatDiv))
             {
                 return ReduceBinNatOp((x, y) => y.IsZero ? BigInteger.Zero : x / y, a);
             }
-            if (n.Equals(NatBeq))
+            if (n.Equals(NatBeq) && Shortcut(Primitive.NatBeq))
             {
                 return ReduceBinNatPred((x, y) => x == y, a);
             }
-            if (n.Equals(NatBle))
+            if (n.Equals(NatBle) && Shortcut(Primitive.NatBle))
             {
                 return ReduceBinNatPred((x, y) => x <= y, a);
             }
-            if (n.Equals(NatLand))
+            if (n.Equals(NatLand) && Shortcut(Primitive.NatLand))
             {
                 return ReduceBinNatOp((x, y) => x & y, a);
             }
-            if (n.Equals(NatLor))
+            if (n.Equals(NatLor) && Shortcut(Primitive.NatLor))
             {
                 return ReduceBinNatOp((x, y) => x | y, a);
             }
-            if (n.Equals(NatXor))
+            if (n.Equals(NatXor) && Shortcut(Primitive.NatXor))
             {
                 return ReduceBinNatOp((x, y) => x ^ y, a);
             }
-            if (n.Equals(NatShiftLeft))
+            if (n.Equals(NatShiftLeft) && Shortcut(Primitive.NatShiftLeft))
             {
                 return ReduceShiftLeft(a);
             }
-            if (n.Equals(NatShiftRight))
+            if (n.Equals(NatShiftRight) && Shortcut(Primitive.NatShiftRight))
             {
                 return ReduceBinNatOp((x, y) => y > int.MaxValue ? BigInteger.Zero : x >> (int)y, a);
             }

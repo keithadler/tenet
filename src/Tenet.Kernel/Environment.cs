@@ -102,6 +102,29 @@ public sealed class Environment
     /// </summary>
     public Name StringLiteralConstructor => Contains(StringOfList) ? StringOfList : StringMk;
 
+    // 0 not yet decided, 1 may be shortcut, 2 must be unfolded. Decided once per environment and remembered,
+    // because the check runs the kernel and the answer cannot change: constants are never redefined.
+    private readonly int[] _primitives = new int[System.Enum.GetValues<Primitive>().Length];
+
+    /// <summary>
+    /// Whether the kernel may short-circuit this primitive rather than unfold its body. See <see cref="Primitives"/>
+    /// for why a name is not enough.
+    /// </summary>
+    public bool PrimitiveOk(Primitive p)
+    {
+        if (!Primitives.Validate)
+        {
+            return true;
+        }
+        int state = Volatile.Read(ref _primitives[(int)p]);
+        if (state == 0)
+        {
+            state = Primitives.Check(this, p) ? 1 : 2;
+            Volatile.Write(ref _primitives[(int)p], state);
+        }
+        return state == 1;
+    }
+
     /// <summary>Add a constant without checking it. Safe to call from one thread while others read.</summary>
     public void AddCore(ConstantInfo info)
     {

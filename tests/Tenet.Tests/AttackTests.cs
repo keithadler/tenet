@@ -100,13 +100,29 @@ public class AttackTests
         env.Add(new AxiomDecl(nat, [], Expr.Type0, false));
         Expr natT = Expr.Const(nat, []);
         env.Add(new AxiomDecl(Name.Of("Nat", "pow"), [], Expr.Pi(Anon, natT, Expr.Pi(Anon, natT, natT)), false));
-        var tc = new TypeChecker(env);
-        Expr e = Expr.MkApp(Expr.Const(Name.Of("Nat", "pow"), []), Expr.NatLit(2), Expr.NatLit(BigInteger.Pow(2, 40)));
-        var ex = Assert.Throws<KernelException>(() => tc.Whnf(e));
-        Assert.Contains("refused", ex.Message, StringComparison.Ordinal);
-        // and a merely large one computes
-        Expr ok = Expr.MkApp(Expr.Const(Name.Of("Nat", "pow"), []), Expr.NatLit(2), Expr.NatLit(100));
-        Assert.Equal(Expr.NatLit(BigInteger.Pow(2, 100)), tc.Whnf(ok));
+        Expr huge = Expr.MkApp(Expr.Const(Name.Of("Nat", "pow"), []), Expr.NatLit(2), Expr.NatLit(BigInteger.Pow(2, 40)));
+
+        // This environment declares Nat as an axiom and Nat.pow as another, so neither is the primitive it is
+        // named after and the kernel will not take the accelerated path at all. That is a stronger answer to this
+        // particular attack than the size guard was, and it means the size guard has to be reached deliberately.
+        Assert.False(env.PrimitiveOk(Primitive.NatPow));
+        Assert.Equal(huge, new TypeChecker(env).Whnf(huge));
+
+        bool saved = Primitives.Validate;
+        try
+        {
+            Primitives.Validate = false;
+            var tc = new TypeChecker(env);
+            var ex = Assert.Throws<KernelException>(() => tc.Whnf(huge));
+            Assert.Contains("refused", ex.Message, StringComparison.Ordinal);
+            // and a merely large one computes
+            Expr ok = Expr.MkApp(Expr.Const(Name.Of("Nat", "pow"), []), Expr.NatLit(2), Expr.NatLit(100));
+            Assert.Equal(Expr.NatLit(BigInteger.Pow(2, 100)), tc.Whnf(ok));
+        }
+        finally
+        {
+            Primitives.Validate = saved;
+        }
     }
 
     [Fact]
