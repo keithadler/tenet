@@ -236,7 +236,76 @@ public abstract class Level : IEquatable<Level>
     // ---- normalization and ordering ----
 
     /// <summary>Structural equality up to normalization: the kernel's notion of level equality.</summary>
-    public static bool IsEquiv(Level a, Level b) => a.Equals(b) || a.Normalize().Equals(b.Normalize());
+    public static bool IsEquiv(Level a, Level b) =>
+        a.Equals(b) || a.Normalize().Equals(b.Normalize())
+        || (CompleteEquality && IsEquivByCases(a, b));
+
+    /// <summary>
+    /// Decide level equality by case analysis on which parameters can be zero, rather than by normalizing once.
+    ///
+    /// <c>imax u v</c> is <c>0</c> when <c>v</c> is and <c>max u v</c> otherwise, so a single normal form cannot
+    /// settle a pair whose meaning turns on that. Splitting each parameter into <c>0</c> and <c>succ p</c> resolves
+    /// every <c>imax</c>, and what is left is <c>max</c> and <c>succ</c> over parameters, which the ordinary
+    /// comparison decides symbolically for all values. So the procedure is complete where the single pass is not,
+    /// and it can only accept more: every branch must agree before it answers yes.
+    ///
+    /// Off by default. Lean's kernel decides this the incomplete way, and this project's first claim is that it
+    /// decides what Lean decides, so being cleverer is a divergence rather than an improvement unless asked for.
+    /// con-leche and lean4lean both make the other choice, which is how the gap was found: on a mutated
+    /// <c>Init.Core</c>, con-leche accepts <c>PULift.noConfusion</c> where Tenet and Lean both reject it, and the
+    /// level in dispute is <c>imax (imax s (max r 1)) u</c> against <c>imax (max (max 1 r) s) u</c>.
+    /// </summary>
+    public static bool CompleteEquality { get; set; } =
+        System.Environment.GetEnvironmentVariable("TENET_COMPLETE_LEVELS") is not null;
+
+    /// <summary>How many parameters the case analysis will split on before giving up; 2^n branches.</summary>
+    private const int MaxSplitParams = 8;
+
+    private static bool IsEquivByCases(Level a, Level b)
+    {
+        var ps = new List<Name>();
+        CollectParams(a, ps);
+        CollectParams(b, ps);
+        return ps.Count != 0 && ps.Count <= MaxSplitParams && SplitOn(a, b, ps, 0);
+    }
+
+    private static void CollectParams(Level l, List<Name> acc)
+    {
+        StackGuard.Check();
+        switch (l)
+        {
+            case ParamLevel p when !acc.Contains(p.Name):
+                acc.Add(p.Name);
+                break;
+            case SuccLevel s:
+                CollectParams(s.Of, acc);
+                break;
+            case MaxLevel m:
+                CollectParams(m.Lhs, acc);
+                CollectParams(m.Rhs, acc);
+                break;
+            case IMaxLevel im:
+                CollectParams(im.Lhs, acc);
+                CollectParams(im.Rhs, acc);
+                break;
+        }
+    }
+
+    private static bool SplitOn(Level a, Level b, List<Name> ps, int i)
+    {
+        StackGuard.Check();
+        if (i == ps.Count)
+        {
+            // Every imax is resolved by now, so one normalization settles it.
+            return a.Equals(b) || a.Normalize().Equals(b.Normalize());
+        }
+        Name[] one = [ps[i]];
+        // p := 0, and p := succ p, which keeps p ranging over every value while fixing it nonzero.
+        Level[] zero = [Zero];
+        Level[] pos = [Succ(Param(ps[i]))];
+        return SplitOn(a.Instantiate(one, zero), b.Instantiate(one, zero), ps, i + 1)
+            && SplitOn(a.Instantiate(one, pos), b.Instantiate(one, pos), ps, i + 1);
+    }
 
     /// <summary>True when <paramref name="l1"/> is at least <paramref name="l2"/> for every parameter assignment (sound, incomplete).</summary>
     public static bool IsGeq(Level l1, Level l2) => IsGeqCore(l1.Normalize(), l2.Normalize());

@@ -95,10 +95,27 @@ pathological declaration takes down every other declaration being checked alongs
 
 **Turning them off:** `TENET_MAX_UNFOLDS` sets the unfolding bound; `--stack-mb` sets the stack.
 
-## Known incompleteness, not a deliberate choice
+## Complete level equality, available and off
 
-Level normalization: Tenet decides fewer universe equalities than con-leche does. On a mutated `Init.Core`, where
-the level in question is `imax (imax s (max r 1)) u` against `imax (max (max 1 r) s) u`, con-leche accepts and
-Tenet rejects. It is in the safe direction, it cannot arise on a real export since the elaborator never stores an
-unsimplified `imax _ (max _ 1)`, and it is recorded in `docs/testing.md` rather than here because it is a gap to
-close and not a decision.
+**Where:** `Level.CompleteEquality`, consulted by `Level.IsEquiv`.
+
+**What Lean does:** normalizes each side once and compares. `imax u v` is `0` when `v` is and `max u v`
+otherwise, so a pair whose meaning turns on that is not settled, and Lean answers no.
+
+**What Tenet does by default:** the same, because deciding what Lean decides is this project's first claim.
+
+**What it can do instead:** decide by case analysis on which parameters can be zero. Splitting each into `0` and
+`succ p` resolves every `imax`, and what is left is `max` and `succ` over parameters, which the ordinary
+comparison settles symbolically for all values. Every branch must agree before it answers yes, so it can only
+accept more, never less. `TENET_COMPLETE_LEVELS=1` turns it on.
+
+**Why it exists:** this was the one place two other checkers were measurably ahead. con-leche showed it rather
+than claimed it: on a mutated `Init.Core` it accepts `PULift.noConfusion`, where the level in dispute is
+`imax (imax s (max r 1)) u` against `imax (max (max 1 r) s) u`. `max r 1` is at least 1 for every assignment, so
+the inner `imax` is a `max` and the two are one universe. lean4lean makes the same move and documents it the same
+way.
+
+**Why it is off:** turning it on makes Tenet accept declarations Lean rejects, which the differential harness
+would report, correctly, as a disagreement. The gap it closes cannot arise on a real export, since the elaborator
+never stores an unsimplified `imax _ (max _ 1)`. Costing nothing measurable on `Init` either way, it is worth
+having and not worth defaulting to.

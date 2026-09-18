@@ -303,11 +303,16 @@ The level in dispute for `PULift.noConfusion` is `imax (imax s (max r 1)) u` aga
 levels are therefore the same universe. con-leche sees this. Neither Lean nor Tenet does, and
 Tenet sees two of the three cases Lean does not.
 
-So Tenet carries a level-normalization completeness gap of its own, narrower than Lean's and in
-the safe direction: it rejects something valid, it does not accept something invalid. It cannot
+So Tenet carried a level-normalization completeness gap of its own, narrower than Lean's and in
+the safe direction: it rejected something valid rather than accepting something invalid. It cannot
 arise on a real export, because Lean's elaborator never stores an unsimplified `imax _ (max _ 1)`.
-It is recorded here because it is the first thing the third opinion found, and because a gap that
-only a proved checker can see is exactly what two testers agreeing with each other will miss.
+
+`Level.CompleteEquality` closes it, by case analysis on which parameters can be zero rather than by
+normalizing once, and `LevelCompletenessTests` decides exactly this pair with it on and does not
+with it off. It is off by default, since deciding more than Lean is a divergence; see
+[divergences.md](divergences.md). The gap is recorded here because it is the first thing the third
+opinion found, and because a gap that only a proved checker can see is exactly what two testers
+agreeing with each other will miss.
 
 One difference in what each will accept. con-leche takes only Lean's three standard axioms and
 stops on anything else:
