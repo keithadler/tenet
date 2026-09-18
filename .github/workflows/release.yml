@@ -6,15 +6,19 @@ on:
 
 permissions:
   contents: write
+  # Trusted Publishing: the job asks GitHub for a short-lived OIDC token, nuget.org validates it against a
+  # policy naming this owner, this repository and this workflow file, and hands back an API key good for an
+  # hour. Nothing long-lived is stored anywhere, so there is no key to leak or rotate.
+  id-token: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      # At job level on purpose. A step's own `env` is not dependable in that step's own `if`, so the
-      # publish below, guarded by `env.NUGET_API_KEY != ''` with the value set on the step, could skip
-      # itself and leave a green release that published nothing.
-      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+      # At job level on purpose. A step's own `env` is not dependable in that step's own `if`, so a publish
+      # guarded by a variable set on the same step could skip itself and leave a green release that
+      # published nothing. This is the nuget.org profile name, not a credential.
+      NUGET_USER: ${{ secrets.NUGET_USER }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -47,13 +51,21 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" artifacts/*.tar.gz --clobber || true
         env:
           GH_TOKEN: ${{ github.token }}
+      # Late on purpose: the key nuget.org returns lasts an hour, and the AOT builds above are the slow part.
+      - name: Exchange an OIDC token for a short-lived nuget.org key
+        if: ${{ env.NUGET_USER != '' }}
+        id: nuget_login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ env.NUGET_USER }}
+
       - name: Publish to nuget.org
-        # Runs only when the NUGET_API_KEY repository secret is set. Pushing a .nupkg also pushes the
-        # .snupkg beside it, so the symbol server gets the sources a consumer would step into.
-        if: ${{ env.NUGET_API_KEY != '' }}
+        # Pushing a .nupkg also pushes the .snupkg beside it, so the symbol server gets the sources a
+        # consumer would step into.
+        if: ${{ env.NUGET_USER != '' }}
         run: |
           dotnet nuget push "artifacts/*.nupkg" \
-            --api-key "$NUGET_API_KEY" \
+            --api-key "${{ steps.nuget_login.outputs.NUGET_API_KEY }}" \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
           echo "published to nuget.org: $(ls artifacts/*.nupkg | wc -l) package(s)" >> "$GITHUB_STEP_SUMMARY"
@@ -61,7 +73,9 @@ jobs:
       - name: Say so when nothing was published
         # A release that quietly skipped publishing looks exactly like one that published, which is the
         # failure this line exists to make impossible.
-        if: ${{ env.NUGET_API_KEY == '' }}
+        if: ${{ env.NUGET_USER == '' }}
         run: |
-          echo "NUGET_API_KEY is not set, so nothing was pushed to nuget.org." >> "$GITHUB_STEP_SUMMARY"
+          echo "NUGET_USER is not set, so nothing was pushed to nuget.org." >> "$GITHUB_STEP_SUMMARY"
+          echo "Trusted Publishing needs that secret (the nuget.org profile name) and a policy on" >> "$GITHUB_STEP_SUMMARY"
+          echo "nuget.org naming this owner, repository and workflow file." >> "$GITHUB_STEP_SUMMARY"
           echo "The packages are attached to the GitHub release instead." >> "$GITHUB_STEP_SUMMARY"
