@@ -38,20 +38,20 @@ OK: 766950 checked in 10758 modules, 0 failed, 10758 modules mapped, 398.0s, 12 
 
 ## Status
 
-Version 0.9. Every rule of the reference kernel has a counterpart here. Tenet checks all
+Version 0.10. Every rule of the reference kernel has a counterpart here. Tenet checks all
 of Mathlib and its dependencies, 765,497 declarations in 10,726 modules, directly from the
 compiled `.olean` files in about six minutes on a laptop, with zero failures, deriving
 the recursors itself and comparing them field for field against Lean's own.
 
 Read alone that is a claim about agreement, not about soundness. A kernel whose check
 returns `true` reports zero failures on all of Mathlib too, in less time, so the number
-only means something next to what gets rejected. Tenet rejects all eight exports in
+only means something next to what gets rejected. Tenet rejects all nine exports in
 [`tests/fixtures/invalid`](tests/fixtures/invalid), a committed corpus of well-formed
 files written to be wrong in a particular way: `Type : Type`, a non-positive inductive, a
-`Prop` eliminating into `Sort u`, a swapped proof, a squatted reserved namespace, a claim
-laundered through compiled code, and both soundness bugs ever found in this checker, kept
-as permanent regression cases. Each is rejected at the one declaration the manifest names,
-with everything before it accepted, and the two targeting an optional defense are
+`Prop` eliminating into `Sort u`, a theorem proved by itself, a swapped proof, a squatted
+reserved namespace, a claim laundered through compiled code, and all three soundness bugs
+ever found in this checker, kept as permanent regression cases. Each is rejected at the one declaration the manifest names,
+with everything before it accepted, and the ones targeting an optional defense are
 **accepted in full when that defense is switched off**, which is what stops the corpus
 quietly becoming a set of files rejected for being broken. Its verdicts have also been compared
 with Lean's kernel on about 130,000 deliberately damaged declarations, and every theorem

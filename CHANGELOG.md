@@ -3,69 +3,60 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.10.0] - 2026-09-18
 
-Kept current as work lands, not written at release time. 0.8.0 shipped with no entry here at all, which nobody
-noticed until the next release was being cut, and a changelog assembled from memory afterwards is a worse
-record than one assembled as it goes.
+The Lean Kernel Arena found a soundness bug in the first five minutes, and it is in every release
+before this one. **If you are running 0.9.0 or earlier, upgrade.**
 
 ### Fixed
-- The GitHub Action installed 0.7.0. The version a consumer gets is pinned in `action.yml`, not on nuget.org, so
-  publishing 0.9.0 did nothing for anyone writing `uses: keithadler/tenet@main`, and 0.7.0 predates both of the
-  fixes that stop a file proving `False`.
-- `check --rules` printed nothing on an export. It was wired only into the `.olean` path, so the flag the usage
-  advertises did nothing for anyone checking an `ndjson` file.
-- `Rule.InferBVar` was counted on a switch arm that the loose-bound-variable guard four lines earlier makes
-  unreachable. The refusal is real, so the counter now sits on the guard that performs it.
-- The nightly proved-checker step piped both checkers through `tee`, which returns its own status, so neither
-  checker's exit code reached the step. A rejection would have reported green.
+- **A theorem proved by itself was accepted.** `theorem selfProof : ∀ (p : Prop), p := selfProof`
+  instantiated at `False` is a proof of `False`, and Tenet reported it `OK`, one declaration checked,
+  no axioms. Both the parallel and the streaming paths add every declaration to the environment up
+  front so workers can check in any order, and the ordering guard that makes that safe rejected only
+  constants declared *later*, never a declaration naming itself. Self-reference is legitimate for an
+  inductive block, a mutual definition block and the quotient block, and is refused everywhere else.
+  Found by test `bad/tutorial/014_selfProof` of the [Lean Kernel Arena](https://arena.lean-lang.org).
+  Not reachable by mutation, not in the negative corpus, and invisible to agreement with Lean or
+  con-leche on Mathlib, because no real export contains a declaration that names itself.
+- The reader required index numbers to be dense and in ascending order. The format requires neither;
+  every real exporter happens to do both, which is how a reader that insisted on it passed all of
+  Mathlib. Gaps are now holes. Referring to a hole is still an error, and so is defining an index
+  twice. A test asserting the old behavior described what the reader did rather than what the format
+  says, and is replaced by three that assert what is actually required.
+- The GitHub Action installed 0.7.0 by default, two releases of soundness fixes behind.
+- `check --rules` printed nothing on an export; it was wired only into the `.olean` path.
+- `Rule.InferBVar` was counted on a switch arm the loose-bound-variable guard makes unreachable.
+- The nightly proved-checker step piped both checkers through `tee`, so neither exit code reached the
+  step and a rejection would have reported green.
 
 ### Added
-- `OleanModule.DocStringOf`, `SourceRangeOf` and `ExtensionNames` read the environment extension entries a module
-  stores, which the reader had walked past until now. Docstrings and declaration ranges are what a browser of a
-  library needs next to a statement, and under the module system they sit in the `.server` and `.private` parts
-  only, so those parts are read for entries even though the public part alone carries the constants that matter
-  to a check. `tenet statement` prints the docstring on `.olean` input.
-- `check EXPORT --names-out FILE` lists every constant the run ended with, which is what makes coverage across
-  several slices countable as a union rather than a sum. It was only on `crosscheck`, which needs an `.olean`
-  tree the person checking a file does not have. On `.olean` input it is refused rather than silently ignored.
-- `TrustSurfaceTests` reads the names the kernel hardcodes out of its own source and fails unless each is
-  accounted for: a binder, a name the kernel invents and never looks up, or an assumption mapped to the test
-  that attacks it. A name added to the kernel is a new thing an export can lie about, and nothing previously
-  said so. Writing the table found `eagerReduce` unattacked; it has a case now.
-- A test for the rules no corpus reaches, so their coldness rests on evidence rather than on an argument.
-- **A negative corpus**, `tests/fixtures/invalid`, of eight well-formed exports that must be rejected: `Type :
-  Type`, a non-positive inductive, a `Prop` eliminating into `Sort u`, a swapped proof, a squatted `_nested`,
-  a claim laundered through `Lean.reduceBool`, and both soundness bugs ever found in this checker as permanent
-  regression cases. Checking all of Mathlib with zero
-  failures is a claim about agreement, not about soundness: a kernel whose check returns `true` reports zero
-  failures too, faster. Each case is also asserted to be **accepted in full when its defense is switched off**,
-  without which the corpus would drift into a set of files rejected for being malformed, passing forever and
-  proving nothing. CI runs it through the CLI, not only the test harness.
-- `Trust.Names`, the kernel's own list of the names it takes on trust, checked against its source in both
-  directions so the list and the code cannot drift apart quietly.
-- `tenet audit` reports which of those names a project defines itself. That is not an axiom, so nothing else in
-  audit noticed it, but it is a fact an auditor wants: the checker validates these rather than believing them, so
-  the verdict stands, while what the names mean in that project is what the project says they mean. Lean's own
-  prelude defines 30 of them, which is expected and is said so in the output.
-- The nightly rotates through seven Mathlib slices by day of year instead of re-proving one forever, and reports
-  rule coverage from the Mathlib run.
-- **Tenet checks con-leche's own soundness proof.** Everything Tenet accepts is put to a checker carrying a
-  machine-checked theorem that it never accepts a file declaring `False`. That guarantee was checked by exactly
-  one thing: Lean's kernel, which is what con-leche exists to double-check. Tenet now checks it too, 232,881
-  declarations across 2,791 modules with 0 failures, and independently reports `no_False_declaration` as
-  depending on 27,357 constants and on `propext`, `Classical.choice` and `Quot.sound` alone. It does not remove
-  Lean from the picture, since this is a Lean proof checked by a kernel calibrated against Lean; it removes the
-  shared implementation, where one bug makes a checker and the proof of that checker wrong together.
+- **A negative corpus**, `tests/fixtures/invalid`, of nine well-formed exports that must be rejected:
+  `Type : Type`, a non-positive inductive, a `Prop` eliminating into `Sort u`, a swapped proof, a
+  squatted `_nested`, a claim laundered through `Lean.reduceBool`, and all three soundness bugs ever
+  found in this checker. Checking Mathlib with zero failures is a claim about agreement, not about
+  soundness: a kernel whose check returns `true` reports zero failures too, faster. Cases targeting an
+  optional defense are also asserted to be **accepted in full when it is switched off**, so the corpus
+  cannot drift into files rejected for being malformed.
+- **Tenet checks con-leche's own soundness proof.** That checker carries a machine-checked theorem
+  that it never accepts a file declaring `False`, and until now the only thing that had checked that
+  proof was Lean's kernel, which is what con-leche exists to double-check. 232,881 declarations across
+  2,791 modules, 0 failures, and `no_False_declaration` independently reported as resting on
+  `propext`, `Classical.choice` and `Quot.sound` alone. It does not remove Lean, since this is a Lean
+  proof checked by a kernel calibrated against Lean. It removes the shared implementation.
+- `TrustSurfaceTests` reads the names the kernel hardcodes out of its own source and fails unless each
+  is accounted for, mapped to the case that attacks it. Writing it found `eagerReduce` unattacked.
+- `Trust.Names`, and `tenet audit` reporting which of those names a project defines itself.
+- `check EXPORT --names-out FILE`, so coverage across slices can be counted as a union.
+- Rule coverage from the nightly Mathlib run: 36 of 39 reachable rules, 1.28 billion firings. All of
+  Mathlib reaches no rule that `Init` misses.
+- `net8.0` alongside `net10.0`, so a project that has not moved off .NET 8 can use the libraries.
+- Badges, and a line saying which one to read.
 
 ### Changed
-- Rule coverage is reported as 36 of 39 reachable rules, not 36 of 40. `DefEqFVar` cannot be reached by any
-  input, because the syntactic check decides every pair that would satisfy it; Lean's `is_def_eq_core` has the
-  same branch after the same check and it is unreachable there too. Subsumed rules are listed separately from
-  cold ones, since counting them as a coverage gap invents work and hides the rules that are a real gap.
-- The sample targets `net8.0` and `net10.0` against the published 0.9.0 packages, and CI runs both of its
-  binaries. A consumer reaches `lib/net8.0` only through a package, and that sample is the only place that path
-  is walked.
+- Coverage is reported as 36 of 39 reachable rules, not 36 of 40. `DefEqFVar` cannot be reached by any
+  input, because the syntactic check decides every pair that would satisfy it, exactly as in Lean's
+  `is_def_eq_core`. Subsumed rules are listed separately from cold ones.
+- The nightly rotates through seven Mathlib slices instead of re-proving one forever.
 
 ## [0.9.0] - 2026-09-18
 
