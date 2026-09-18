@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 # Does `tenet crosscheck` actually notice a damaged declaration?
 #
 # Crosscheck compares what Tenet's .olean reader decodes against what Lean's own exporter wrote for the same
