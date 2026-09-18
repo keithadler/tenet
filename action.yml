@@ -11,9 +11,12 @@ inputs:
     required: false
     default: "."
   version:
+    # Trails the repo's version on purpose. This installs a published GitHub release, so the default has to
+    # name one that exists; bumping it in the commit that cuts a release makes CI download a release that
+    # commit is about to create. Bump it after the release lands, alongside the sample's package reference.
     description: "Tenet release to install (a tag without the v)."
     required: false
-    default: "0.10.0"
+    default: "0.9.0"
   all:
     description: "Also check every imported module (the whole import closure), not only the project's own."
     required: false
