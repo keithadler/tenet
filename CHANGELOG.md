@@ -29,8 +29,10 @@ record than one assembled as it goes.
   that attacks it. A name added to the kernel is a new thing an export can lie about, and nothing previously
   said so. Writing the table found `eagerReduce` unattacked; it has a case now.
 - A test for the rules no corpus reaches, so their coldness rests on evidence rather than on an argument.
-- **A negative corpus**, `tests/fixtures/invalid`, of well-formed exports that must be rejected, with both
-  soundness bugs ever found in this checker as permanent regression cases. Checking all of Mathlib with zero
+- **A negative corpus**, `tests/fixtures/invalid`, of eight well-formed exports that must be rejected: `Type :
+  Type`, a non-positive inductive, a `Prop` eliminating into `Sort u`, a swapped proof, a squatted `_nested`,
+  a claim laundered through `Lean.reduceBool`, and both soundness bugs ever found in this checker as permanent
+  regression cases. Checking all of Mathlib with zero
   failures is a claim about agreement, not about soundness: a kernel whose check returns `true` reports zero
   failures too, faster. Each case is also asserted to be **accepted in full when its defense is switched off**,
   without which the corpus would drift into a set of files rejected for being malformed, passing forever and

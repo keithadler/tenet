@@ -34,12 +34,15 @@ the recursors itself and comparing them field for field against Lean's own.
 
 Read alone that is a claim about agreement, not about soundness. A kernel whose check
 returns `true` reports zero failures on all of Mathlib too, in less time, so the number
-only means something next to what gets rejected. Tenet rejects every export in
+only means something next to what gets rejected. Tenet rejects all eight exports in
 [`tests/fixtures/invalid`](tests/fixtures/invalid), a committed corpus of well-formed
-files written to exploit what a checker assumes, each of which it **accepts in full when
-the defense that catches it is switched off**, which is what stops the corpus quietly
-becoming a set of files rejected for being broken. Both soundness bugs ever found in this
-checker are in there as permanent regression cases. Its verdicts have also been compared
+files written to be wrong in a particular way: `Type : Type`, a non-positive inductive, a
+`Prop` eliminating into `Sort u`, a swapped proof, a squatted reserved namespace, a claim
+laundered through compiled code, and both soundness bugs ever found in this checker, kept
+as permanent regression cases. Each is rejected at the one declaration the manifest names,
+with everything before it accepted, and the two targeting an optional defense are
+**accepted in full when that defense is switched off**, which is what stops the corpus
+quietly becoming a set of files rejected for being broken. Its verdicts have also been compared
 with Lean's kernel on about 130,000 deliberately damaged declarations, and every theorem
 in the prelude given the previous theorem's proof must be rejected, at least 95% of them,
 with nothing else breaking. See [docs/status.md](docs/status.md) for what has been run and
