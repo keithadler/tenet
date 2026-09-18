@@ -78,6 +78,7 @@ public static class ExprOps
     /// </summary>
     public static string FirstDifference(Expr a, Expr b, string path = "")
     {
+        StackGuard.Check();
         if (a.Equals(b))
         {
             return "(equal)";
@@ -491,6 +492,7 @@ public static class ExprOps
 
     public static Expr InferImplicit(Expr t, int numParams, bool strict)
     {
+        StackGuard.Check();
         if (numParams == 0 || t is not PiExpr p)
         {
             return t;
@@ -509,6 +511,7 @@ public static class ExprOps
 
     private static bool HasLooseBVarsInDomain(Expr b, int vidx, bool strict)
     {
+        StackGuard.Check();
         if (b is PiExpr p)
         {
             if (HasLooseBVar(p.Domain, vidx))

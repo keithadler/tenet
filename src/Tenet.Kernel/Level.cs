@@ -137,26 +137,35 @@ public abstract class Level : IEquatable<Level>
     }
 
     /// <summary>True when the level is provably nonzero for every parameter assignment.</summary>
-    public bool IsNotZero() => this switch
+    public bool IsNotZero()
     {
-        SuccLevel => true,
-        MaxLevel m => m.Lhs.IsNotZero() || m.Rhs.IsNotZero(),
-        IMaxLevel m => m.Rhs.IsNotZero(),
-        _ => false,
-    };
+        StackGuard.Check();
+        return this switch
+        {
+            SuccLevel => true,
+            MaxLevel m => m.Lhs.IsNotZero() || m.Rhs.IsNotZero(),
+            IMaxLevel m => m.Rhs.IsNotZero(),
+            _ => false,
+        };
+    }
 
     /// <summary>True when the level normalizes to zero (denotes <c>Prop</c>).</summary>
-    public bool NormalizesToZero() => this switch
+    public bool NormalizesToZero()
     {
-        ZeroLevel => true,
-        MaxLevel m => m.Lhs.NormalizesToZero() && m.Rhs.NormalizesToZero(),
-        IMaxLevel m => m.Rhs.NormalizesToZero(),
-        _ => false,
-    };
+        StackGuard.Check();
+        return this switch
+        {
+            ZeroLevel => true,
+            MaxLevel m => m.Lhs.NormalizesToZero() && m.Rhs.NormalizesToZero(),
+            IMaxLevel m => m.Rhs.NormalizesToZero(),
+            _ => false,
+        };
+    }
 
     /// <summary>Replace parameters by levels, position-wise.</summary>
     public Level Instantiate(IReadOnlyList<Name> ps, IReadOnlyList<Level> ls)
     {
+        StackGuard.Check();
         if (!HasParam)
         {
             return this;
@@ -197,6 +206,7 @@ public abstract class Level : IEquatable<Level>
     /// <summary>The first parameter occurring in this level that is not in <paramref name="ps"/>, or null.</summary>
     public Name? GetUndefParam(IReadOnlyList<Name> ps)
     {
+        StackGuard.Check();
         if (!HasParam)
         {
             return null;
@@ -233,6 +243,7 @@ public abstract class Level : IEquatable<Level>
 
     private static bool IsGeqCore(Level l1, Level l2)
     {
+        StackGuard.Check();
         if (l1.Equals(l2) || l2.Kind == LevelKind.Zero)
         {
             return true;
@@ -269,6 +280,7 @@ public abstract class Level : IEquatable<Level>
     /// <summary>Put a level into the kernel's normal form.</summary>
     public Level Normalize()
     {
+        StackGuard.Check();
         var (r, k) = ToOffset();
         switch (r)
         {
@@ -342,6 +354,7 @@ public abstract class Level : IEquatable<Level>
 
     private static void PushMaxArgs(Level l, List<Level> r)
     {
+        StackGuard.Check();
         if (l is MaxLevel m)
         {
             PushMaxArgs(m.Lhs, r);
@@ -371,6 +384,7 @@ public abstract class Level : IEquatable<Level>
     /// <summary>The total order used by normalization: succ is the immediate successor, zero is least.</summary>
     private static bool IsNormLt(Level a, Level b)
     {
+        StackGuard.Check();
         if (ReferenceEquals(a, b))
         {
             return false;
@@ -433,6 +447,7 @@ public abstract class Level : IEquatable<Level>
 
     public bool Equals(Level? other)
     {
+        StackGuard.Check();
         if (ReferenceEquals(this, other))
         {
             return true;
@@ -485,6 +500,10 @@ public abstract class Level : IEquatable<Level>
 
     public override string ToString()
     {
+        if (!StackGuard.HasRoom())
+        {
+            return "…";   // like the expression printer: a level too deep to print must not lose the error it explains
+        }
         if (IsExplicit)
         {
             return Depth.ToString();

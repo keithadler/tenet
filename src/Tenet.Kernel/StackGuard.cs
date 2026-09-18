@@ -34,6 +34,13 @@ public static class StackGuard
         }
     }
 
+    /// <summary>
+    /// Whether there is stack left to recurse into, for a caller that can do something better than fail. The
+    /// printer truncates: replacing a type error's message with "expression too deep" would lose the error that
+    /// was being reported.
+    /// </summary>
+    public static bool HasRoom() => RuntimeHelpers.TryEnsureSufficientExecutionStack();
+
     /// <summary>Probe on every <see cref="Interval"/>th level of a traversal that tracks its own depth.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void CheckEvery(int depth)

@@ -30,6 +30,13 @@ public static class ExprPrinter
         {
             return;
         }
+        if (!StackGuard.HasRoom())
+        {
+            // A term too deep to print is still worth reporting the top of. Throwing here would throw away the
+            // error this text was being written to explain.
+            sb.Append('…');
+            return;
+        }
         switch (e)
         {
             case BVarExpr b:

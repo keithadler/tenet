@@ -390,7 +390,18 @@ the reference rather than defects in Tenet. Known classes:
   taking down the 1,807 declarations being checked beside it and leaving no report at all.
   The kernel now probes the remaining stack as it recurses and raises
   `RecursionLimitException`, so the one declaration is rejected with "expression too deep"
-  and the rest of the variant is checked normally. On that variant Tenet now finishes in
+  and the rest of the variant is checked normally. Every recursion that walks a term or a
+  universe level is guarded: `WhnfCore`, `IsDefEqCore`, `InferTypeCore`, the two structural
+  traversals in `ExprOps`, structural equality on expressions, and `Normalize`, `PushMaxArgs`,
+  `IsGeqCore`, `IsNormLt`, `Instantiate`, `Equals` and the two zero tests on levels. The two
+  printers truncate with an ellipsis instead of throwing, because they are what writes the
+  message for some other error and must not replace it. Recursion over names and over an
+  inductive declaration's structure is not guarded: neither is grown by reduction, both are
+  bounded by what the export already holds.
+
+  Each guard has a test that builds something deeper than a 1 MB stack and asserts the
+  rejection. Removing any one of them aborts its own test, which is how the tests are known to
+  be measuring the guard and not something else. On that variant Tenet now finishes in
   about 112 seconds with 32 rejections; Lean's kernel still does not finish it, allocating
   past 3 GB and climbing. Neither is wrong to diverge on ill-typed input, and the honest
   report is that one side answered and the other did not.

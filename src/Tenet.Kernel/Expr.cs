@@ -267,6 +267,16 @@ public abstract class Expr : IEquatable<Expr>
         private HashSet<(Expr, Expr)>? _cache;
         private int _steps;
 
+        /// <summary>
+        /// Recurse into a child off the spine. Every caller of this is a real stack frame, unlike the spine, which
+        /// the loop below walks without one, so this is where a term deeper than the stack is caught.
+        /// </summary>
+        private bool Nested(Expr a, Expr b)
+        {
+            StackGuard.Check();
+            return Apply(a, b);
+        }
+
         public bool Apply(Expr a, Expr b)
         {
             while (true)
@@ -321,7 +331,7 @@ public abstract class Expr : IEquatable<Expr>
                     case AppExpr x:
                         {
                             var y = (AppExpr)b;
-                            if (!Apply(x.Arg, y.Arg))
+                            if (!Nested(x.Arg, y.Arg))
                             {
                                 return false;
                             }
@@ -332,7 +342,7 @@ public abstract class Expr : IEquatable<Expr>
                     case BindingExpr x:
                         {
                             var y = (BindingExpr)b;
-                            if (!Apply(x.Domain, y.Domain))
+                            if (!Nested(x.Domain, y.Domain))
                             {
                                 return false;
                             }
@@ -343,7 +353,7 @@ public abstract class Expr : IEquatable<Expr>
                     case LetExpr x:
                         {
                             var y = (LetExpr)b;
-                            if (x.NonDep != y.NonDep || !Apply(x.Type, y.Type) || !Apply(x.Value, y.Value))
+                            if (x.NonDep != y.NonDep || !Nested(x.Type, y.Type) || !Nested(x.Value, y.Value))
                             {
                                 return false;
                             }

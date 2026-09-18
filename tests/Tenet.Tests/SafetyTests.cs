@@ -137,6 +137,81 @@ public class SafetyTests
         Assert.Contains("too deep", caught!.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>Build f (f (f ... x)) nested in the argument position, which is where each level costs a frame.</summary>
+    private static Expr DeepTerm(int depth)
+    {
+        Expr e = NatE;
+        for (int i = 0; i < depth; i++)
+        {
+            e = Expr.App(NatE, e);
+        }
+        return e;
+    }
+
+    /// <summary>Run <paramref name="body"/> on a deliberately small stack and return what it threw, if anything.</summary>
+    private static Exception? OnASmallStack(Action body)
+    {
+        Exception? caught = null;
+        var t = new Thread(() =>
+        {
+            try
+            {
+                body();
+            }
+            catch (Exception e)
+            {
+                caught = e;
+            }
+        }, 1 * 1024 * 1024);
+        t.Start();
+        Assert.True(t.Join(TimeSpan.FromMinutes(2)), "the work neither finished nor hit the limit");
+        return caught;
+    }
+
+    /// <summary>
+    /// Structural equality walks two terms at once, and only the child off the spine costs a frame. Two deep terms
+    /// that are equal recurse all the way down, so this is a path a deep term reaches without ever being reduced.
+    /// </summary>
+    [Fact]
+    public void ComparingTwoTermsDeeperThanTheStackIsRejected()
+    {
+        // Built twice, so nothing is reference-equal and the comparison really descends.
+        Expr a = DeepTerm(2_000_000), b = DeepTerm(2_000_000);
+        Exception? e = OnASmallStack(() => a.Equals(b));
+        Assert.IsType<RecursionLimitException>(e);
+    }
+
+    /// <summary>
+    /// The printer truncates rather than throwing. It is what writes the message for some other error, and
+    /// replacing a type mismatch with "expression too deep" would throw away the error being reported.
+    /// </summary>
+    [Fact]
+    public void PrintingATermDeeperThanTheStackTruncates()
+    {
+        Expr deep = DeepTerm(2_000_000);
+        string? printed = null;
+        Exception? e = OnASmallStack(() => printed = ExprPrinter.Print(deep));
+        Assert.Null(e);
+        Assert.Contains("\u2026", printed!, StringComparison.Ordinal);
+    }
+
+    /// <summary>A universe level nested deeper than the stack is rejected the same way a term is.</summary>
+    [Fact]
+    public void NormalizingALevelDeeperThanTheStackIsRejected()
+    {
+        // Distinct parameters, because MkMax folds max 0 u, max u u and max u (max u v) on the way in; if any of
+        // those fired the level would stay shallow and this test would pass without testing anything.
+        const int Levels = 200_000;
+        Level deep = Level.Param(Name.Of("u0"));
+        for (int i = 1; i < Levels; i++)
+        {
+            deep = Level.MkMax(Level.Param(Name.Of("u" + i.ToString(System.Globalization.CultureInfo.InvariantCulture))), deep);
+        }
+        Assert.Equal(Levels - 1, deep.Depth);
+        Exception? e = OnASmallStack(() => deep.Normalize());
+        Assert.IsType<RecursionLimitException>(e);
+    }
+
     [Fact]
     public void NonTerminatingUnsafeDefinitionHitsTheUnfoldLimit()
     {
