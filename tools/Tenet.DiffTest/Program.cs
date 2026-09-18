@@ -34,7 +34,11 @@ internal static class Program
                        different question, such as whether `tenet crosscheck` notices a damaged declaration.
         """;
 
-    private sealed record Verdicts(HashSet<string> Failed, HashSet<string> All, bool Incomplete, string Raw);
+    private sealed record Verdicts(HashSet<string> Failed, HashSet<string> All, bool Incomplete, string Raw)
+    {
+        /// <summary>Primitives Tenet would not shortcut on this variant, because the mutation damaged one.</summary>
+        public List<string> Unvalidated { get; init; } = [];
+    }
 
     private static int Main(string[] args)
     {
@@ -147,7 +151,7 @@ internal static class Program
         Console.WriteLine($"baseline: both accept all {bo.All.Count} declarations");
 
         int soundness = 0, strict = 0, agreedRejections = 0, inconclusive = 0;
-        int thirdAsked = 0, thirdWithTenet = 0, thirdWithLean = 0, thirdSilent = 0;
+        int thirdAsked = 0, thirdWithTenet = 0, thirdWithLean = 0, thirdSilent = 0, expectedStrict = 0;
         var kinds = new Dictionary<string, (int Applied, int Rejected)>();
         for (int v = 0; v < variants; v++)
         {
@@ -174,7 +178,7 @@ internal static class Program
             int agreed = t.Failed.Count(o.Failed.Contains);
             agreedRejections += agreed;
             soundness += tenetAcceptsLeanRejects.Count;
-            strict += tenetRejectsLeanAccepts.Count;
+            if (t.Unvalidated.Count == 0) { strict += tenetRejectsLeanAccepts.Count; }
             foreach (string k in applied)
             {
                 kinds[k] = kinds.TryGetValue(k, out var c) ? (c.Applied + 1, c.Rejected) : (1, 0);
@@ -229,7 +233,18 @@ internal static class Program
                     }
                 }
             }
-            if (tenetRejectsLeanAccepts.Count > 0)
+            if (tenetRejectsLeanAccepts.Count > 0 && t.Unvalidated.Count > 0)
+            {
+                // Expected, and the point of the check rather than a defect in it. The mutation damaged a constant
+                // named after a primitive, so Tenet stopped computing that operation directly and unfolded the
+                // declaration in front of it instead. Lean shortcuts on the name whatever the body says, so it
+                // goes on accepting arithmetic the variant no longer states. The disagreement is Lean trusting a
+                // name and Tenet not.
+                expectedStrict += tenetRejectsLeanAccepts.Count;
+                Console.WriteLine($"  STRICT, expected: {tenetRejectsLeanAccepts.Count} rejected because the variant "
+                                + $"damaged {string.Join(", ", t.Unvalidated)}, which Tenet then declines to shortcut");
+            }
+            else if (tenetRejectsLeanAccepts.Count > 0)
             {
                 Console.WriteLine("  STRICT: Tenet rejects but Lean accepts:");
                 foreach (string n in tenetRejectsLeanAccepts.Take(10)) Console.WriteLine("    " + n + "  |  " + FirstLine(t.Raw, n));
@@ -247,6 +262,11 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine($"done: {variants} variants, {variants - inconclusive} compared, {inconclusive} inconclusive, "
                         + $"{agreedRejections} agreed rejections, {soundness} SOUNDNESS disagreements, {strict} STRICT disagreements");
+        if (expectedStrict > 0)
+        {
+            Console.WriteLine($"{expectedStrict} rejection(s) were Tenet declining to shortcut a primitive the "
+                            + "variant had damaged, which is the intended divergence and is not counted above");
+        }
         Console.WriteLine("mutations applied: " + string.Join(", ", kinds.OrderBy(k => k.Key).Select(k => $"{k.Key} x{k.Value.Applied}")));
         if (useOracle2)
         {
@@ -293,6 +313,7 @@ internal static class Program
         File.Delete(report);   // a report left by an earlier variant must not be read as this one's verdict
         string output = Run(tenet, ["check", export, "--quiet", "--report", report], out int code);
         var failed = new HashSet<string>();
+        var unvalidated = new List<string>();
         bool incomplete = false;
         if (!File.Exists(report))
         {
@@ -310,9 +331,13 @@ internal static class Program
                 failed.Add(Normalize(f.GetProperty("name").GetString() ?? ""));
             }
             incomplete = doc.RootElement.TryGetProperty("incomplete", out JsonElement inc) && inc.ValueKind == JsonValueKind.String;
+            if (doc.RootElement.TryGetProperty("unvalidatedPrimitives", out JsonElement up))
+            {
+                unvalidated.AddRange(up.EnumerateArray().Select(x => x.GetString() ?? ""));
+            }
         }
         // Tenet reports only failures; treat every other declaration as accepted.
-        return new Verdicts(failed, new HashSet<string>(), incomplete, output);
+        return new Verdicts(failed, new HashSet<string>(), incomplete, output) { Unvalidated = unvalidated };
     }
 
     private static Verdicts RunOracle(string oracle, string export, string outDir, string tag)

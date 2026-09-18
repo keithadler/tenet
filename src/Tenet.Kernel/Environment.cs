@@ -125,6 +125,25 @@ public sealed class Environment
         return state == 1;
     }
 
+    /// <summary>
+    /// The primitives this environment was asked about and refused to shortcut. Empty on a real Lean library; a
+    /// non-empty list means some constant named after a primitive is not that primitive, and the kernel unfolded
+    /// it instead. A caller comparing verdicts with Lean needs this, because Lean shortcuts on the name regardless
+    /// and will accept things this kernel does not.
+    /// </summary>
+    public IReadOnlyList<Primitive> UnvalidatedPrimitives()
+    {
+        var bad = new List<Primitive>();
+        foreach (Primitive p in System.Enum.GetValues<Primitive>())
+        {
+            if (Volatile.Read(ref _primitives[(int)p]) == 2)
+            {
+                bad.Add(p);
+            }
+        }
+        return bad;
+    }
+
     /// <summary>Add a constant without checking it. Safe to call from one thread while others read.</summary>
     public void AddCore(ConstantInfo info)
     {

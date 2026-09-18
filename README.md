@@ -477,6 +477,9 @@ A checker that accepted everything would produce the same clean output, so:
 - **It derives rather than trusts.** Recursors and constructor metadata are re-derived from
   the types and constructors alone and compared field by field with what Lean wrote.
 
+Tenet aims to decide exactly what Lean's kernel decides. The places it deliberately does not are listed in
+[docs/divergences.md](docs/divergences.md); anywhere else, a difference is a bug.
+
 See [docs/status.md](docs/status.md) for the runs and [docs/testing.md](docs/testing.md) for
 the method.
 
@@ -489,7 +492,7 @@ src/Tenet.Olean      .olean reader (memory-mapped, lazy) and in-place checker
 src/Tenet.Cli        the tenet command
 tests/Tenet.Tests    xunit tests; large-export tests run when TENET_EXPORTS is set
 tests/fixtures       small committed exports
-docs/                design notes, status, testing
+docs/                design notes, status, testing, divergences
 ```
 
 ## Contributing

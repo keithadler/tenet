@@ -1871,6 +1871,10 @@ internal static class Program
             ("failed", result.Failures.Count),
             ("skipped", result.Skipped),
             ("constants", result.Environment.Count),
+            // Non-empty means some constant named after a primitive is not that primitive, so the kernel unfolded
+            // it rather than taking the accelerated path. Lean shortcuts on the name regardless, so a verdict
+            // comparison against it will show this kernel rejecting more.
+            ("unvalidatedPrimitives", result.Environment.UnvalidatedPrimitives().Select(p => p.ToString()).ToList()),
             ("jobs", jobs),
             ("seconds", Math.Round(result.Elapsed.TotalSeconds, 2)),
             ("parseSeconds", result.Stream is StreamInfo si ? Math.Round(si.ParseTime.TotalSeconds, 2) : null),
