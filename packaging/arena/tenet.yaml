@@ -17,7 +17,7 @@ url: https://github.com/keithadler/tenet
 ref: main
 rev: REPLACE_WITH_REV
 # No .NET in the arena's own environment, so Tenet brings its own, the way lean4cobol does.
-build: nix develop path:. --ignore-environment -c dotnet publish src/Tenet.Cli -c Release -f net8.0 -p:TargetFrameworks=net8.0 -o arena-bin
+build: nix develop path:. --ignore-environment -c dotnet publish src/Tenet.Cli -c Release -f net10.0 -p:TargetFrameworks=net10.0 -o arena-bin
 run: |
   # 0 accept, 1 reject. Tenet's own exit codes agree on those two. Anything else means it could not
   # process the file, which is an error in the checker rather than a decline: Tenet has nothing it

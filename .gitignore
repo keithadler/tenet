@@ -24,3 +24,7 @@ tests/exports/*.ndjson
 
 # The sample writes its page here
 samples/Tenet.Explorer/out/
+
+# Written by the nix devShell (see flake.nix); only used by the arena build.
+.nix-home/
+arena-bin/

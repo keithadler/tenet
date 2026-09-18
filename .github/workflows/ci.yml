@@ -61,6 +61,39 @@ jobs:
           " | tr -d '\r')
           exit $fail
 
+  arena:
+    name: The arena's own build and run lines work
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      # The arena has no .NET in its environment, so a checker that needs one brings its own. This runs the
+      # exact lines from packaging/arena/tenet.yaml: if they stop working, this goes red here rather than in
+      # somebody else's repository after a submission.
+      - name: Build the way the arena would
+        run: |
+          nix develop path:. --ignore-environment -c dotnet publish src/Tenet.Cli -c Release             -f net10.0 -p:TargetFrameworks=net10.0 -o arena-bin
+
+      - name: Run the way the arena would, over its own scoring convention
+        run: |
+          set -o pipefail
+          check() {
+            ./arena-bin/tenet check "$1" --quiet >/dev/null 2>&1
+            c=$?
+            if [ "$c" = 0 ] || [ "$c" = 1 ]; then return $c; fi
+            echo "::error::$1 gave exit $c, which the arena reads as neither accept nor reject"
+            exit 9
+          }
+          # 1 is reject. Every file in the negative corpus must come back as one.
+          fail=0
+          for f in tests/fixtures/invalid/*.ndjson; do
+            if check "$f"; then echo "::error::$f was accepted"; fail=1; else echo "rejected: $f"; fi
+          done
+          # 0 is accept, on a file that is fine.
+          if check tests/fixtures/Nat.add_succ.ndjson; then echo "accepted: Nat.add_succ"; else echo "::error::a valid export was rejected"; fail=1; fi
+          exit $fail
+
   check-prelude:
     # Re-check the Lean prelude from a fresh export on every push to main.
     runs-on: ubuntu-latest
