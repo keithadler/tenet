@@ -403,9 +403,23 @@ hardcodes is something it takes on trust, and each deserves a file that abuses i
 grep -ohE 'Name\.Of\("[^)]*"\)' src/Tenet.Kernel/*.cs | sort -u
 ```
 
-Binder names in that list are cosmetic. The rest are assumptions: the type a literal denotes, the fifteen `Nat`
+Binder names in that list are cosmetic. The rest are assumptions: the type a literal denotes, the sixteen `Nat`
 operations the kernel computes itself, the constants a string literal expands through, the quotient block, and
 `Lean.reduceBool`.
+
+`tests/TrustSurfaceTests.cs` runs that grep from a test and requires every name to be accounted for, as a binder,
+as a name the kernel invents and never looks up, or as an assumption mapped to the case that attacks it. The
+mapping names a method, and the method has to exist, so renaming a case cannot leave a name looking defended by
+something that is gone.
+
+This matters more than the individual cases. A name added to the kernel tomorrow is a new assumption with no
+attack written for it, and nothing about a green suite would say so: the failure is not a test that breaks but a
+test nobody wrote. Adding one now fails the build until somebody classifies it. Both halves were verified by
+adding a name to the kernel and watching the test name it, and by classifying a name the kernel does not have.
+
+Writing it found `eagerReduce` unattacked. It is the odd one out, since it asserts nothing about a term and
+instead turns on a mode that reduces harder. That cannot launder a falsehood, because reduction does not change
+what a term means, but it is attacker-controlled effort, and it now has a case.
 
 Working the list found three gaps, since closed, and four places already defended. The defended ones are in the
 catalog too, so that a later simplification cannot quietly remove them:

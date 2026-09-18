@@ -14,9 +14,9 @@ namespace Tenet.Tests;
 /// neither was reachable by mutation.
 ///
 /// The cases here are organized around the attack surface rather than around the bugs: every name the kernel
-/// hardcodes is something it takes on trust, and each one deserves a file that abuses it. Run
-/// <c>grep -ohE 'Name\.Of\("[^)]*"\)' src/Tenet.Kernel/*.cs</c> to see the current list. Binder names are
-/// cosmetic; the rest are assumptions.
+/// hardcodes is something it takes on trust, and each one deserves a file that abuses it. TrustSurfaceTests
+/// reads that list out of the kernel's source and fails if a name here is unaccounted for, so the catalog cannot
+/// fall behind the code without somebody being told. Binder names are cosmetic; the rest are assumptions.
 ///
 /// Every case asserts two things: that the attack is refused, and that it succeeds when the defense is switched
 /// off. Without the second half a test can pass because the attack was built wrong.
@@ -314,6 +314,67 @@ public class HostileTests
             Assert.True(new TypeChecker(env).IsDefEq(beq01, Expr.Const(Name.Of("Bool", "false"), [])));
             return 0;
         });
+    }
+
+    // ---------------------------------------------------------------- an annotation that switches the checker's mode
+
+    /// <summary>
+    /// `eagerReduce` is the one name in the trust surface that does not assert anything about a term: it changes
+    /// how hard the checker works. Wrapping an argument in it makes the checker reduce terms that still contain
+    /// free variables, in two places where it otherwise waits. A file chooses that, so a file controls it.
+    ///
+    /// It cannot be used to launder a falsehood, and this pins that: both gates admit more *reduction*, and
+    /// reduction does not change what a term means, so anything accepted in the mode is accepted because it was
+    /// true. What the file really gets is the cost, since the annotation is an attacker-controlled switch into
+    /// the expensive path, bounded by `MaxUnfolds` like everything else.
+    ///
+    /// What this does not establish is that the mode was entered, because entering it has no effect an outside
+    /// caller can observe on a term this small: everything the eager path would reduce, lazy delta reduces
+    /// anyway. So the term's shape is asserted against what the kernel looks for, and the behavior is asserted
+    /// to be the same as without the wrapper. Claiming more than that would be claiming a check this is not.
+    /// </summary>
+    [Fact]
+    public void AnAnnotationThatOnlyChangesEffortCannotChangeAnAnswer()
+    {
+        var env = new Environment();
+        AddRealNat(env);
+        Expr nat = Expr.Const(Name.Of("Nat"), []);
+
+        // `eagerReduce` as a file would declare it, and at the arity the kernel looks for. The kernel does not
+        // reduce this application; it notices the shape while checking an application whose argument has it, and
+        // turns on a mode that reduces terms still containing free variables.
+        Ax(env, Name.Of("eagerReduce"), Expr.Pi(Name.Of("α"), Type0, Expr.Arrow(Expr.BVar(0), Expr.BVar(1))));
+        Expr eager = Expr.Const(Name.Of("eagerReduce"), []);
+
+        // A function that only accepts the literal 2, so the argument's type has to be compared to `2` and the
+        // comparison is what the annotation affects.
+        Ax(env, Name.Of("P"), Expr.Arrow(nat, Type0));
+        Expr p = Expr.Const(Name.Of("P"), []);
+        Ax(env, Name.Of("f"), Expr.Arrow(Expr.App(p, Expr.NatLit(2)), nat));
+        Ax(env, Name.Of("h"), Expr.App(p, Expr.NatLit(2)));
+
+        // Checking, not inferring: the annotation is only consulted on the checking path.
+        var tc = new TypeChecker(env);
+        Assert.Equal(nat, tc.Check(Expr.App(Expr.Const(Name.Of("f"), []), Expr.Const(Name.Of("h"), []))));
+
+        // The same application with the argument wrapped. The wrapper's type is the argument's type, so this is
+        // still well typed, and the annotation switches the mode on while the domains are compared.
+        Expr wrapped = Expr.MkApp(eager, Expr.App(p, Expr.NatLit(2)), Expr.Const(Name.Of("h"), []));
+        // The shape matters and is asserted rather than assumed: the kernel looks for this exact name at exactly
+        // two arguments, so a test built at the wrong arity would exercise nothing and still pass everything below.
+        Assert.True(wrapped.IsAppOfArity(Name.Of("eagerReduce"), 2));
+        Assert.Equal(nat, new TypeChecker(env).Check(Expr.App(Expr.Const(Name.Of("f"), []), wrapped)));
+
+        // And the point: the mode admits more reduction, not more conclusions. A proof of `P 1` wrapped in the
+        // annotation is still not a proof of `P 2`, so nothing is laundered by asking the checker to try harder.
+        Ax(env, Name.Of("h1"), Expr.App(p, Expr.NatLit(1)));
+        Expr wrongWrapped = Expr.MkApp(eager, Expr.App(p, Expr.NatLit(1)), Expr.Const(Name.Of("h1"), []));
+        Assert.Throws<KernelException>(() =>
+            new TypeChecker(env).Check(Expr.App(Expr.Const(Name.Of("f"), []), wrongWrapped)));
+
+        // Unwrapped it is refused too, so the assertion above is not passing because the wrapper broke the term.
+        Assert.Throws<KernelException>(() =>
+            new TypeChecker(env).Check(Expr.App(Expr.Const(Name.Of("f"), []), Expr.Const(Name.Of("h1"), []))));
     }
 
     // ---------------------------------------------------------------- compiled code the checker refuses to trust
