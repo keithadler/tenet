@@ -78,3 +78,38 @@ compilation was correct.
 
 - Elaboration, tactics, or a Lean frontend of any kind.
 - Bit-for-bit reproduction of Lean's error messages.
+
+## Reusing reductions between declarations, tried and rejected
+
+A `TypeChecker` is built per declaration, so its reduction caches start empty each time. On all of `Init`,
+`whnfCore` runs 27.7 million times and hits its cache 8% of the time, which looks like an obvious thing to fix:
+share the caches across declarations and stop renormalizing the same types thousands of times.
+
+There is even an argument that Tenet may do this and Lean may not. Whnf of a **closed** term depends only on the
+constants it reaches; those are all present before the declaration using them is checked; this environment only
+grows and refuses to redefine a name. So the answer cannot change once computed. Lean checks against an
+environment that is still being built one declaration at a time, and has no such guarantee.
+
+It was implemented and measured, and it is worth about 3%: the median of five runs on all of `Init` at twelve
+jobs went from 11.04s to 10.74s. Instrumenting the shared cache says why:
+
+| | |
+| --- | --- |
+| hits | 1,332,645 |
+| misses | 15,689,576 |
+| not eligible | 7,327,972 |
+
+A 7.8% hit rate, which is the same 8% the per-declaration cache already gets. The reuse is not there to be had,
+and the reason is structural rather than fixable. Type checking opens binders by generating fresh free
+variables, so 30% of all reductions are on terms carrying variables local to one declaration. Those are unique
+objects by construction and could never match across declarations even if sharing them were sound. What is left
+is closed terms, and those simply do not recur often enough.
+
+It was reverted. Five subtle conditions (closed terms only, safe checkers only, not under `eagerReduce`, not in
+a faithful retry, and not while counting rules, since a reused result fires none) guarding the hottest path in
+the kernel is a poor trade for 3% in a project whose first claim is that its decisions can be audited.
+
+Where the time actually goes, for anyone who wants to try again: 7.2 million definition unfoldings on `Init`,
+and a parallel speedup that stops paying at about four workers. Wall time goes 30.1s at one job to 13.3s at
+four and only 11.0s at twelve, while summed kernel time across workers rises from 26s to 65s. That is memory
+and allocation behavior, not duplicated reduction, and it is the more promising thread.
