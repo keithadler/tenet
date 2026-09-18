@@ -138,27 +138,35 @@ also could not have seen a reader that got them wrong. The substantive column is
 now under a comparison strong enough for that to mean something. (The two rows are different
 Lean versions, hence the small difference in constants compared.)
 
-The Mathlib rows below still carry the old, weaker measurement. Their substantive column is
-unaffected, since nothing in it was hidden by either defect, but read the cosmetic column as an
-undercount.
+The Mathlib slices, re-measured with the strict comparison against Mathlib on Lean 4.32.1:
 
-| Export | Compared | Cosmetic | Realized elsewhere | Substantive |
+| Export | Compared | Cosmetic | nonDep | Substantive |
 | --- | --- | --- | --- | --- |
-| `Analysis.SpecialFunctions.Trigonometric.Basic` | 153,687 | 64 | 6 | **0** |
-| `CategoryTheory.Limits.Shapes.Products` | 29,113 | 30 | 0 | **0** |
-| `LinearAlgebra.Matrix.Determinant.Basic` | 111,992 | 59 | 8 | **0** |
-| `NumberTheory.Padics.PadicNumbers` | 133,907 | 57 | 6 | **0** |
-| `Topology.MetricSpace.Polish` | 129,031 | 57 | 5 | **0** |
-| **distinct constants, unioned** | **228,720** | 308 | 41 | **0** |
+| `Analysis.SpecialFunctions.Trigonometric.Basic` | 151,691 | 46,846 | 3,341 | **0** |
+| `CategoryTheory.Limits.Shapes.Products` | 28,712 | 8,945 | 525 | **0** |
+| `LinearAlgebra.Matrix.Determinant.Basic` | 100,516 | 32,679 | 2,061 | **0** |
+| `NumberTheory.Padics.PadicNumbers` | 131,620 | 40,755 | 2,856 | **0** |
+| `Topology.MetricSpace.Polish` | 128,004 | 39,633 | 2,748 | **0** |
+| **distinct constants, unioned** | **166,048** | | | **0** |
 
-Count the union, never the sum. Those six runs add to 617,450, which overstates coverage by a
-factor of 2.7, because any two Mathlib exports share most of their closure. `--names-out` writes
-every constant compared so the union can be taken; 228,720 is roughly 30% of what a full Mathlib
-check covers, and the rest is still untested ground.
+The old measurement of the same five slices put the cosmetic column at 64, 30, 59, 57 and 57.
+That is what the comparison could see when it short-circuited on an equality that ignores binder
+metadata: only a binder difference inside a declaration that already differed for some other
+reason. The substantive column is the one that carries the claim, and it was zero then and is
+zero now, under a comparison strong enough for zero to mean something.
+
+The rows are a different Mathlib and a different Lean from the earlier table, which is why the
+compared counts moved; the union is over the constants these five runs actually compared.
+
+Count the union, never the sum. Those five runs add to 540,543, which overstates coverage by a
+factor of 3.3, because any two Mathlib exports share most of their closure. `--names-out` writes
+every constant compared so the union can be taken; 166,048 is roughly a fifth of what a full
+Mathlib check covers, and the rest is still untested ground.
 
 "Cosmetic" means a difference of binder name or implicitness, which the kernel ignores.
+"nonDep" means a `let`'s optimization hint, which `lean4export` normalizes to false on purpose.
 "Realized elsewhere" means one private auxiliary generated in a different module: the same
-declaration under a different prefix. Neither can change what is accepted.
+declaration under a different prefix. None of the three can change what is accepted.
 
 ## Robustness of the `.olean` reader
 
