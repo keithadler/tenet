@@ -1,0 +1,28 @@
+description: |
+  [**Tenet**](https://github.com/keithadler/tenet) is an independent implementation of the Lean 4
+  kernel in C# on .NET, written from the type theory and the reference kernel's behavior rather than
+  translated from it. It shares no code with Lean, which is the point of it: a defect in the C++
+  kernel's *code* is one Tenet would not reproduce. A defect in its *design* is one it likely would,
+  since matching the reference kernel's decisions was the goal.
+
+  It reads lean4export NDJSON and also reads Lean's compiled `.olean` files directly, with no Lean
+  toolchain installed.
+
+  Everywhere Tenet deliberately decides something differently from Lean is written down in
+  `docs/divergences.md`. Two are relevant here: it checks that the constant named `Nat.add` behaves
+  like addition before taking the arithmetic shortcut named after it, and it refuses a numeric
+  literal unless the environment's `Nat` is the inductive the literal denotes. Both are extra checks
+  on the prelude of the kind the arena's README permits.
+url: https://github.com/keithadler/tenet
+ref: main
+rev: REPLACE_WITH_REV
+# No .NET in the arena's own environment, so Tenet brings its own, the way lean4cobol does.
+build: nix develop path:. --ignore-environment -c dotnet publish src/Tenet.Cli -c Release -f net8.0 -p:TargetFrameworks=net8.0 -o arena-bin
+run: |
+  # 0 accept, 1 reject. Tenet's own exit codes agree on those two. Anything else means it could not
+  # process the file, which is an error in the checker rather than a decline: Tenet has nothing it
+  # means to decline, so hiding a failure as a decline would be hiding it.
+  ./arena-bin/tenet check "$IN" --quiet
+  c=$?
+  if [ "$c" = 0 ] || [ "$c" = 1 ]; then exit $c; fi
+  exit 9
