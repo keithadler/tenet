@@ -124,23 +124,68 @@ jobs:
 
       - name: Export a Mathlib slice and put it to both
         run: |
-          MOD=Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
+          # tee returns its own status, so without this a rejection by either checker reports green.
+          set -o pipefail
+
+          # A different slice each night. Running one fixed module forever re-proves the same declarations and
+          # the union never grows, which is the only number here that means anything: any two Mathlib exports
+          # share most of their closure, so slices add up to far less than the sum of their sizes.
+          SLICES=(
+            Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
+            Mathlib.NumberTheory.Padics.PadicNumbers
+            Mathlib.Topology.MetricSpace.Polish
+            Mathlib.LinearAlgebra.Matrix.Determinant.Basic
+            Mathlib.CategoryTheory.Limits.Shapes.Products
+            Mathlib.Combinatorics.SimpleGraph.Basic
+            Mathlib.RingTheory.Polynomial.Basic
+          )
+          MOD=${SLICES[$(( 10#$(date +%j) % ${#SLICES[@]} ))]}
           cd "$RUNNER_TEMP/mathlib4"
+
+          # Mathlib master renames modules, and a slice that no longer exists should cost one night rather than
+          # look like a checker failure. Fall back to the first, which is the oldest and least likely to move.
+          if ! lake build "$MOD" 2>/dev/null; then
+            echo "::warning::$MOD did not build on Mathlib master; falling back to ${SLICES[0]}"
+            MOD=${SLICES[0]}
+            lake build "$MOD"
+          fi
+          echo "slice: $MOD"
           lake env "$RUNNER_TEMP/lean4export/.lake/build/bin/lean4export" "$MOD" > "$RUNNER_TEMP/slice.ndjson"
           cd "$GITHUB_WORKSPACE"
           wc -l < "$RUNNER_TEMP/slice.ndjson"
 
           # con-leche carries a Lean proof that it never accepts a file declaring a theorem of type False. Both
           # accepting the same file in full is what transfers that to everything Tenet accepted in it.
-          src/Tenet.Cli/bin/Release/net10.0/tenet check "$RUNNER_TEMP/slice.ndjson" --quiet | tee "$RUNNER_TEMP/t.txt"
+          # --names-out records what was actually compared, so the union across nights can be counted rather
+          # than the sizes added, which overstates it fourfold.
+          src/Tenet.Cli/bin/Release/net10.0/tenet check "$RUNNER_TEMP/slice.ndjson" --quiet \
+            --names-out "$RUNNER_TEMP/names-$MOD.txt" | tee "$RUNNER_TEMP/t.txt"
           "$RUNNER_TEMP/con-leche/.lake/build/bin/con-leche" --jobs=4 "$RUNNER_TEMP/slice.ndjson" | tee "$RUNNER_TEMP/c.txt"
+
+          # Both accepting in full is the whole claim, so it is asserted rather than printed. Before pipefail
+          # above, neither checker's exit code reached the step at all: tee's did.
+          #
+          # tenet's verdict line is this repo's own format, so matching it is safe. con-leche's is not, and a
+          # pattern invented here could fail on a line like "0 failed" or quietly stop matching after an
+          # upstream change, which is the kind of check that passes for the wrong reason. Its exit code is the
+          # thing it actually promises, and pipefail is what now makes that reach the step.
+          grep -qE '^OK' "$RUNNER_TEMP/t.txt" || { echo "tenet did not accept the slice in full"; exit 1; }
 
           {
             echo "## A proved checker agrees"
             echo
+            echo "- slice: \`$MOD\`"
             echo "- tenet: $(grep -E '^(OK|FAILED)' "$RUNNER_TEMP/t.txt" | tail -1)"
             echo "- con-leche: $(tail -1 "$RUNNER_TEMP/c.txt")"
+            echo "- names recorded: $(wc -l < "$RUNNER_TEMP/names-$MOD.txt") (artifact \`proved-checker-names\`)"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: proved-checker-names
+          path: ${{ runner.temp }}/names-*.txt
+          if-no-files-found: ignore
 
   three-way:
     name: Tenet vs Lean's kernel vs con-leche

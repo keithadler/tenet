@@ -32,7 +32,7 @@ internal static class Program
           every module is searched, so you need the declaration's name and not the file it lives in
 
           --json on axioms, audit, compare and crosscheck prints one machine-readable line instead
-          --names-out FILE on crosscheck writes every constant compared, so slices can be unioned
+          --names-out FILE on an export check or on crosscheck lists every constant, for unioning
           tenet crosscheck <export.ndjson> <olean|dir>  what the .olean reader decodes, against Lean's own exporter
           tenet version
 
@@ -844,6 +844,21 @@ internal static class Program
         }
     }
 
+    /// <summary>
+    /// Every constant the run ended up with, one per line. Coverage across several exports only means anything
+    /// unioned: two Mathlib slices share most of their closure, so adding their sizes overstates it several fold.
+    /// `check` is where the claim is made, so this is where the evidence for it has to come from; it was only on
+    /// `crosscheck` before, which needs a second artifact nobody has when they are simply checking a file.
+    /// </summary>
+    private static void WriteNames(string[] args, Environment env)
+    {
+        int idx = Array.IndexOf(args, "--names-out");
+        if (idx >= 0 && idx + 1 < args.Length)
+        {
+            File.WriteAllLines(args[idx + 1], env.OwnConstants.Select(c => c.Name.ToString()).OrderBy(n => n, StringComparer.Ordinal));
+        }
+    }
+
     private static string Trim(string s) => s.Length > 200 ? s[..200] + " …" : s;
 
     /// <summary>Hash of a file, so a report says which artifact produced the verdict rather than only its path.</summary>
@@ -1467,6 +1482,12 @@ internal static class Program
                     break;
                 case "--rules":
                     break;   // handled where the counters are switched on, below
+                case "--names-out":
+                    if (++i >= args.Length)
+                    {
+                        return Fail("--names-out needs a file name");
+                    }
+                    break;
                 case "--report":
                     if (++i >= args.Length)
                     {
@@ -1571,6 +1592,7 @@ internal static class Program
         {
             PrintRules(args);
         }
+        WriteNames(args, result.Environment);
         if (report is not null)
         {
             WriteReport(report, path, result, jobs, stats);
@@ -1627,6 +1649,11 @@ internal static class Program
                 case "--quiet": quiet = true; break;
                 case "--stats": stats = true; break;
                 case "--rules": break;   // handled where the counters are switched on, below
+                case "--names-out":
+                    // Deliberately refused rather than accepted and ignored. An olean run checks module by
+                    // module and keeps no single environment to enumerate, and a flag that silently writes
+                    // nothing is worse than one that is not offered.
+                    return Fail("--names-out works on an export file, not on .olean input");
                 case "--verbose": verbose = true; break;
                 case "--report":
                     if (++i >= args.Length) return Fail("--report needs a file name");

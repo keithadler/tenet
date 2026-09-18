@@ -236,6 +236,15 @@ to Tenet than to con-leche, and it is the best assurance evidence this project h
 Count the union. Those five add to 1,271,680, which overstates coverage fourfold, because any two Mathlib
 exports share most of their closure.
 
+`tenet check EXPORT --names-out FILE` writes every constant the run ended with, which is what makes the union
+countable. It was only on `crosscheck` before, which needs an `.olean` tree alongside the export, and the claim
+being made here is about `check`. On `.olean` input the flag is refused rather than accepted, since that path
+checks module by module and keeps no single environment to list.
+
+The nightly rotates through seven slices by day of year rather than re-proving one of them forever, and uploads
+the name list as an artifact, so the union grows on its own instead of when somebody remembers to add a slice.
+A module Mathlib master has renamed costs one night: the job falls back to the first slice and says so.
+
 ### What that licenses, and what it does not
 
 con-leche's `no_False_declaration` is a machine-checked theorem that a file declaring a theorem of type `False` is
