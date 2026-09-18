@@ -224,15 +224,44 @@ not to accept a proof of `False`. That is a stronger guarantee than anything her
 tested, con-leche is proved. Running the two on identical export files is therefore worth more
 to Tenet than to con-leche, and it is the best assurance evidence this project has.
 
-| Export | Tenet | con-leche | Agree |
+| Export | declarations | Tenet | con-leche |
 | --- | --- | --- | --- |
-| `Init.Core` | 3,482 accepted | 3,482 accepted | yes |
-| `Init` | 57,897 accepted | 57,897 accepted | yes |
-| `Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic` | 293,323 accepted | 293,323 accepted | yes |
+| `Analysis.SpecialFunctions.Trigonometric.Basic` | 289,758 | 0 failed | accepted |
+| `NumberTheory.Padics.PadicNumbers` | 269,848 | 0 failed | accepted |
+| `Topology.MetricSpace.Polish` | 266,295 | 0 failed | accepted |
+| `LinearAlgebra.Matrix.Determinant.Basic` | 239,057 | 0 failed | accepted |
+| `CategoryTheory.Limits.Shapes.Products` | 166,980 | 0 failed | accepted |
+| **distinct declarations, unioned** | **312,904** | | |
 
-293,323 distinct declarations, no disagreement. Count the largest run, not the sum: these
-corpora are nested, since `Init.Core` sits inside `Init` and the Mathlib slice's export carries
-all of Init's closure.
+Count the union. Those five add to 1,271,680, which overstates coverage fourfold, because any two Mathlib
+exports share most of their closure.
+
+### What that licenses, and what it does not
+
+con-leche's `no_False_declaration` is a machine-checked theorem that a file declaring a theorem of type `False` is
+never accepted in its verified mode. Both checkers accepted each of these files in full, neither rejecting
+anything, so every declaration in them was accepted by both.
+
+What follows is that **Tenet accepted nothing in these corpora that would have made a proved checker reject**.
+That is a different kind of statement from two tested implementations agreeing, because one side of it rests on a
+proof rather than on having been run a lot.
+
+Four things it does not say, each worth stating before someone reads more into the number than is there.
+
+It is about these corpora, not about the kernel. A declaration nobody ran is not covered, and a proof would cover
+it. This is evidence, not a theorem about Tenet.
+
+con-leche's theorem is narrower than "sound". It rules out a file declaring a theorem of type `False`, which is
+the canonical unsoundness and the one worth ruling out, but it is a specific shape rather than every way a checker
+could be wrong.
+
+Both read the same export file. Their parsers are independent, which is worth something, but a fault in
+`lean4export`'s rendering of the `.olean` would be invisible to both. That path is covered separately, by
+`crosscheck` against Tenet's own `.olean` reader, and is measured in the reader section above.
+
+And the counts agreeing exactly on every slice is a good sign rather than a check. It indicates both processed the
+same declarations, but neither tool emits the set, so it was not verified as a set. The claim rests on both
+rejecting nothing, which does not need the sets to be compared.
 
 The two take visibly different internal routes to the same verdicts. con-leche's log reports 62
 projection functions of non-direct structure-likes rewritten to recursor form, and two

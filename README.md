@@ -457,10 +457,13 @@ A checker that accepted everything would produce the same clean output, so:
 - **It rejects tampered proofs.** Every theorem in the prelude given the previous theorem's
   proof: at least 95% must be rejected, with no collateral damage. Recursor rules and
   theorem statements are tampered with in the fixtures too.
-- **Its verdicts are compared with [con-leche](https://github.com/leanprover/con-leche)**, the
-  external checker proven in Lean not to accept a proof of `False`, on identical export files:
-  293,323 declarations, no disagreement. That comparison is worth more to Tenet than to
-  con-leche, since a proof beats testing, and it is the strongest assurance evidence here.
+- **Everything it accepts is put to [con-leche](https://github.com/leanprover/con-leche)**, whose
+  `no_False_declaration` is a machine-checked theorem that it never accepts a file declaring a
+  theorem of type `False`. Across five Mathlib slices, 312,904 distinct declarations, both
+  checkers accepted every file in full. So Tenet accepted nothing in those corpora that would
+  have made a proved checker reject, which is a different kind of evidence from two tested
+  implementations agreeing. It is a statement about those corpora and not about the kernel;
+  [docs/testing.md](docs/testing.md) sets out exactly what it does and does not license.
 - **Its verdicts are compared with Lean's own kernel**, declaration by declaration, on about
   140,000 deliberately damaged declarations. That comparison has found two real kernel bugs,
   both in Tenet: a head comparison that used reference equality where the reference compares
