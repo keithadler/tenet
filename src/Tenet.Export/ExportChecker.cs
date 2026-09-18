@@ -601,16 +601,38 @@ public static class ExportChecker
         }
     }
 
+    /// <summary>
+    /// The names a declaration may legitimately refer to from inside its own block.
+    ///
+    /// An inductive block's recursor refers to the type and its constructors, a mutual block's definitions refer
+    /// to each other, and the quotient block's constants refer to <c>Quot</c>. Everything else may only use what
+    /// is already in the environment, which for a single declaration never includes itself: a theorem proved by
+    /// itself is a proof of anything, and `∀ (p : Prop), p` proved by `selfProof` is a proof of False.
+    /// </summary>
+    private static HashSet<Name>? SelfBlockNames(ExportDecl decl) => decl switch
+    {
+        ExportInductive or ExportMutualDefinition or ExportQuot => NamesOf(decl).ToHashSet(),
+        _ => null,
+    };
+
     /// <summary>A declaration may only refer to constants that precede it (or belong to its own block).</summary>
     private static void CheckOrder(ExportDecl decl, int index, Dictionary<Name, int> position)
     {
+        HashSet<Name>? allowed = SelfBlockNames(decl);
         foreach (Expr e in ExprsOf(decl))
         {
             ExprOps.ForEach(e, (t, _) =>
             {
-                if (t is ConstExpr c && position.TryGetValue(c.Name, out int p) && p > index)
+                if (t is ConstExpr c && position.TryGetValue(c.Name, out int p))
                 {
-                    throw new KernelException($"'{decl.DisplayName}' refers to '{c.Name}', which is declared later in the export");
+                    if (p > index)
+                    {
+                        throw new KernelException($"'{decl.DisplayName}' refers to '{c.Name}', which is declared later in the export");
+                    }
+                    if (p == index && (allowed is null || !allowed.Contains(c.Name)))
+                    {
+                        throw new KernelException($"'{decl.DisplayName}' refers to '{c.Name}', which is itself; a declaration may only use constants already in the environment");
+                    }
                 }
                 return true;
             });
@@ -772,6 +794,7 @@ public static class ExportChecker
     /// </summary>
     private static void CheckOrderStreaming(ExportDecl decl, int index, System.Collections.Concurrent.ConcurrentDictionary<Name, int> position)
     {
+        HashSet<Name>? allowed = SelfBlockNames(decl);
         foreach (Expr e in ExprsOf(decl))
         {
             ExprOps.ForEach(e, (t, _) =>
@@ -785,6 +808,10 @@ public static class ExportChecker
                     if (p > index)
                     {
                         throw new KernelException($"'{decl.DisplayName}' refers to '{c.Name}', which is declared later in the export");
+                    }
+                    if (p == index && (allowed is null || !allowed.Contains(c.Name)))
+                    {
+                        throw new KernelException($"'{decl.DisplayName}' refers to '{c.Name}', which is itself; a declaration may only use constants already in the environment");
                     }
                 }
                 return true;

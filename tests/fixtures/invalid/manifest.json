@@ -25,6 +25,13 @@
       "found": "Real bug, fixed in 0.9.0. Found by reading lean4lean's divergences file; not reachable by mutation."
     },
     {
+      "file": "self-proof.ndjson",
+      "why": "theorem selfProof : forall (p : Prop), p := selfProof. A theorem proved by itself proves anything, so this is a proof of False with no axioms. Accepted before 0.10.0 because the checker adds every declaration to the environment up front so workers can check out of order, and the ordering guard rejected only constants declared LATER, never a declaration referring to itself.",
+      "rejects": "selfProof",
+      "defenseOff": null,
+      "found": "Real bug, found by test 014 of the Lean Kernel Arena's tutorial suite. Its own negative corpus of 8 files, its mutation harness and both other checkers it is compared against had all missed it."
+    },
+    {
       "file": "type-in-type.ndjson",
       "why": "def typeInType : Type := Type. Universes are what stop Girard's paradox, so a kernel that accepts Type : Type is inconsistent outright.",
       "rejects": "typeInType",
