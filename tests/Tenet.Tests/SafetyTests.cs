@@ -421,13 +421,23 @@ public class SafetyTests
     [Fact]
     public void NormalizingALevelDeeperThanTheStackIsRejected()
     {
-        // Distinct parameters, because MkMax folds max 0 u, max u u and max u (max u v) on the way in; if any of
-        // those fired the level would stay shallow and this test would pass without testing anything.
-        const int Levels = 200_000;
-        Level deep = Level.Param(Name.Of("u0"));
+        // Three things this construction has to get right, each learned by getting it wrong.
+        //
+        // MaxRaw rather than MkMax, which is what the reader uses: a file that says max means max. MkMax folds
+        // max u u, so a chain built with it collapses and the test measures nothing.
+        //
+        // Left-nested rather than right. PushMaxArgs recurses into Lhs and then Rhs, so in a right-nested chain
+        // the deep call is in tail position and the JIT is free to turn it into a loop that uses no stack. That
+        // is a legitimate optimization and whether it happens moves with tiering, which is why the right-nested
+        // version failed five runs in fourteen. Left-nested, the deep call is not in tail position.
+        //
+        // And the depth is asserted, so a future change to the constructor cannot quietly flatten it.
+        const int Levels = 1_000_000;
+        Level u = Level.Param(Name.Of("u"));
+        Level deep = u;
         for (int i = 1; i < Levels; i++)
         {
-            deep = Level.MkMax(Level.Param(Name.Of("u" + i.ToString(System.Globalization.CultureInfo.InvariantCulture))), deep);
+            deep = Level.MaxRaw(deep, u);
         }
         Assert.Equal(Levels - 1, deep.Depth);
         Exception? e = OnASmallStack(() => deep.Normalize());
