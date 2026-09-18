@@ -328,6 +328,75 @@ public class SafetyTests
         }
     }
 
+    /// <summary>
+    /// Every accelerated primitive has to validate against the Lean actually in front of us, or the kernel stops
+    /// taking the shortcut and the check crawls. Stating an equation the way a newer Lean happens to compile it is
+    /// the failure mode: `ble 0 y` with y free does not reduce under the four-clause definition every Lean before
+    /// 4.34 uses, which turned a 4 second run into a timeout on three of the olean-compat versions.
+    ///
+    /// This runs only where a toolchain is present, so it is a local and CI guard rather than a hermetic one.
+    /// </summary>
+    [Fact]
+    public void EveryPrimitiveValidatesAgainstAnInstalledToolchain()
+    {
+        string home = System.Environment.GetEnvironmentVariable("HOME") ?? "";
+        string root = Path.Combine(home, ".elan", "toolchains");
+        if (!Directory.Exists(root))
+        {
+            return;
+        }
+        var libs = Directory.EnumerateDirectories(root)
+            .Select(d => Path.Combine(d, "lib", "lean", "Init.olean"))
+            .Where(File.Exists).OrderBy(p => p, StringComparer.Ordinal).ToList();
+        if (libs.Count == 0)
+        {
+            return;
+        }
+
+        foreach (string init in libs)
+        {
+            var search = new Tenet.Olean.LeanSearchPath();
+            search.AddFromEnvironment();
+            search.AddAroundOleanFile(init);
+            using var checker = new Tenet.Olean.OleanChecker(search);
+            Name m = search.ModuleNameOf(init);
+            checker.Load([(m, init)]);
+            search.AddToolchainFor(checker.Modules[m].LeanVersion);
+            checker.Load([(m, init)]);
+
+            var env = new Environment();
+            var seen = new HashSet<Name>();
+            void Add(Name n)
+            {
+                if (!seen.Add(n) || checker.Resolve(n) is not ConstantInfo ci)
+                {
+                    return;
+                }
+                foreach (Name u in Replay.UsedConstants(ci))
+                {
+                    Add(u);
+                }
+                if (env.Find(n) is null)
+                {
+                    env.AddCore(ci);
+                }
+            }
+            foreach (Primitive p in Enum.GetValues<Primitive>())
+            {
+                Add(Name.Parse("Nat." + char.ToLowerInvariant(p.ToString()[3]) + p.ToString()[4..]));
+            }
+            foreach (string n in new[] { "Nat", "Nat.zero", "Nat.succ", "Bool", "Bool.true", "Bool.false" })
+            {
+                Add(Name.Parse(n));
+            }
+
+            var failing = Enum.GetValues<Primitive>().Where(p => !env.PrimitiveOk(p)).ToList();
+            Assert.True(failing.Count == 0,
+                $"{Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(init))))}: "
+                + $"{string.Join(", ", failing)} did not validate, so the kernel will unfold them instead");
+        }
+    }
+
     /// <summary>Build f (f (f ... x)) nested in the argument position, which is where each level costs a frame.</summary>
     private static Expr DeepTerm(int depth)
     {

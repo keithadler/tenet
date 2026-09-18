@@ -176,9 +176,14 @@ public static class Primitives
                              && tc.IsDefEq(Ap2(Succ(x), zero), False())
                              && tc.IsDefEq(Ap2(Succ(x), Succ(y)), Ap2(x, y)),
 
-            //  ble 0 y ≡ true             ble (succ x) 0 ≡ false
-            //  ble (succ x) (succ y) ≡ ble x y
-            Primitive.NatBle => tc.IsDefEq(Ap2(zero, y), True())
+            //  ble 0 0 ≡ true             ble 0 (succ y) ≡ true
+            //  ble (succ x) 0 ≡ false     ble (succ x) (succ y) ≡ ble x y
+            //
+            //  Four clauses, not three. Lean's definition matches on both arguments in the zero cases, so
+            //  `ble 0 y` with y free does not reduce, and stating it that way made this primitive fail on every
+            //  Lean before 4.34 and fall back to unfolding, which is where the olean-compat matrix caught it.
+            Primitive.NatBle => tc.IsDefEq(Ap2(zero, zero), True())
+                             && tc.IsDefEq(Ap2(zero, Succ(y)), True())
                              && tc.IsDefEq(Ap2(Succ(x), zero), False())
                              && tc.IsDefEq(Ap2(Succ(x), Succ(y)), Ap2(x, y)),
 
