@@ -49,6 +49,21 @@ denotes, and its `String` is a structure reachable from a list of characters.
 called it unconditional. That is a proof of `False` from a file with no `sorry` and no axioms, and it is the most
 serious thing this project has found in itself.
 
+## The `_nested` namespace is reserved
+
+**Where:** `Environment.AddCore(Declaration, ...)`.
+
+**What Lean does:** rejects a declaration using the reserved `_nested` prefix, reserving the whole namespace
+against unrelated user declarations. lean4lean checks only constructor types and notes the difference.
+
+**What Tenet does:** the same as Lean, rejecting any declaration whose own name sits in that namespace, in
+addition to the existing check on the types.
+
+**Why:** eliminating a nested inductive derives auxiliary types under that prefix. A file that occupies one of
+those names first is betting on how the elimination resolves the name it finds, and that is a question worth not
+having. The kernel's own auxiliaries are installed through `AddCore(ConstantInfo)`, which does not go through this
+check, so an honest file loses nothing.
+
 ## Failure caching
 
 **Where:** `TypeChecker.CacheFailures`.

@@ -194,6 +194,41 @@ public class HostileTests
         Assert.Equal(lift, new TypeChecker(env).Whnf(lift));   // no iota on a quotient the kernel did not build
     }
 
+    // ---------------------------------------------------------------- names the kernel derives into
+
+    /// <summary>
+    /// Eliminating a nested inductive generates auxiliary types under the `_nested` prefix. Lean reserves that
+    /// whole namespace against ordinary declarations; Tenet used to reject only a declaration whose *type*
+    /// mentioned it, so a file could sit on a name the kernel was about to derive. What that buys an attacker
+    /// depends on how the elimination resolves the name it finds, which is exactly the question worth not having:
+    /// the namespace is reserved now, and the kernel's own auxiliaries are installed by a path that does not go
+    /// through this check, so an honest file loses nothing.
+    /// </summary>
+    [Fact]
+    public void TheNamespaceTheKernelDerivesIntoIsNotAvailable()
+    {
+        var env = new Environment();
+        Ax(env, Name.Of("T"), Type0);
+        Expr t = Expr.Const(Name.Of("T"), []);
+
+        foreach (Name n in new[] { Name.Of("_nested"), Name.Of("_nested", "Foo"), Name.Of("_nested", "Foo", "mk") })
+        {
+            var ex = Assert.Throws<KernelException>(() => env.Add(new AxiomDecl(n, [], t, false)));
+            Assert.Contains("reserved", ex.Message, StringComparison.Ordinal);
+            Assert.Null(env.Find(n));
+        }
+
+        // Including an inductive block, where every name it introduces is vetted, not just the block's own.
+        Expr ind = Expr.Const(Name.Of("_nested", "Ind"), []);
+        Assert.Throws<KernelException>(() => env.Add(new InductiveDecl([], 0,
+            [new InductiveType(Name.Of("_nested", "Ind"), Type0,
+                [new Constructor(Name.Of("_nested", "Ind", "mk"), ind)])], false)));
+
+        // A name that merely starts with the same letters is not in the namespace and stays legal.
+        env.Add(new AxiomDecl(Name.Of("_nestedish"), [], t, false));
+        Assert.NotNull(env.Find(Name.Of("_nestedish")));
+    }
+
     // ---------------------------------------------------------------- compiled code the checker refuses to trust
 
     /// <summary>

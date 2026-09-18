@@ -316,6 +316,9 @@ public sealed class RecursorInfo : ConstantInfo
 public abstract class Declaration
 {
     public abstract string KindName { get; }
+
+    /// <summary>Every name this declaration introduces, so the environment can vet them before checking anything.</summary>
+    public abstract IEnumerable<Name> Names { get; }
 }
 
 public sealed class AxiomDecl : Declaration
@@ -334,6 +337,8 @@ public sealed class AxiomDecl : Declaration
     }
 
     public override string KindName => "axiom";
+
+    public override IEnumerable<Name> Names => [Name];
     public AxiomInfo ToInfo() => new(Name, LevelParams, Type, IsUnsafe);
 }
 
@@ -359,6 +364,8 @@ public sealed class DefinitionDecl : Declaration
     }
 
     public override string KindName => "def";
+
+    public override IEnumerable<Name> Names => [Name];
     public DefinitionInfo ToInfo() => new(Name, LevelParams, Type, Value, Hints, Safety, All);
 }
 
@@ -380,6 +387,8 @@ public sealed class TheoremDecl : Declaration
     }
 
     public override string KindName => "theorem";
+
+    public override IEnumerable<Name> Names => [Name];
     public TheoremInfo ToInfo() => new(Name, LevelParams, Type, Value, All);
 }
 
@@ -403,6 +412,8 @@ public sealed class OpaqueDecl : Declaration
     }
 
     public override string KindName => "opaque";
+
+    public override IEnumerable<Name> Names => [Name];
     public OpaqueInfo ToInfo() => new(Name, LevelParams, Type, Value, IsUnsafe, All);
 }
 
@@ -410,6 +421,8 @@ public sealed class OpaqueDecl : Declaration
 public sealed class QuotDecl : Declaration
 {
     public override string KindName => "quot";
+
+    public override IEnumerable<Name> Names => [];
 }
 
 /// <summary>A (possibly unsafe) block of mutual definitions, checked after all headers are added.</summary>
@@ -418,6 +431,8 @@ public sealed class MutualDefinitionDecl : Declaration
     public readonly DefinitionDecl[] Definitions;
     public MutualDefinitionDecl(DefinitionDecl[] definitions) => Definitions = definitions;
     public override string KindName => "mutual def";
+
+    public override IEnumerable<Name> Names => Definitions.SelectMany(d => d.Names);
 }
 
 public sealed record Constructor(Name Name, Expr Type);
@@ -441,4 +456,7 @@ public sealed class InductiveDecl : Declaration
     }
 
     public override string KindName => "inductive";
+
+    public override IEnumerable<Name> Names =>
+        Types.SelectMany(t => t.Ctors.Select(c => c.Name).Prepend(t.Name));
 }

@@ -274,8 +274,25 @@ public sealed class Environment
         RunFastThenFaithful(() => AddCore(d, check: true, add: false));
     }
 
+    /// <summary>
+    /// The prefix the nested-inductive elimination generates its auxiliary types into. Lean reserves the whole
+    /// namespace against ordinary declarations; without that, a file can squat on a name the kernel is about to
+    /// derive. The kernel's own auxiliaries do not come through here, they are installed with
+    /// <see cref="AddCore(ConstantInfo)"/>, so reserving it costs a legitimate file nothing.
+    /// </summary>
+    private static readonly Name NestedPrefix = Name.Of("_nested");
+
     private void AddCore(Declaration d, bool check, bool add)
     {
+        foreach (Name n in d.Names)
+        {
+            if (NestedPrefix.IsPrefixOf(n) || n.Equals(NestedPrefix))
+            {
+                throw new KernelException(
+                    $"invalid declaration '{n}': '{NestedPrefix}' is reserved for the auxiliary types the kernel "
+                  + "derives when eliminating a nested inductive, and a declaration may not occupy that namespace");
+            }
+        }
         switch (d)
         {
             case AxiomDecl a:
