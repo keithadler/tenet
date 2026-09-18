@@ -72,9 +72,12 @@ jobs:
 
       - name: Does crosscheck notice a damaged declaration?
         run: |
-          cd tools/leancheck
+          # lean4export's sysroot, not leancheck's: the two pin different Lean versions, and crosschecking an
+          # export against another version's .olean reports version differences as reader defects. The harness
+          # refuses to run on a baseline that is not already clean, which is how this was caught.
+          cd lean4export
           LIB="$(lake env printenv LEAN_SYSROOT)/lib/lean"
-          cd ../..
+          cd ..
           dotnet build -c Release tools/Tenet.DiffTest
           # Crosscheck carries the whole claim that the .olean reader is faithful, because comparing verdicts
           # cannot catch a reader bug. Until this ran, it had only ever been given undamaged input, where it
