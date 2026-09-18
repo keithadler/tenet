@@ -486,6 +486,16 @@ A checker that accepted everything would produce the same clean output, so:
   kernel has been found.
 - **It derives rather than trusts.** Recursors and constructor metadata are re-derived from
   the types and constructors alone and compared field by field with what Lean wrote.
+- **It is attacked on purpose, not only damaged at random.** Mutation takes a valid export and
+  breaks it, which can only explore files that are nearly honest. The two worst bugs found in
+  Tenet were not of that kind and neither was reachable by mutation: a numeric literal was typed
+  `Nat` by assertion, so a file declaring `def Nat : Prop := False` and then `def boom : False := 3`
+  was accepted with an empty axiom list, and the sixteen `Nat` operations were computed from the
+  name alone, so a file declaring `Nat.add := fun a b => a` made the checker accept `2 + 2 = 4`
+  and reject `2 + 2 = 2`. Both were found by reading what another checker checks, both were fixed
+  in 0.9.0, and both have regression tests that reproduce them with the defense switched off.
+  Every name the kernel hardcodes is now read out of its own source by a test and has to be
+  accounted for, so a new assumption cannot be added without an attack being written for it.
 
 Tenet aims to decide exactly what Lean's kernel decides. [docs/specification.md](docs/specification.md) is the
 correspondence, rule by rule: the judgment each one implements, where it lives here, and where it lives in Lean,
