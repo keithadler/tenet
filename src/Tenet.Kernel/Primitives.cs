@@ -246,7 +246,24 @@ public static class Primitives
             return false;
         }
         Expr listChar = Expr.App(Expr.Const(Name.Of("List"), [Level.Zero]), Expr.Const(Name.Of("Char"), []));
-        return SameType(env, ctor.Type, Expr.Arrow(listChar, Expr.Const(str, [])));
+        if (!SameType(env, ctor.Type, Expr.Arrow(listChar, Expr.Const(str, []))))
+        {
+            return false;
+        }
+
+        // The decisive check, and the one that does not depend on enumerating shapes: build what the kernel would
+        // build for a literal and see whether it is a String. This covers Char.ofNat, List.cons and List.nil at
+        // once, and covers them as the expansion actually uses them rather than as this file guesses it does.
+        try
+        {
+            var tc = new TypeChecker(env) { SkipPrimitives = true };
+            Expr built = Inductive.StringLitToConstructor(env, Expr.StrLit("a"));
+            return tc.IsDefEq(tc.Check(built), Expr.Const(str, []));
+        }
+        catch (KernelException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

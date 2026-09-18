@@ -285,60 +285,6 @@ public class SafetyTests
     }
 
     /// <summary>
-    /// The kernel computes <c>Nat.add 2 2</c> by adding two BigIntegers rather than unfolding the declaration, and
-    /// it used to decide to do that from the name alone. An export is free to declare <c>Nat.add</c> as anything of
-    /// the right type, so a file declaring it as <c>fun a b =&gt; a</c> made the checker answer the opposite of the
-    /// truth in both directions: it accepted <c>add 2 2 = 4</c>, which is false of the declaration in front of it,
-    /// and rejected <c>add 2 2 = 2</c>, which is true of it.
-    ///
-    /// Lean's kernel has the same shortcut and the same absence of a check, and gets away with it by shipping its
-    /// prelude and not supporting another one. Tenet cannot: reading a file somebody else produced is the whole job.
-    /// </summary>
-    [Fact]
-    public void AnAcceleratedPrimitiveIsCheckedBeforeItIsTrusted()
-    {
-        Expr type0 = Expr.Sort(Level.One);
-        Expr natE = Expr.Const(Name.Of("Nat"), []);
-
-        Environment Fake()
-        {
-            var env = new Environment();
-            var nat = new InductiveType(Name.Of("Nat"), type0,
-                [new Constructor(Name.Of("Nat", "zero"), natE),
-                 new Constructor(Name.Of("Nat", "succ"), Expr.Arrow(natE, natE))]);
-            env.Add(new InductiveDecl([], 0, [nat], false));
-            // Right name, right type, and a body that is not addition: it returns its first argument.
-            env.Add(new DefinitionDecl(Name.Of("Nat", "add"), [],
-                Expr.Arrow(natE, Expr.Arrow(natE, natE)),
-                Expr.Lam(Name.Of("a"), natE, Expr.Lam(Name.Of("b"), natE, Expr.BVar(1))),
-                ReducibilityHints.Regular(1), DefinitionSafety.Safe));
-            return env;
-        }
-
-        Expr add22 = Expr.MkApp(Expr.Const(Name.Of("Nat", "add"), []), Expr.NatLit(2), Expr.NatLit(2));
-        Environment fake = Fake();
-
-        Assert.False(fake.PrimitiveOk(Primitive.NatAdd));
-        // The declaration's own body says 2, so that is the only answer the kernel may give.
-        Assert.False(new TypeChecker(fake).IsDefEq(add22, Expr.NatLit(4)));
-        Assert.True(new TypeChecker(fake).IsDefEq(add22, Expr.NatLit(2)));
-
-        // And the check is what stops it: with validation off, the shortcut fires on the name and inverts both.
-        bool saved = Primitives.Validate;
-        try
-        {
-            Primitives.Validate = false;
-            Environment unchecked_ = Fake();
-            Assert.True(new TypeChecker(unchecked_).IsDefEq(add22, Expr.NatLit(4)));
-            Assert.False(new TypeChecker(unchecked_).IsDefEq(add22, Expr.NatLit(2)));
-        }
-        finally
-        {
-            Primitives.Validate = saved;
-        }
-    }
-
-    /// <summary>
     /// Every accelerated primitive has to validate against the Lean actually in front of us, or the kernel stops
     /// taking the shortcut and the check crawls. Stating an equation the way a newer Lean happens to compile it is
     /// the failure mode: `ble 0 y` with y free does not reduce under the four-clause definition every Lean before
@@ -410,49 +356,6 @@ public class SafetyTests
             Assert.True(failing.Count == 0,
                 $"{Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(init))))}: "
                 + $"{string.Join(", ", failing)} did not validate, so the kernel will unfold them instead");
-        }
-    }
-
-    /// <summary>
-    /// A numeric literal's type is asserted by its representation, not derived, so the environment has to agree
-    /// that the constant it names is the type the literal means. Without that check a file could declare
-    /// <c>Nat</c> as a proposition and hand a literal over as a proof of it. Declaring that proposition to be
-    /// <c>False</c> gave a proof of False with no <c>sorry</c> and no axioms, which <c>tenet audit</c> reported as
-    /// unconditional.
-    /// </summary>
-    [Fact]
-    public void ALiteralIsNotAProofOfWhateverTheFileCallsNat()
-    {
-        var env = new Environment();
-        env.Add(new InductiveDecl([], 0, [new InductiveType(Name.Of("False"), Expr.Prop, [])], false));
-        // A constant named Nat that is the proposition False.
-        env.Add(new DefinitionDecl(Name.Of("Nat"), [], Expr.Prop, Expr.Const(Name.Of("False"), []),
-            ReducibilityHints.Regular(1), DefinitionSafety.Safe));
-
-        Assert.False(env.PrimitiveOk(Primitive.NatLiteralType));
-        var ex = Assert.Throws<KernelException>(() =>
-            env.Add(new DefinitionDecl(Name.Of("boom"), [], Expr.Const(Name.Of("False"), []),
-                Expr.NatLit(3), ReducibilityHints.Opaque, DefinitionSafety.Safe)));
-        Assert.Contains("Nat", ex.Message, StringComparison.Ordinal);
-        Assert.Null(env.Find(Name.Of("boom")));
-
-        // And the check is what stops it: without it the literal is accepted at that type and the file proves False.
-        bool saved = Primitives.Validate;
-        try
-        {
-            Primitives.Validate = false;
-            var env2 = new Environment();
-            env2.Add(new InductiveDecl([], 0, [new InductiveType(Name.Of("False"), Expr.Prop, [])], false));
-            env2.Add(new DefinitionDecl(Name.Of("Nat"), [], Expr.Prop, Expr.Const(Name.Of("False"), []),
-                ReducibilityHints.Regular(1), DefinitionSafety.Safe));
-            env2.Add(new DefinitionDecl(Name.Of("boom"), [], Expr.Const(Name.Of("False"), []),
-                Expr.NatLit(3), ReducibilityHints.Opaque, DefinitionSafety.Safe));
-            Assert.NotNull(env2.Find(Name.Of("boom")));
-            Assert.Empty(Replay.AxiomsOf(env2.Find, Name.Of("boom")).Axioms);
-        }
-        finally
-        {
-            Primitives.Validate = saved;
         }
     }
 

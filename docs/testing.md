@@ -347,6 +347,41 @@ What this does not establish is that either statement is a faithful rendering of
 problem. It establishes that the adaptation preserved the statement it started from. Whether
 that statement is right remains a question for people who read it.
 
+## Exports written to attack the checker
+
+The mutation harness takes a valid export and breaks it. That finds places where two implementations of one
+specification drift apart, which is what it is for, and it found both of the real Lean kernel bugs this project
+has caught. It cannot find a file written on purpose to exploit what the checker assumes, because a damaged valid
+file is not one.
+
+Both soundness bugs found in Tenet itself were files of the second kind, and neither was reachable by mutation:
+
+- a file declaring `def Nat : Prop := False` and then `def boom : False := 3`, which was accepted with an empty
+  axiom list, so `tenet audit` called a proof of `False` unconditional;
+- a file declaring `Nat.add` at the right type with a body that returns its first argument, which made the checker
+  accept `2 + 2 = 4` and reject `2 + 2 = 2`.
+
+Both came from reading lean4lean's divergences file rather than from running anything. `tests/HostileTests.cs`
+holds the cases, organized around the attack surface rather than around the two bugs: every name the kernel
+hardcodes is something it takes on trust, and each deserves a file that abuses it.
+
+```sh
+grep -ohE 'Name\.Of\("[^)]*"\)' src/Tenet.Kernel/*.cs | sort -u
+```
+
+Binder names in that list are cosmetic. The rest are assumptions: the type a literal denotes, the fifteen `Nat`
+operations the kernel computes itself, the constants a string literal expands through, the quotient block, and
+`Lean.reduceBool`.
+
+Two of those turned out to be defended already, and both are in the catalog so they stay that way. Quotient
+reduction fires on `Quot.lift` and `Quot.ind` by name, the same shape as the two bugs, but the kernel constructs
+the quotient constants with the types it requires rather than reading a file's, and will not reduce until it has.
+`Lean.reduceBool` is refused rather than believed, so a claim cannot be laundered through compiled code.
+
+Each case asserts two things: that the attack is refused, and that it succeeds with the defense switched off.
+Without the second half a case can pass because the attack was built wrong, which is how a catalog of attacks
+quietly becomes a catalog of nothing.
+
 ## Which rules the evidence actually covers
 
 "All of Mathlib checks with no failures" is the headline claim of this project, and on its own
