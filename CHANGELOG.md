@@ -21,6 +21,11 @@ record than one assembled as it goes.
   checker's exit code reached the step. A rejection would have reported green.
 
 ### Added
+- `OleanModule.DocStringOf`, `SourceRangeOf` and `ExtensionNames` read the environment extension entries a module
+  stores, which the reader had walked past until now. Docstrings and declaration ranges are what a browser of a
+  library needs next to a statement, and under the module system they sit in the `.server` and `.private` parts
+  only, so those parts are read for entries even though the public part alone carries the constants that matter
+  to a check. `tenet statement` prints the docstring on `.olean` input.
 - `check EXPORT --names-out FILE` lists every constant the run ended with, which is what makes coverage across
   several slices countable as a union rather than a sum. It was only on `crosscheck`, which needs an `.olean`
   tree the person checking a file does not have. On `.olean` input it is refused rather than silently ignored.

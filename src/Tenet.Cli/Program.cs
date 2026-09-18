@@ -567,7 +567,8 @@ internal static class Program
 
             Which constants a theorem's statement is built from, split into those the project
             defined itself and those from established libraries. A wrong definition hides in the
-            first group. This points; it does not judge.
+            first group. This points; it does not judge. On .olean input the docstring is printed
+            first, read from the module that defines the name; an export does not carry it.
             """,
         ["compare"] = """
             tenet compare <a> <nameA> <b> <nameB> [--show-types] [--json]
@@ -730,6 +731,7 @@ internal static class Program
     /// <param name="Modules">The target's own modules, as distinct from what they import.</param>
     private sealed record Target(
         Func<Name, ConstantInfo?> Find,
+        Func<Name, string?> DocString,
         IDisposable? Owner,
         string Where,
         Dictionary<Name, Name> DefinedIn,
@@ -755,8 +757,9 @@ internal static class Program
             checker.Load(targets);
             search.AddToolchainFor(checker.Modules[targets[0].Module].LeanVersion);
             checker.Load(targets);
-            return new Target(checker.Resolve, checker, $"{files.Count} modules under {path} and their imports",
-                DefinedIn(checker), targets.Select(x => x.Module).ToList());
+            Dictionary<Name, Name> defined = DefinedIn(checker);
+            return new Target(checker.Resolve, DocStrings(checker, defined), checker,
+                $"{files.Count} modules under {path} and their imports", defined, targets.Select(x => x.Module).ToList());
         }
         if (path.EndsWith(".olean", StringComparison.Ordinal))
         {
@@ -768,7 +771,8 @@ internal static class Program
             checker.Load([(module, path)]);
             search.AddToolchainFor(checker.Modules[module].LeanVersion);
             checker.Load([(module, path)]);
-            return new Target(checker.Resolve, checker, $"{module} and its imports", DefinedIn(checker), [module]);
+            Dictionary<Name, Name> defined = DefinedIn(checker);
+            return new Target(checker.Resolve, DocStrings(checker, defined), checker, $"{module} and its imports", defined, [module]);
         }
         ExportFile file = NdjsonReader.ReadFile(path);
         var env = new Environment();
@@ -776,8 +780,15 @@ internal static class Program
         {
             ExportChecker.AddUnchecked(env, d);
         }
-        return new Target(env.Find, null, "this export", new Dictionary<Name, Name>(), []);
+        // an export carries declarations only; docstrings live in the .olean files
+        return new Target(env.Find, _ => null, null, "this export", new Dictionary<Name, Name>(), []);
     }
+
+    /// <summary>A docstring is stored by the module that defines the constant, so find that module first.</summary>
+    private static Func<Name, string?> DocStrings(Tenet.Olean.OleanChecker checker, Dictionary<Name, Name> definedIn) =>
+        n => definedIn.TryGetValue(n, out Name? m) && checker.Modules.TryGetValue(m, out Tenet.Olean.OleanModule? om)
+            ? om.DocStringOf(n)
+            : null;
 
     /// <summary>Which module defines what, so a dependency chain can say where to look for each step.</summary>
     private static Dictionary<Name, Name> DefinedIn(Tenet.Olean.OleanChecker checker)
@@ -1303,6 +1314,7 @@ internal static class Program
             {
                 Console.WriteLine(Json(
                     ("command", "statement"), ("name", n.ToString()),
+                    ("docString", target.DocString(n)),
                     ("constants", used.Count),
                     ("definedByThisProject", local.Select(l => l.Split("   (")[0]).ToList()),
                     ("fromLibraries", library.Select(kv => new RawJson(Json(("library", kv.Key), ("constants", kv.Value)))).ToList()),
@@ -1310,6 +1322,13 @@ internal static class Program
                 continue;
             }
             Console.WriteLine($"{n}");
+            if (target.DocString(n) is string doc)
+            {
+                foreach (string line in doc.TrimEnd().Split('\n'))
+                {
+                    Console.WriteLine($"  | {line}");
+                }
+            }
             Console.WriteLine($"  statement built from {used.Count} constants");
             Console.WriteLine($"  defined by this project ({local.Count}) - audit these, a wrong definition hides here:");
             foreach (string l in local)

@@ -8,6 +8,12 @@ namespace Tenet.Olean;
 /// <summary>An <c>import</c> recorded in a module.</summary>
 public sealed record Import(Name Module, bool ImportAll, bool IsExported, bool IsMeta);
 
+/// <summary>
+/// Where a declaration sits in its source file, as Lean recorded it in <c>declRangeExt</c>: lines are 1-based,
+/// columns are 0-based and count Unicode code points, as in <c>Lean.Position</c>.
+/// </summary>
+public sealed record SourceRange(int Line, int Column, int EndLine, int EndColumn);
+
 /// <summary>One memory-mapped part of a module: <c>.olean</c>, <c>.olean.private</c>, or <c>.olean.server</c>.</summary>
 internal sealed unsafe class Region : IDisposable
 {
@@ -268,6 +274,146 @@ public sealed unsafe class OleanModule : IDisposable
         {
             yield return FindConstant(n)!;
         }
+    }
+
+    // ------------------------------------------------------------------ environment extensions
+
+    private const string DocStringExtension = "Lean.docStringExt";
+    private const string DeclRangeExtension = "Lean.declRangeExt";
+    private readonly object _extensionLock = new();
+    private Name[]? _extensionNames;
+    private Dictionary<Name, SourceRange>? _sourceRanges;
+    private volatile Dictionary<Name, string>? _docStrings; // assigned last: it is the "loaded" flag
+
+    /// <summary>
+    /// The environment extensions with entries stored in any part of this module, in storage order. Under the
+    /// module system most extensions write to the <c>.server</c> and <c>.private</c> parts only, so a module read
+    /// without those parts lists fewer.
+    /// </summary>
+    public IReadOnlyList<Name> ExtensionNames
+    {
+        get
+        {
+            LoadExtensions();
+            return _extensionNames!;
+        }
+    }
+
+    /// <summary>
+    /// The docstring Lean stored for this declaration, or null if it has none. A module-system file read without its
+    /// <c>.server</c> part cannot answer: the entries in its private part point into the missing part, and the walk
+    /// throws <see cref="OleanFormatException"/> rather than guess.
+    /// </summary>
+    public string? DocStringOf(Name n)
+    {
+        LoadExtensions();
+        return _docStrings!.GetValueOrDefault(n);
+    }
+
+    /// <summary>
+    /// Where the declaration is in its source file, or null if Lean recorded no range. Constants the elaborator
+    /// generates (recursors, <c>noConfusion</c>, equation lemmas, and so on) have none of their own; Lean's own
+    /// lookup falls back to the parent declaration for some of them, and callers that want that fallback do it.
+    /// </summary>
+    public SourceRange? SourceRangeOf(Name n)
+    {
+        LoadExtensions();
+        return _sourceRanges!.GetValueOrDefault(n);
+    }
+
+    /// <summary>
+    /// Decode the extension entries of every part once, on first use. Lean stores them as
+    /// <c>Array (Name × Array EnvExtensionEntry)</c> in the fifth field of <c>ModuleData</c>; each entry's shape is
+    /// the extension's own, so only the two this reader understands are decoded and the rest are listed by name.
+    /// Docstrings and declaration ranges are exported to the <c>.server</c> and <c>.private</c> parts and never to
+    /// the public part of a module-system file, and to the single <c>.olean</c> of any other file, so every mapped
+    /// part is walked, the <c>.server</c> part included. A later part overrides an earlier one, as with constants.
+    /// </summary>
+    private void LoadExtensions()
+    {
+        if (_docStrings is not null)
+        {
+            return;
+        }
+        lock (_extensionLock)
+        {
+            if (_docStrings is not null)
+            {
+                return;
+            }
+            var names = new List<Name>();
+            var docs = new Dictionary<Name, string>();
+            var ranges = new Dictionary<Name, SourceRange>();
+            foreach (Region region in _regions)
+            {
+                ulong root = region.RootAddr;
+                if (Tag(root) > TagMaxCtor || NumObjs(root) < 5)
+                {
+                    continue; // a root without an entries field: nothing stored
+                }
+                ulong entries = Ptr(Field(root, 4));
+                long n = ArrayLength(entries);
+                for (long i = 0; i < n; i++)
+                {
+                    ulong pair = Ptr(ArrayElement(entries, i));
+                    Name ext = DecodeName(Field(pair, 0));
+                    if (!names.Contains(ext))
+                    {
+                        names.Add(ext);
+                    }
+                    string which = ext.ToString();
+                    if (which == DocStringExtension)
+                    {
+                        foreach ((Name key, ulong value) in NamedEntries(Field(pair, 1)))
+                        {
+                            if (IsScalar(value) || Tag(value) != TagString)
+                            {
+                                throw new OleanFormatException(Path, $"{DocStringExtension} entry for {key} is not a String; this Lean stores docstrings in a shape the reader does not know");
+                            }
+                            docs[key] = DecodeString(value);
+                        }
+                    }
+                    else if (which == DeclRangeExtension)
+                    {
+                        foreach ((Name key, ulong value) in NamedEntries(Field(pair, 1)))
+                        {
+                            ranges[key] = DecodeSourceRange(value);
+                        }
+                    }
+                }
+            }
+            _extensionNames = names.ToArray();
+            _sourceRanges = ranges;
+            _docStrings = docs;
+        }
+    }
+
+    /// <summary>The entries of a <c>MapDeclarationExtension</c>: an <c>Array (Name × α)</c>, each pair a two-field constructor.</summary>
+    private IEnumerable<(Name Key, ulong Value)> NamedEntries(ulong arrayV)
+    {
+        ulong arr = Ptr(arrayV);
+        long n = ArrayLength(arr);
+        for (long i = 0; i < n; i++)
+        {
+            ulong pair = Ptr(ArrayElement(arr, i));
+            yield return (DecodeName(Field(pair, 0)), Field(pair, 1));
+        }
+    }
+
+    /// <summary>
+    /// <c>DeclarationRanges</c> is <c>[range, selectionRange]</c>; a <c>DeclarationRange</c> is
+    /// <c>[pos, charUtf16, endPos, endCharUtf16]</c>; a <c>Position</c> is <c>[line, column]</c>, both <c>Nat</c>.
+    /// The full range is what a source link wants; the selection range (the name alone) is not kept.
+    /// </summary>
+    private SourceRange DecodeSourceRange(ulong v)
+    {
+        ulong ranges = Ptr(v);
+        ulong range = Ptr(Field(ranges, 0));
+        ulong pos = Ptr(Field(range, 0));
+        ulong end = Ptr(Field(range, 2));
+        return new SourceRange(
+            DecodeSmallNat(Field(pos, 0), "line"), DecodeSmallNat(Field(pos, 1), "column"),
+            DecodeSmallNat(Field(end, 0), "end line"), DecodeSmallNat(Field(end, 1), "end column"));
     }
 
     // ------------------------------------------------------------------ raw object access

@@ -84,6 +84,74 @@ public class OleanFuzzTests
         Assert.True(rejected > 0, $"no corruption was detected in {Iterations} iterations ({clean} decoded cleanly)");
     }
 
+    /// <summary>
+    /// The extension entries are a second walk over the same object graph, reached only through
+    /// <see cref="OleanModule.DocStringOf"/> and friends, so the contract that corruption produces nothing worse than
+    /// <see cref="OleanFormatException"/> has to be tried on that path too. The committed fixture cannot serve: its
+    /// private part's entries point into a <c>.server</c> part that was never committed, so asking it for a
+    /// docstring is refused before any entry is read. The toolchain's <c>Init.Prelude</c> has all three parts.
+    /// </summary>
+    [Fact]
+    public void CorruptedExtensionEntriesFailCleanly()
+    {
+        string? lib = OleanTests.ToolchainLib();
+        if (lib is null)
+        {
+            return;
+        }
+        string src = Path.Combine(lib, "Init", "Prelude.olean");
+        string[] suffixes = File.Exists(src + ".server") ? ["", ".server", ".private"] : [""];
+        byte[][] parts = suffixes.Select(x => File.ReadAllBytes(src + x)).ToArray();
+        var rng = new Random(2026_09_18);
+        string dir = Path.Combine(Path.GetTempPath(), "tenet-fuzz-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var failures = new List<string>();
+        int rejected = 0, clean = 0;
+        try
+        {
+            for (int it = 0; it < Math.Max(1, Iterations / 4); it++)
+            {
+                int which = rng.Next(parts.Length);
+                byte[] target = (byte[])parts[which].Clone();
+                string how = Corrupt(rng, ref target);
+                string path = Path.Combine(dir, $"Prelude{it}.olean");
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    File.WriteAllBytes(path + suffixes[i], i == which ? target : parts[i]);
+                }
+                try
+                {
+                    using var m = new OleanModule(path);
+                    _ = m.ExtensionNames;
+                    foreach (Name n in m.ConstantNames)
+                    {
+                        _ = m.DocStringOf(n);
+                        _ = m.SourceRangeOf(n);
+                    }
+                    clean++;
+                }
+                catch (OleanFormatException)
+                {
+                    rejected++;
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"iteration {it} ({how} on part {suffixes[which]}): {ex.GetType().Name}: {ex.Message}");
+                }
+                foreach (string x in suffixes)
+                {
+                    File.Delete(path + x);
+                }
+            }
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+        Assert.True(failures.Count == 0, string.Join("\n", failures.Take(10)));
+        Assert.True(rejected > 0, $"no corruption was detected ({clean} decoded cleanly)");
+    }
+
     /// <summary>Apply one random corruption; may replace the array with a shorter one.</summary>
     private static string Corrupt(Random rng, ref byte[] data)
     {

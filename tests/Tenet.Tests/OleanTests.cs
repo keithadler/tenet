@@ -93,6 +93,34 @@ public class OleanTests
     }
 
     [Fact]
+    public void DocStringsAndSourceRangesComeFromTheExtensionEntries()
+    {
+        string? lib = ToolchainLib();
+        if (lib is null)
+        {
+            return;
+        }
+        using var m = new OleanModule(Path.Combine(lib, "Init", "Prelude.olean"));
+        Assert.Contains(Name.Of("Lean", "docStringExt"), m.ExtensionNames);
+        Assert.Contains(Name.Of("Lean", "declRangeExt"), m.ExtensionNames);
+
+        string? doc = m.DocStringOf(Name.Of("Nat"));
+        Assert.NotNull(doc);
+        Assert.Contains("natural numbers", doc);
+        SourceRange? range = m.SourceRangeOf(Name.Of("Nat"));
+        Assert.NotNull(range);
+        Assert.True(range.Line > 0 && range.EndLine >= range.Line, range.ToString());
+
+        // The kernel makes the recursor; nobody wrote it down, so it has neither.
+        Assert.Null(m.DocStringOf(Name.Of("Nat", "rec")));
+        Assert.Null(m.SourceRangeOf(Name.Of("Nat", "rec")));
+        Assert.Null(m.DocStringOf(Name.Of("NoSuch", "Name")));
+
+        // Prelude is a module-system file: its docstrings are in the .server and .private parts, not the public one.
+        Assert.Contains(".server", m.PartPaths.Single(p => p.EndsWith(".server", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void PreludeHeaderAndImports()
     {
         string? lib = ToolchainLib();
