@@ -417,11 +417,24 @@ What each case had to be rewritten into is the interesting part.
 The corpus's remaining gaps are now exactly `Init`'s: `InferBVar`, `NativeReduce` and
 `DefEqStringLit`. The first two are meant to be unreachable, being the error path for a loose
 bound variable and the point where Tenet refuses to trust compiled code. `DefEqStringLit` is the
-one real hole, and it is zero on `Init` for Lean 4.12, 4.24 and 4.34 alike. Tenet keys that rule
-on `Environment.StringLiteralConstructor`, which is `String.ofList` wherever it exists, and
-`String.ofList` is an ordinary definition, so lazy delta unfolds it before the rule can be
-reached. Whether Lean's kernel has the same shadowing, and therefore whether the rule is dead in
-both or only in this one, is not yet established.
+one real hole, and it is zero on `Init` for Lean 4.12, 4.24 and 4.34 alike. Reading the reference
+settles why, and it is not a defect here.
+
+Lean's `try_string_lit_expansion_core` keys on `*g_string_mk`, which is initialized to
+`{"String", "ofList"}`, and `is_def_eq_core` calls it after lazy delta reduction and after
+application congruence and eta, immediately before the unit-like rule. Tenet keys on
+`Environment.StringLiteralConstructor` and calls it in exactly that position, so the two
+implementations agree. What changed is Lean itself: `String.ofList` used to be the structure's
+constructor and is now an ordinary definition, with `String.mk` a definition too and
+`String.ofByteArray` the constructor. A definition is delta-reducible, so on Lean 4.34 lazy delta
+unfolds it first and neither kernel can reach the rule. On 4.12 and 4.24 `String.mk` is the real
+constructor and the rule is live, but no declaration in `Init` ever compares a literal against it.
+
+So the rule is dead in both kernels on current Lean and merely unexercised on older ones, and no
+corpus of either vintage covers it. `SafetyTests` covers it directly instead, building a small
+environment shaped like the older Lean and asserting both that the comparison succeeds and that
+this rule is what decided it. Removing the rule from the kernel makes that test fail, which is
+how it is known to be measuring the rule.
 
 ### A corpus built to be mutated
 

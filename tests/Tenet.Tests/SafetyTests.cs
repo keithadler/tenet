@@ -207,6 +207,73 @@ public class SafetyTests
         }
     }
 
+    /// <summary>
+    /// The one rule no corpus reaches, exercised directly.
+    ///
+    /// `DefEqStringLit` is at zero on `Init` for Lean 4.12, 4.24 and 4.34 alike, and on the edge-case corpus. On
+    /// current Lean it is unreachable in Lean's kernel too: both key the rule on `String.ofList`
+    /// (`g_string_mk = {"String", "ofList"}` in type_checker.cpp), both place it after lazy delta reduction, and
+    /// `String.ofList` is now an ordinary definition, so delta unfolds it before the rule is consulted. On 4.12 and
+    /// 4.24 `String.mk` is the real constructor and the rule is live, but nothing in `Init` compares a literal
+    /// against it. Either way no corpus covers it, so this covers it.
+    /// </summary>
+    [Fact]
+    public void StringLiteralAgainstItsConstructorFormIsItsOwnRule()
+    {
+        bool saved = TypeChecker.Stats.Enabled;
+        try
+        {
+            // A minimal environment shaped like the older Lean, where String.mk is the constructor the kernel
+            // keys on. Opaque constants are enough: the rule compares the literal's expansion against the term.
+            var env = new Environment();
+            Expr type0 = Expr.Sort(Level.One);
+            void Ax(Name n, Expr ty, Name[]? lps = null) =>
+                env.Add(new AxiomDecl(n, lps ?? [], ty, false));
+            Ax(Name.Of("Char"), type0);
+            Expr charE = Expr.Const(Name.Of("Char"), []);
+            Ax(Name.Of("Nat"), type0);
+            Ax(Name.Of("Char", "ofNat"), Expr.Arrow(Expr.Const(Name.Of("Nat"), []), charE));
+            var u = Name.Of("u");
+            // List.{u} : Type u -> Type u, which is Sort (u+1) -> Sort (u+1); at u := 0 that is Type -> Type.
+            Expr typeU = Expr.Sort(Level.Succ(Level.Param(u)));
+            Ax(Name.Of("List"), Expr.Arrow(typeU, typeU), [u]);
+            Expr listChar = Expr.App(Expr.Const(Name.Of("List"), [Level.Zero]), charE);
+            Expr listOf(int deBruijn) =>
+                Expr.App(Expr.Const(Name.Of("List"), [Level.Param(u)]), Expr.BVar(deBruijn));
+            Ax(Name.Of("List", "nil"), Expr.Pi(Name.Of("α"), typeU, listOf(0)), [u]);
+            Ax(Name.Of("List", "cons"), Expr.Pi(Name.Of("α"), typeU,
+                Expr.Arrow(Expr.BVar(0), Expr.Arrow(listOf(1), listOf(2)))), [u]);
+            Ax(Name.Of("String"), type0);
+            Ax(Name.Of("String", "mk"), Expr.Arrow(listChar, Expr.Const(Name.Of("String"), [])));
+
+            Assert.Equal(Name.Of("String", "mk"), env.StringLiteralConstructor);   // no String.ofList here
+
+            Expr lit = Expr.StrLit("ab");
+            Expr ctorForm = Inductive.StringLitToConstructor(env, lit);
+
+            TypeChecker.Stats.Enabled = true;
+            Rules.Reset();
+            var tc = new TypeChecker(env);
+            Assert.True(tc.IsDefEq(lit, ctorForm));
+            Assert.True(Rules.Count(Rule.DefEqStringLit) > 0);
+
+            // And the other way round, since the rule tries both orders.
+            Rules.Reset();
+            var tc2 = new TypeChecker(env);
+            Assert.True(tc2.IsDefEq(ctorForm, lit));
+            Assert.True(Rules.Count(Rule.DefEqStringLit) > 0);
+
+            // A different literal must not be accepted.
+            var tc3 = new TypeChecker(env);
+            Assert.False(tc3.IsDefEq(Expr.StrLit("ac"), ctorForm));
+        }
+        finally
+        {
+            TypeChecker.Stats.Enabled = saved;
+            Rules.Reset();
+        }
+    }
+
     /// <summary>Build f (f (f ... x)) nested in the argument position, which is where each level costs a frame.</summary>
     private static Expr DeepTerm(int depth)
     {
