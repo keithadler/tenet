@@ -339,13 +339,73 @@ What this does not establish is that either statement is a faithful rendering of
 problem. It establishes that the adaptation preserved the statement it started from. Whether
 that statement is right remains a question for people who read it.
 
+## Which rules the evidence actually covers
+
+"All of Mathlib checks with no failures" is the headline claim of this project, and on its own
+it does not say what was exercised. A rule no corpus reaches is untested however many
+declarations passed through it, and nothing in a green run distinguishes a rule that works from
+a rule that is never called. `tenet check ... --rules` counts each of the kernel's 36 typing and
+reduction rules by name, so that is a measurement rather than an assumption.
+
+All of `Init`, 64,658 declarations across 653 modules, 51.8 million rule firings:
+
+| Reached | Count |
+| --- | --- |
+| 33 of 36 rules | |
+| `Beta` | 11,400,486 |
+| `DefEqSyntactic` | 10,109,100 |
+| `InferApp` | 10,089,370 |
+| `DefEqOffset` | 4,630,402 |
+| `DeltaLazy` | 4,593,357 |
+| `Delta` | 3,314,730 |
+| `Iota` | 1,604,600 |
+| ... | |
+| `DefEqEta` | 1,014 |
+| `IotaK` | 379 |
+| `QuotLift` | 227 |
+| `StringLitToCtor` | 29 |
+| `DefEqUnitLike` | 5 |
+| `QuotInd` | **1** |
+| `InferBVar`, `NativeReduce`, `DefEqStringLit` | **0** |
+
+The tail is the interesting part. `Quot.ind` reduced exactly once in all of `Init`, and
+`DefEqUnitLike` five times. Passing 64,658 declarations is strong evidence about `Beta` and
+almost none about `QuotInd`: one firing is one test.
+
+Of the three at zero, two are expected. `InferBVar` is the error path for a loose bound
+variable, which cannot occur in a well-formed export, and `NativeReduce` is the point where
+Tenet refuses `Lean.reduceBool` and `Lean.reduceNat` rather than trusting compiled code.
+`DefEqStringLit` at zero is a real gap: no declaration in `Init` ever compares a string literal
+against its constructor form during a definitional-equality check.
+
+The edge-case corpus exists to fill exactly this kind of hole, and measuring it shows it does
+not yet:
+
+| | `Init` | `tools/edgecases` |
+| --- | --- | --- |
+| rules reached | 33 of 36 | 25 of 36 |
+| `IotaK` | 379 | **0** |
+| `QuotInd` | 1 | **0** |
+| `DefEqEta` | 1,014 | **0** |
+| `DefEqUnitLike` | 5 | **0** |
+| `DefEqStringLit` | 0 | **0** |
+
+Its README says it is dense in K-like reduction and quotient reduction and that it is "the only
+direct check of several of them the project has". Checking its own 113 declarations reaches
+neither. Stating a rule in Lean source is not the same as making the kernel use that rule while
+checking the result, and until this was counted there was no way to tell the two apart.
+
 ### A corpus built to be mutated
 
-`tools/edgecases` is a small Lean library dense in the rules a general export exercises only
-rarely: structure eta, proof irrelevance, K-like reduction, quotient reduction, nested and
-mutual inductives, literal arithmetic at the word boundaries, and universe polymorphism. Both
-kernels accept all 58,236 declarations of its export, which for several of those rules is the
-only direct comparison against the reference the project has.
+`tools/edgecases` is a small Lean library meant to be dense in the rules a general export
+exercises only rarely: structure eta, proof irrelevance, K-like reduction, quotient reduction,
+nested and mutual inductives, literal arithmetic at the word boundaries, and universe
+polymorphism. Both kernels accept all 58,236 declarations of its export.
+
+Measuring which rules its own declarations actually reach (`tenet check tools/edgecases
+--rules`) says the intent is not met: checking its 113 declarations fires 25 of the 36 rules,
+and reaches neither K-like reduction nor `Quot.ind`, two of the rules it was written for. See
+the rule coverage section below.
 
 `lean4export` writes the whole transitive closure, so the corpus is a sliver at the end of a
 6.5-million-line file and random mutation almost never lands on it. `--tail N` restricts

@@ -143,9 +143,12 @@ public static class Inductive
             return null;
         }
         Expr major = recArgs[majorIdx];
+        bool byK = false;
         if (recVal.K)
         {
-            major = ToCtorWhenK(env, recVal, major, whnf, infer, isDefEq);
+            Expr forced = ToCtorWhenK(env, recVal, major, whnf, infer, isDefEq);
+            byK = !ReferenceEquals(forced, major);
+            major = forced;
         }
         major = whnf(major);
         if (major.IsNatLit)
@@ -154,6 +157,7 @@ public static class Inductive
         }
         else if (major.IsStrLit)
         {
+            Rules.Hit(Rule.StringLitToCtor);
             major = whnf(StringLitToConstructor(env, major));
         }
         else
@@ -184,6 +188,7 @@ public static class Inductive
         {
             rhs = Expr.MkApp(rhs, recArgs.AsSpan(majorIdx + 1));
         }
+        Rules.Hit(byK ? Rule.IotaK : Rule.Iota);
         return rhs;
     }
 

@@ -7,9 +7,14 @@ universe polymorphism.
 
 It exists for two jobs.
 
-**A baseline.** Both kernels should accept every declaration. They do, which is evidence
-that Tenet implements these rules the way the reference does, and it is the only direct
-check of several of them the project has.
+**A baseline.** Both kernels should accept every declaration. They do.
+
+That is weaker evidence than it reads as, and `tenet check . --rules` says how much weaker:
+checking these declarations reaches 25 of the kernel's 36 rules, and among the ones it never
+reaches are K-like reduction, `Quot.ind`, function eta and unit-like eta, four of the rules
+this corpus was written for. Writing a declaration that mentions a rule is not the same as
+making the kernel use it while checking that declaration. Closing those gaps is the open work
+on this corpus.
 
 ```sh
 lake build

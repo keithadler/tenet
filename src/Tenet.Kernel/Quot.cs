@@ -118,15 +118,18 @@ public static class Quot
             return null;
         }
         int mkPos, argPos;
+        Rule rule;
         if (fn.Name.Equals(QuotLift))
         {
             mkPos = 5;
             argPos = 3;
+            rule = Rule.QuotLift;
         }
         else if (fn.Name.Equals(QuotInd))
         {
             mkPos = 4;
             argPos = 3;
+            rule = Rule.QuotInd;
         }
         else
         {
@@ -148,6 +151,7 @@ public static class Quot
         {
             r = Expr.MkApp(r, args.AsSpan(elimArity));
         }
+        Rules.Hit(rule);
         return r;
     }
 }

@@ -509,15 +509,19 @@ public sealed class TypeChecker
         switch (e)
         {
             case LitExpr lit:
+                Rules.Hit(Rule.InferLit);
                 r = InferLit(lit);
                 break;
             case ProjExpr p:
+                Rules.Hit(Rule.InferProj);
                 r = InferProj(p, inferOnly);
                 break;
             case FVarExpr f:
+                Rules.Hit(Rule.InferFVar);
                 r = InferFVar(f);
                 break;
             case SortExpr s:
+                Rules.Hit(Rule.InferSort);
                 if (!inferOnly)
                 {
                     CheckLevel(s.Level);
@@ -525,21 +529,27 @@ public sealed class TypeChecker
                 r = Expr.Sort(Level.Succ(s.Level));
                 break;
             case ConstExpr c:
+                Rules.Hit(Rule.InferConst);
                 r = InferConstant(c, inferOnly);
                 break;
             case LamExpr:
+                Rules.Hit(Rule.InferLam);
                 r = InferLambda(e, inferOnly);
                 break;
             case PiExpr:
+                Rules.Hit(Rule.InferPi);
                 r = InferPi(e, inferOnly);
                 break;
             case AppExpr a:
+                Rules.Hit(Rule.InferApp);
                 r = InferApp(a, inferOnly);
                 break;
             case LetExpr:
+                Rules.Hit(Rule.InferLet);
                 r = InferLet(e, inferOnly);
                 break;
             default:
+                Rules.Hit(Rule.InferBVar);
                 throw new KernelException("unexpected bound variable");
         }
         cache[e] = r;
@@ -558,9 +568,10 @@ public sealed class TypeChecker
                 return q;
             }
         }
-        return Inductive.TryReduceRec(Env, e,
+        Expr? red = Inductive.TryReduceRec(Env, e,
             t => cheapRec ? WhnfCore(t, cheapRec, cheapProj) : Whnf(t),
             Infer, IsDefEq, IsProp);
+        return red;
     }
 
     private Expr WhnfFVar(FVarExpr e, bool cheapRec, bool cheapProj)
@@ -568,6 +579,7 @@ public sealed class TypeChecker
         LocalDecl? d = Lctx.Find(e.Id);
         if (d?.Value is Expr v)
         {
+            Rules.Hit(Rule.ZetaFVar);
             return WhnfCore(v, cheapRec, cheapProj);
         }
         return e;
@@ -577,6 +589,7 @@ public sealed class TypeChecker
     {
         if (c.IsStrLit)
         {
+            Rules.Hit(Rule.StringLitToCtor);
             c = Whnf(Inductive.StringLitToConstructor(Env, c));
         }
         Expr mk = c.GetAppArgs(out Expr[] args);
@@ -634,6 +647,7 @@ public sealed class TypeChecker
             case ProjExpr p:
                 {
                     Expr? m = ReduceProj(p, cheapRec, cheapProj);
+                    if (m is not null) { Rules.Hit(Rule.Proj); }
                     r = m is not null ? WhnfCore(m, cheapRec, cheapProj) : e;
                     break;
                 }
@@ -651,6 +665,7 @@ public sealed class TypeChecker
                             body = inner.Body;
                             m++;
                         }
+                        Rules.Hit(Rule.Beta);
                         Expr inst = ExprOps.Instantiate(body, 0, revArgs.AsSpan(numArgs - m, m).ToArray());
                         r = WhnfCore(Expr.MkRevApp(inst, revArgs.AsSpan(0, numArgs - m)), cheapRec, cheapProj);
                     }
@@ -674,6 +689,7 @@ public sealed class TypeChecker
                     break;
                 }
             case LetExpr let:
+                Rules.Hit(Rule.Zeta);
                 r = WhnfCore(ExprOps.Instantiate1(let.Body, let.Value), cheapRec, cheapProj);
                 break;
             default:
@@ -731,6 +747,7 @@ public sealed class TypeChecker
     {
         if (e is AppExpr a && a.Arg is ConstExpr && a.Fn is ConstExpr f && (f.Name.Equals(LeanReduceBool) || f.Name.Equals(LeanReduceNat)))
         {
+            Rules.Hit(Rule.NativeReduce);
             throw new UnsupportedException($"'{f.Name}' requires running compiled code, which an external checker cannot trust; the declaration cannot be checked");
         }
         return null;
@@ -757,6 +774,7 @@ public sealed class TypeChecker
         {
             CheckNatSize(r.GetByteCount());
         }
+        Rules.Hit(Rule.NatLitOp);
         return Expr.NatLit(r);
     }
 
@@ -772,6 +790,7 @@ public sealed class TypeChecker
         {
             return null;
         }
+        Rules.Hit(Rule.NatLitPred);
         return f(GetNatVal(arg1), GetNatVal(arg2)) ? BoolTrueExpr : BoolFalseExpr;
     }
 
@@ -952,12 +971,14 @@ public sealed class TypeChecker
             if (v is not null)
             {
                 Stats.CountNatLit();
+                Rules.Hit(Rule.NatLitOp);
                 _whnfCache[e] = v;
                 return v;
             }
             Expr? next = UnfoldDefinition(t1);
             if (next is not null)
             {
+                Rules.Hit(Rule.Delta);
                 if (Stats.Enabled)
                 {
                     Stats.CountUnfold(((ConstExpr)t1.GetAppFn()).Name);
@@ -1035,6 +1056,7 @@ public sealed class TypeChecker
     {
         if (t.Equals(s))
         {
+            Rules.Hit(Rule.DefEqSyntactic);
             return LBool.True;
         }
         if (SucceededBefore(t, s))
@@ -1047,8 +1069,10 @@ public sealed class TypeChecker
             switch (t)
             {
                 case BindingExpr tb:
+                    Rules.Hit(Rule.DefEqBinding);
                     return ToLBool(IsDefEqBinding(tb, (BindingExpr)s));
                 case SortExpr ts:
+                    Rules.Hit(Rule.DefEqSort);
                     return ToLBool(Level.IsEquiv(ts.Level, ((SortExpr)s).Level));
                 case LitExpr tl:
                     return ToLBool(tl.Value.Equals(((LitExpr)s).Value));
@@ -1192,6 +1216,7 @@ public sealed class TypeChecker
     private ReductionStatus LazyDeltaReductionStep(ref Expr tn, ref Expr sn)
     {
         Stats.UnfoldLazy();
+        Rules.Hit(Rule.DeltaLazy);
         if (++_unfolds > MaxUnfolds)
         {
             throw new DeterministicTimeoutException(MaxUnfolds);
@@ -1304,6 +1329,7 @@ public sealed class TypeChecker
 
     private LBool IsDefEqOffset(Expr t, Expr s)
     {
+        Rules.Hit(Rule.DefEqOffset);
         if (IsNatZero(t) && IsNatZero(s))
         {
             return LBool.True;
@@ -1456,17 +1482,20 @@ public sealed class TypeChecker
         r = IsDefEqProofIrrel(tn, sn);
         if (r != LBool.Undef)
         {
+            Rules.Hit(Rule.DefEqProofIrrel);
             return r == LBool.True;
         }
 
         r = LazyDeltaReduction(ref tn, ref sn);
         if (r != LBool.Undef)
         {
+            Rules.Hit(Rule.DefEqLazyDelta);
             return r == LBool.True;
         }
 
         if (tn is ConstExpr tc && sn is ConstExpr sc && tc.Name.Equals(sc.Name) && IsDefEqLevels(tc.Levels, sc.Levels))
         {
+            Rules.Hit(Rule.DefEqConst);
             return true;
         }
         if (tn is FVarExpr tf && sn is FVarExpr sf && tf.Id == sf.Id)
@@ -1493,23 +1522,28 @@ public sealed class TypeChecker
 
         if (IsDefEqApp(tn, sn))
         {
+            Rules.Hit(Rule.DefEqApp);
             return true;
         }
         if (TryEtaExpansion(tn, sn))
         {
+            Rules.Hit(Rule.DefEqEta);
             return true;
         }
         if (TryEtaStruct(tn, sn))
         {
+            Rules.Hit(Rule.DefEqEtaStruct);
             return true;
         }
         r = TryStringLitExpansion(tn, sn);
         if (r != LBool.Undef)
         {
+            Rules.Hit(Rule.DefEqStringLit);
             return r == LBool.True;
         }
         if (IsDefEqUnitLike(tn, sn))
         {
+            Rules.Hit(Rule.DefEqUnitLike);
             return true;
         }
         return false;

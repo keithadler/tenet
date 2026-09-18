@@ -42,6 +42,7 @@ internal static class Program
           --no-compare                do not compare derived constructors/recursors with the exporter's
           --quiet                     no progress output
           --stats                     print kernel work counters at the end
+          --rules                     which kernel rules the run exercised, and which it never reached
           --verbose                   name each declaration before checking it (.olean files)
           --report <file.json>        also write the outcome (counts, failures, slow declarations) as JSON
           --jobs <n>                  check n declarations concurrently (default: number of cores; 1 = sequential)
@@ -522,6 +523,7 @@ internal static class Program
               --fail-on-axiom NAME  exit non-zero if anything checked rests on that axiom
               --report FILE         write a JSON report, including a hash of every artifact
               --stats               print kernel work counters and the most unfolded definitions
+              --rules               which kernel rules the run reached; anything at zero is untested by it
               --slow SECONDS        list declarations slower than this (default 1)
               --verbose             name each declaration before checking it (.olean only)
               --low-memory          workstation collector: about a third the memory, slower
@@ -793,6 +795,39 @@ internal static class Program
 
     /// <summary>A problem with what the user asked for, reported as a message rather than a stack trace.</summary>
     private sealed class UsageException(string message) : Exception(message);
+
+    /// <summary>
+    /// Which kernel rules a run reached, and which it never did. "All of Mathlib checks" says nothing about a rule
+    /// no corpus exercises, and a green run cannot tell a rule that works from one that is never called.
+    /// </summary>
+    private static void PrintRules(string[] args)
+    {
+        var all = Rules.All().ToList();
+        long total = all.Sum(x => x.Hits);
+        var cold = all.Where(x => x.Hits == 0).Select(x => x.Rule.ToString()).ToList();
+        if (WantsJson(args))
+        {
+            Console.WriteLine(Json(
+                ("command", "rules"), ("total", total), ("exercised", all.Count - cold.Count),
+                ("rules", all.Count), ("unexercised", cold),
+                ("hits", all.Select(x => new RawJson(Json(("rule", x.Rule.ToString()), ("hits", x.Hits)))).ToList())));
+            return;
+        }
+        Console.WriteLine($"kernel rules: {all.Count - cold.Count} of {all.Count} exercised, {total} firings");
+        foreach ((Rule r, long hits) in all)
+        {
+            Console.WriteLine($"  {hits,12}  {r}");
+        }
+        if (cold.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("never reached by this run, so this run says nothing about them:");
+            foreach (string c in cold)
+            {
+                Console.WriteLine($"    {c}");
+            }
+        }
+    }
 
     private static string Trim(string s) => s.Length > 200 ? s[..200] + " …" : s;
 
@@ -1427,7 +1462,7 @@ internal static class Program
             }
         }
 
-        TypeChecker.Stats.Enabled = stats;
+        TypeChecker.Stats.Enabled = stats || Array.IndexOf(args, "--rules") >= 0;
         if (!File.Exists(path))
         {
             return Fail($"no such file: {path}");
@@ -1570,6 +1605,7 @@ internal static class Program
                 case "--no-compare": compare = false; break;
                 case "--quiet": quiet = true; break;
                 case "--stats": stats = true; break;
+                case "--rules": break;   // handled where the counters are switched on, below
                 case "--verbose": verbose = true; break;
                 case "--report":
                     if (++i >= args.Length) return Fail("--report needs a file name");
@@ -1606,7 +1642,7 @@ internal static class Program
                     break;
             }
         }
-        TypeChecker.Stats.Enabled = stats;
+        TypeChecker.Stats.Enabled = stats || Array.IndexOf(args, "--rules") >= 0;
         search.AddFromEnvironment();
         foreach (string t in targets)
         {
@@ -1697,6 +1733,10 @@ internal static class Program
             Console.WriteLine("  " + TypeChecker.Stats.Detail);
             Console.WriteLine("most unfolded definitions:");
             foreach (var (name, count) in TypeChecker.Stats.TopUnfolds(25)) Console.WriteLine($"  {count,9}  {name}");
+        }
+        if (Array.IndexOf(args, "--rules") >= 0)
+        {
+            PrintRules(args);
         }
         if (Array.IndexOf(args, "--timing") >= 0)
         {

@@ -165,6 +165,48 @@ public class SafetyTests
         Assert.Equal("(equal)", ExprOps.FirstDifference(piA, Expr.Pi(Name.Of("a"), NatE, NatE)));
     }
 
+    /// <summary>
+    /// The rule counters have to count, or the coverage table they produce is worse than no table: it would report
+    /// a rule as unexercised when it fired, or as exercised when it did not.
+    /// </summary>
+    [Fact]
+    public void RuleCountersCountWhatTheyName()
+    {
+        bool saved = TypeChecker.Stats.Enabled;
+        try
+        {
+            Rules.Reset();
+            TypeChecker.Stats.Enabled = false;
+            Environment env = LoadFixture();
+            var off = new TypeChecker(env);
+            off.Whnf(Expr.App(Expr.Lam(Name.Of("x"), NatE, Expr.BVar(0)), Expr.NatLit(1)));
+            Assert.Equal(0, Rules.Count(Rule.Beta));   // off by default: an atomic increment here would serialize workers
+
+            TypeChecker.Stats.Enabled = true;
+            Rules.Reset();
+            var on = new TypeChecker(env);
+            // (fun x => x) 1 reduces by beta, and nothing else in this term does.
+            Assert.Equal(Expr.NatLit(1), on.Whnf(Expr.App(Expr.Lam(Name.Of("x"), NatE, Expr.BVar(0)), Expr.NatLit(1))));
+            Assert.True(Rules.Count(Rule.Beta) > 0);
+            Assert.Equal(0, Rules.Count(Rule.Iota));
+            Assert.Equal(0, Rules.Count(Rule.QuotLift));
+
+            // let x := 1; x reduces by zeta.
+            Rules.Reset();
+            var zeta = new TypeChecker(env);
+            zeta.Whnf(Expr.Let(Name.Of("x"), NatE, Expr.NatLit(1), Expr.BVar(0)));
+            Assert.True(Rules.Count(Rule.Zeta) > 0);
+            Assert.Equal(0, Rules.Count(Rule.Beta));
+
+            Assert.Contains(Rule.NativeReduce, Rules.Unexercised());
+        }
+        finally
+        {
+            TypeChecker.Stats.Enabled = saved;
+            Rules.Reset();
+        }
+    }
+
     /// <summary>Build f (f (f ... x)) nested in the argument position, which is where each level costs a frame.</summary>
     private static Expr DeepTerm(int depth)
     {
