@@ -15,6 +15,14 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 
+    <!-- So a consumer can step into these sources from their debugger: the pdb records where each file
+         came from, and the repository URL is stamped into the package. Untracked generated sources are
+         embedded rather than pointed at, since they exist nowhere a debugger could fetch them. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
     <!-- Package metadata shared by every project -->
     <Authors>Keith Adler and the Tenet contributors</Authors>
     <Company>Tenet</Company>

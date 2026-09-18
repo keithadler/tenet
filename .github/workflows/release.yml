@@ -10,6 +10,11 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # At job level on purpose. A step's own `env` is not dependable in that step's own `if`, so the
+      # publish below, guarded by `env.NUGET_API_KEY != ''` with the value set on the step, could skip
+      # itself and leave a green release that published nothing.
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -43,8 +48,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Publish to nuget.org
-        # Runs only when the NUGET_API_KEY repository secret is set.
+        # Runs only when the NUGET_API_KEY repository secret is set. Pushing a .nupkg also pushes the
+        # .snupkg beside it, so the symbol server gets the sources a consumer would step into.
         if: ${{ env.NUGET_API_KEY != '' }}
-        run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          dotnet nuget push "artifacts/*.nupkg" \
+            --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+          echo "published to nuget.org: $(ls artifacts/*.nupkg | wc -l) package(s)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Say so when nothing was published
+        # A release that quietly skipped publishing looks exactly like one that published, which is the
+        # failure this line exists to make impossible.
+        if: ${{ env.NUGET_API_KEY == '' }}
+        run: |
+          echo "NUGET_API_KEY is not set, so nothing was pushed to nuget.org." >> "$GITHUB_STEP_SUMMARY"
+          echo "The packages are attached to the GitHub release instead." >> "$GITHUB_STEP_SUMMARY"
