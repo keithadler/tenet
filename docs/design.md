@@ -177,7 +177,15 @@ Measured on all of `Init`, and these are counters rather than timings so they ho
 | GC pause | 2.40s | **1.51s** |
 
 Same verdict, 64,814 declarations and 0 failures, 127 tests on both frameworks, and the arena suite still 70 of
-70 and 119 of 119. Wall-clock effect is not claimed here: every timing taken this day was on a machine busy
-exporting Mathlib, and this repository has already published three speed claims that turned out to be thermal
-drift. The 0.9 seconds of GC pause that stopped happening is real; what it is worth end to end should be
-measured on a quiet machine with `tools/bench`.
+70 and 119 of 119.
+
+**Measured on a quiet machine afterwards, it is worth about 1% of wall time**: eight interleaved pairs,
+medians 13.08s to 12.93s, faster in six pairs of eight. Real, and far smaller than a 42% allocation cut
+suggests, for the same reason the GC numbers gave earlier: with the server collector and four workers,
+collection overlaps with work on other threads, so removing 0.9s of pause does not remove 0.9s of wall time.
+Collection was never on the critical path.
+
+The change is kept for the allocation, not the speed. Less memory pressure is worth having on a constrained
+runner, and this project is measured on memory as well as time. But nobody should expect it to make checking
+faster, and the bottleneck it was chased for is untouched: the work is in the 387M node visits themselves, not
+in the garbage they leave behind.
