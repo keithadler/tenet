@@ -124,3 +124,42 @@ Where the time actually goes, for anyone who wants to try again: 7.2 million def
 and a parallel speedup that stops paying at about four workers. Wall time goes 30.1s at one job to 13.3s at
 four and only 11.0s at twelve, while summed kernel time across workers rises from 26s to 65s. That is memory
 and allocation behavior, not duplicated reduction, and it is the more promising thread.
+
+## Where the time goes, measured
+
+Chasing speed by guessing produced three wrong answers in a row (above). Counting produced one answer, and
+counting is worth more here because it is deterministic: the numbers below are identical whether or not the
+machine is busy, which timing is not.
+
+Checking all of `Init`, 64,814 declarations:
+
+| | |
+| --- | --- |
+| expression nodes built | **252.3M** (App 187.3M, Lam 24.7M, Pi 21.5M, Const 8.9M, Sort 5.5M) |
+| of the applications, built by | `Replace` 142.7M, `MkRevApp` 35.8M, `MkApp` 8.7M |
+| `ExprOps.Replace` | **21.0M calls, 387.1M node visits** |
+| its per-call memo | 215.7M entries stored, 9.3M hits |
+| allocated | 54.5 GB |
+| GC pause | 2.6s |
+
+**It is not the garbage collector.** Allocation is 54.5 GB and GC pause 2.6s at one worker, four workers and
+twelve, to three significant figures. Parallelism adds no allocation and no collection pressure, so the
+scaling wall is not GC and tuning the collector cannot fix it. A gen0 sizing experiment bore that out: 2.5%
+faster for 45% more resident memory, which is a bad trade for a checker whose memory is scored.
+
+**It is substitution.** Three quarters of everything built is an application, and three quarters of those come
+out of `Replace` rebuilding a term around a substituted variable. `Instantiate` already skips subterms with no
+loose variable in range, and `Replace` already returns the original node when both children come back
+unchanged, so the cheap structural wins are taken.
+
+**The memo in `Replace` looks wasteful and is not.** It stores 215.7M entries to serve 9.3M hits, a 4% hit
+rate, and deleting it is catastrophic: node visits go from 387M to 3,361M and the run from 29.3s to 81.5s.
+Lean's terms are shared DAGs, so each of those few hits is skipping an enormous subtree. Anyone looking at the
+hit rate and reaching for the delete key, as I did, should run it with `Replace`'s cache disabled first.
+
+**What is left to try**, and it is the only idea remaining that is worth the risk: the memo is a
+`Dictionary<(Expr,int),Expr>` allocated per call, 21M allocations serving 215M insertions through a custom
+comparer. Lean's C++ kernel does not do this; it memoizes on the expression node itself, turning a hash insert
+into a field write. That is plausibly a large win and it is genuinely dangerous here, because workers share
+expression nodes across threads and a mutable memo field would need to be per-thread or lock-free. It has not
+been tried.
