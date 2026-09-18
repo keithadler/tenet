@@ -3,6 +3,44 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Kept current as work lands, not written at release time. 0.8.0 shipped with no entry here at all, which nobody
+noticed until the next release was being cut, and a changelog assembled from memory afterwards is a worse
+record than one assembled as it goes.
+
+### Fixed
+- The GitHub Action installed 0.7.0. The version a consumer gets is pinned in `action.yml`, not on nuget.org, so
+  publishing 0.9.0 did nothing for anyone writing `uses: keithadler/tenet@main`, and 0.7.0 predates both of the
+  fixes that stop a file proving `False`.
+- `check --rules` printed nothing on an export. It was wired only into the `.olean` path, so the flag the usage
+  advertises did nothing for anyone checking an `ndjson` file.
+- `Rule.InferBVar` was counted on a switch arm that the loose-bound-variable guard four lines earlier makes
+  unreachable. The refusal is real, so the counter now sits on the guard that performs it.
+- The nightly proved-checker step piped both checkers through `tee`, which returns its own status, so neither
+  checker's exit code reached the step. A rejection would have reported green.
+
+### Added
+- `check EXPORT --names-out FILE` lists every constant the run ended with, which is what makes coverage across
+  several slices countable as a union rather than a sum. It was only on `crosscheck`, which needs an `.olean`
+  tree the person checking a file does not have. On `.olean` input it is refused rather than silently ignored.
+- `TrustSurfaceTests` reads the names the kernel hardcodes out of its own source and fails unless each is
+  accounted for: a binder, a name the kernel invents and never looks up, or an assumption mapped to the test
+  that attacks it. A name added to the kernel is a new thing an export can lie about, and nothing previously
+  said so. Writing the table found `eagerReduce` unattacked; it has a case now.
+- A test for the rules no corpus reaches, so their coldness rests on evidence rather than on an argument.
+- The nightly rotates through seven Mathlib slices by day of year instead of re-proving one forever, and reports
+  rule coverage from the Mathlib run.
+
+### Changed
+- Rule coverage is reported as 36 of 39 reachable rules, not 36 of 40. `DefEqFVar` cannot be reached by any
+  input, because the syntactic check decides every pair that would satisfy it; Lean's `is_def_eq_core` has the
+  same branch after the same check and it is unreachable there too. Subsumed rules are listed separately from
+  cold ones, since counting them as a coverage gap invents work and hides the rules that are a real gap.
+- The sample targets `net8.0` and `net10.0` against the published 0.9.0 packages, and CI runs both of its
+  binaries. A consumer reaches `lib/net8.0` only through a package, and that sample is the only place that path
+  is walked.
+
 ## [0.9.0] - 2026-09-18
 
 Two ways a file could have talked this kernel into accepting a proof of `False`, both closed.
