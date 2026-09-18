@@ -71,3 +71,62 @@ jobs:
           name: mathlib-report
           path: ${{ runner.temp }}/mathlib.json
           if-no-files-found: ignore
+
+  three-way:
+    name: Tenet vs Lean's kernel vs con-leche
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build -c Release
+
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      # Three Lean projects pinning three different toolchains; elan picks each one per directory.
+      - name: Build the exporter and both oracles
+        run: |
+          git clone --depth 1 https://github.com/leanprover/lean4export
+          (cd lean4export && lake build)
+          (cd tools/leancheck && lake build)
+          git clone --depth 1 https://github.com/leanprover/con-leche
+          (cd con-leche && lake build con-leche)
+
+      - name: Export Init.Prelude and Init.Core
+        run: |
+          mkdir -p exports
+          cd lean4export
+          lake env .lake/build/bin/lean4export Init.Prelude > ../exports/Init.Prelude.ndjson
+          lake env .lake/build/bin/lean4export Init.Core > ../exports/Init.Core.ndjson
+
+      - name: Differential test with con-leche as a third opinion
+        run: |
+          # leancheck finds the Lean sysroot through the `lean` proxy, which needs a default toolchain
+          # when run outside a Lean project directory.
+          elan default "$(cat tools/leancheck/lean-toolchain)"
+          for target in Init.Prelude Init.Core; do
+            echo "::group::$target"
+            tools/Tenet.DiffTest/bin/Release/net10.0/Tenet.DiffTest \
+              --export "exports/$target.ndjson" \
+              --tenet src/Tenet.Cli/bin/Release/net10.0/tenet \
+              --oracle tools/leancheck/.lake/build/bin/leancheck \
+              --oracle2 con-leche/.lake/build/bin/con-leche \
+              --variants 20 --mutations 12 --seed $(( ${{ github.run_number }} * 7 + 1 )) \
+              | tee "$RUNNER_TEMP/$target.log"
+            echo "::endgroup::"
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          for target in Init.Prelude Init.Core; do
+            f="$RUNNER_TEMP/$target.log"
+            [ -f "$f" ] || continue
+            echo "## $target" >> "$GITHUB_STEP_SUMMARY"
+            grep -E "^done:|^third opinion:|^con-leche " "$f" | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+          done
