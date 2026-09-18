@@ -45,6 +45,13 @@ record than one assembled as it goes.
   prelude defines 30 of them, which is expected and is said so in the output.
 - The nightly rotates through seven Mathlib slices by day of year instead of re-proving one forever, and reports
   rule coverage from the Mathlib run.
+- **Tenet checks con-leche's own soundness proof.** Everything Tenet accepts is put to a checker carrying a
+  machine-checked theorem that it never accepts a file declaring `False`. That guarantee was checked by exactly
+  one thing: Lean's kernel, which is what con-leche exists to double-check. Tenet now checks it too, 232,881
+  declarations across 2,791 modules with 0 failures, and independently reports `no_False_declaration` as
+  depending on 27,357 constants and on `propext`, `Classical.choice` and `Quot.sound` alone. It does not remove
+  Lean from the picture, since this is a Lean proof checked by a kernel calibrated against Lean; it removes the
+  shared implementation, where one bug makes a checker and the proof of that checker wrong together.
 
 ### Changed
 - Rule coverage is reported as 36 of 39 reachable rules, not 36 of 40. `DefEqFVar` cannot be reached by any

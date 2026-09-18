@@ -187,6 +187,73 @@ jobs:
           path: ${{ runner.temp }}/names-*.txt
           if-no-files-found: ignore
 
+  proof-of-soundness:
+    name: Tenet checks the proof that con-leche is sound
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build -c Release
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      # con-leche requires no packages, so this is self-contained.
+      - name: Build con-leche's library, proof and all
+        run: |
+          git clone --depth 1 https://github.com/leanprover/con-leche "$RUNNER_TEMP/cl"
+          cd "$RUNNER_TEMP/cl"
+          lake build ConLecheBase ConLecheModel ConLecheCaps
+
+      # The point of this job. Elsewhere Tenet and con-leche are run on the same export and agree, which
+      # transfers con-leche's proof to what Tenet accepted. That transfer rests on con-leche's proof being
+      # valid, and today the only thing that has checked that proof is Lean's own kernel: the same kernel
+      # con-leche exists to double-check. Tenet shares no code with it, so checking the proof here removes
+      # Lean's implementation from that link. It does not remove Lean from it, since this is still a Lean
+      # proof checked by a kernel calibrated against Lean's behavior. What it removes is one bug making the
+      # checker and the proof of the checker wrong together.
+      - name: Check the proof, then audit what it rests on
+        run: |
+          set -o pipefail
+          M="$RUNNER_TEMP/cl/.lake/build/lib/lean/ConLeche/MainTheorem.olean"
+          T=src/Tenet.Cli/bin/Release/net10.0/tenet
+
+          "$T" check "$M" --all --quiet | tee "$RUNNER_TEMP/proof.txt"
+          grep -qE '^OK' "$RUNNER_TEMP/proof.txt" || { echo "Tenet did not accept con-leche's proof in full"; exit 1; }
+
+          "$T" axioms "$M" ConLeche.no_False_declaration | tee "$RUNNER_TEMP/ax.txt"
+          # Anything beyond Lean's three standard axioms means the soundness theorem is carrying an
+          # assumption; a sorry would surface here too. The axiom lines are the indented ones.
+          # `|| true` on both greps: a grep that matches nothing exits 1 and would end the step under -e.
+          bad=$(grep -E '^  ' "$RUNNER_TEMP/ax.txt" | grep -vE '^  (propext|Classical\.choice|Quot\.sound)$' || true)
+          if [ -n "$bad" ]; then
+            echo "no_False_declaration rests on something beyond the three standard axioms:"
+            echo "$bad"
+            exit 1
+          fi
+          # And all three are actually named, so an empty or reworded report cannot pass as a clean one.
+          for a in propext Classical.choice Quot.sound; do
+            grep -qxF "  $a" "$RUNNER_TEMP/ax.txt" || { echo "expected axiom $a not reported"; exit 1; }
+          done
+
+          {
+            echo "## Tenet checked the proof that con-leche is sound"
+            echo
+            echo "- $(grep -E '^OK' "$RUNNER_TEMP/proof.txt")"
+            echo "- \`ConLeche.no_False_declaration\`: $(head -1 "$RUNNER_TEMP/ax.txt")"
+            echo "- axioms: propext, Classical.choice, Quot.sound, and nothing else"
+            echo
+            echo "What this does not establish: that the theorem says what you want. Its statement is built"
+            echo "from constants con-leche defines itself, and a wrong definition would hide there."
+            echo '```'
+            "$T" statement "$M" ConLeche.no_False_declaration | head -25
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   three-way:
     name: Tenet vs Lean's kernel vs con-leche
     runs-on: ubuntu-latest

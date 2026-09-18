@@ -245,6 +245,41 @@ The nightly rotates through seven slices by day of year rather than re-proving o
 the name list as an artifact, so the union grows on its own instead of when somebody remembers to add a slice.
 A module Mathlib master has renamed costs one night: the job falls back to the first slice and says so.
 
+### Checking the proof itself
+
+Running Tenet and con-leche on the same export and having both accept transfers con-leche's proof to what
+Tenet accepted. That transfer rests on con-leche's proof being valid, and until now the only thing that had
+checked that proof was Lean's own kernel: the same kernel con-leche exists to double-check.
+
+Tenet checks it too. con-leche requires no packages, so its library builds standalone.
+
+```
+tenet check ConLeche/MainTheorem.olean --all --quiet
+OK: 232,881 checked in 2,791 modules, 0 failed, 50.2s
+
+tenet axioms ConLeche/MainTheorem.olean ConLeche.no_False_declaration
+ConLeche.no_False_declaration depends on 27,357 constants and these axioms:
+  propext
+  Classical.choice
+  Quot.sound
+```
+
+That matches what con-leche reports about itself with `#print axioms`, arrived at by a kernel that shares no
+code with the one that produced the file.
+
+**What it removes.** Not Lean. This is still a Lean proof, checked by a kernel written to decide what Lean's
+kernel decides and calibrated against it. What it removes is the *shared implementation*: the failure mode
+where one bug in the C++ kernel makes both the checker under test and the proof of that checker wrong
+together, in the same direction, invisibly.
+
+**What it does not establish** is that the theorem says what you want. `tenet statement` gives the honest
+version: the statement is built from 28 constants, 14 of which con-leche defines itself, and a wrong
+definition would hide in those. No kernel helps there. It names them so they can be read.
+
+The `proof-of-soundness` nightly job runs all of this and fails if the proof is not accepted in full, if any
+axiom beyond the three appears, or if all three are not named, so a reworded or empty report cannot pass as a
+clean one.
+
 ### What that licenses, and what it does not
 
 con-leche's `no_False_declaration` is a machine-checked theorem that a file declaring a theorem of type `False` is
