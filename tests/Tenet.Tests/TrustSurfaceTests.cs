@@ -163,6 +163,32 @@ public class TrustSurfaceTests
             $"classified here but no longer hardcoded by the kernel: {string.Join(", ", stale)}");
     }
 
+    /// <summary>
+    /// The kernel publishes its own trust surface as <see cref="Trust.Names"/>, which `tenet audit` reports
+    /// against. A published list that has drifted from the code is worse than none: audit would say a project
+    /// redefines nothing while it redefines something the kernel believes. So it is checked against the same
+    /// grep, in both directions.
+    /// </summary>
+    [Fact]
+    public void ThePublishedTrustSurfaceMatchesTheSource()
+    {
+        string? dir = FindKernelSource();
+        Assert.NotNull(dir);
+        var names = HardcodedNames(dir!);
+        var published = Trust.Names.Select(n => n.ToString()).ToHashSet(StringComparer.Ordinal);
+
+        // Everything classified here as an assumption has to be published, or audit under-reports.
+        var unpublished = Attacked.Keys.Where(n => !published.Contains(n)).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        Assert.True(unpublished.Count == 0,
+            $"attacked as an assumption but missing from Trust.Names, so audit will not report it: {string.Join(", ", unpublished)}");
+
+        // And nothing published may be a name the kernel no longer hardcodes, or audit reports on a name that
+        // means nothing to the checker any more.
+        var ghosts = published.Where(n => !names.Contains(n)).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        Assert.True(ghosts.Count == 0,
+            $"published in Trust.Names but not hardcoded anywhere in the kernel: {string.Join(", ", ghosts)}");
+    }
+
     [Fact]
     public void EveryAttackNamedHereExists()
     {

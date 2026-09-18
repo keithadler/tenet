@@ -1161,6 +1161,14 @@ internal static class Program
 
         int total = scope.Count;
         int clean = total - anyAssumption.Count;
+
+        // A project that defines its own `Nat.add` is not carrying an axiom, so nothing above notices it, but it
+        // is a fact an auditor wants. The kernel would take that name at its word were it not checked; because it
+        // is checked, a body that fails the equations is unfolded rather than refused, so the verdict stays
+        // correct and the arithmetic in that project is whatever the file says it is. Worth one line either way.
+        var redefined = Trust.Names.Where(ownNames.Contains).Select(n => n.ToString())
+            .OrderBy(n => n, StringComparer.Ordinal).ToList();
+
         if (WantsJson(args))
         {
             Console.WriteLine(Json(
@@ -1168,12 +1176,26 @@ internal static class Program
                 ("declarations", total), ("unconditional", clean), ("restingOnAssumption", anyAssumption.Count),
                 ("assumptions", restsOn.OrderByDescending(k => k.Value.Count)
                     .Select(k => new RawJson(Json(("axiom", k.Key), ("declarations", k.Value.Count)))).ToList()),
+                ("redefinesTrustedNames", redefined),
                 ("ok", anyAssumption.Count == 0)));
             return 0;
         }
         Console.WriteLine($"{args[0]}: {total} declarations defined by this project in {targets.Count} modules");
         Console.WriteLine($"  unconditional (nothing beyond propext, Classical.choice, Quot.sound): {clean} ({(total == 0 ? 0 : 100.0 * clean / total):F1}%)");
         Console.WriteLine($"  resting on an assumption: {anyAssumption.Count} ({(total == 0 ? 0 : 100.0 * anyAssumption.Count / total):F1}%)");
+        if (redefined.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"  defines {redefined.Count} of the {Trust.Names.Count} names the kernel would otherwise take on trust:");
+            foreach (string n in redefined)
+            {
+                Console.WriteLine($"    {n}");
+            }
+            Console.WriteLine("  Lean's own prelude defines these, so seeing them here is expected when that is what you");
+            Console.WriteLine("  are auditing. Anywhere else it is worth a look: the checker validates them rather than");
+            Console.WriteLine("  believing them, so the verdict stands, but what these names mean in this project is what");
+            Console.WriteLine("  this project says they mean.");
+        }
         if (assumptions.Count == 0)
         {
             Console.WriteLine("  no assumptions: this project introduces no axioms and no sorry");

@@ -29,6 +29,12 @@ record than one assembled as it goes.
   that attacks it. A name added to the kernel is a new thing an export can lie about, and nothing previously
   said so. Writing the table found `eagerReduce` unattacked; it has a case now.
 - A test for the rules no corpus reaches, so their coldness rests on evidence rather than on an argument.
+- `Trust.Names`, the kernel's own list of the names it takes on trust, checked against its source in both
+  directions so the list and the code cannot drift apart quietly.
+- `tenet audit` reports which of those names a project defines itself. That is not an axiom, so nothing else in
+  audit noticed it, but it is a fact an auditor wants: the checker validates these rather than believing them, so
+  the verdict stands, while what the names mean in that project is what the project says they mean. Lean's own
+  prelude defines 30 of them, which is expected and is said so in the output.
 - The nightly rotates through seven Mathlib slices by day of year instead of re-proving one forever, and reports
   rule coverage from the Mathlib run.
 
