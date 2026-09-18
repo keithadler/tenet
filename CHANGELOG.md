@@ -3,6 +3,87 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-09-18
+
+Two ways a file could have talked this kernel into accepting a proof of `False`, both closed.
+Neither was reachable by mutation testing; both came from reading what another checker had
+already written down about itself.
+
+### Fixed
+- A numeric literal was given the type `Nat` by assertion, without checking that the `Nat` in the
+  environment was the inductive the literal denotes. An export declaring `def Nat : Prop := False`
+  and then `def boom : False := 3` was accepted, with an empty axiom list, and `tenet audit` called
+  it unconditional. A literal is now refused unless the environment's `Nat` and `String` are what
+  the literal means. This is the most serious thing this project has found in itself.
+- An accelerated primitive was trusted from its name alone, which is safe for Lean because Lean
+  ships its prelude and is not safe for a checker whose entire job is reading somebody else's file.
+  An export declaring `Nat.add := fun a b => a` made Tenet accept `2 + 2 = 4`, false of the
+  declaration in front of it, and reject `2 + 2 = 2`, true of it. Each of the sixteen shortcuts is
+  now checked before it is taken: eight against their defining equations over free variables, the
+  rest at sampled values. A constant that fails is unfolded rather than rejected, so an unusual but
+  honest prelude is checked slowly instead of refused.
+- The `_nested` namespace, which eliminating a nested inductive derives auxiliary types into, is
+  reserved against unrelated declarations rather than only checked on constructor types.
+- `Nat.ble`'s equations held only on the newest Lean, because its zero clauses match on both
+  arguments. Three toolchain compatibility jobs hung before this was caught.
+- The differential harness attributed the primitive divergence in one direction only. Both occur:
+  usually Tenet is stricter, but on a damaged `Nat.pow` it is the laxer one, which is the alarming
+  direction and the same cause.
+- A stack-depth test was asserting against a legal JIT optimization rather than against the guard,
+  and failed about one run in thirteen.
+
+### Added
+- `net8.0` alongside `net10.0`. The packages carry both, so a project that has not moved off .NET 8
+  can reference the libraries. Both builds pass the full suite and check all of `Init` identically.
+  .NET 10 is the faster of the two and the one the standalone binaries are built from.
+- Agreement with `leanchecker`, which carries a machine-checked consistency proof, over five Mathlib
+  slices and 312,904 distinct declarations, both accepting in full with counts matching exactly. A
+  nightly job keeps putting a slice to it.
+- `docs/specification.md`: the forty rules this kernel implements, each with its typing judgment,
+  the method that implements it, and the function in Lean's C++ kernel it corresponds to. A test
+  fails if a rule has no row or a row has no rule, so the correspondence can be checked rather than
+  believed.
+- `docs/divergences.md`: every place Tenet decides something differently from Lean, why, and how to
+  switch it off. Anything not listed there is a bug.
+- Hostile tests organized by what the checker takes on trust. Each asserts the attack is refused and
+  that it succeeds with the defense turned off, so a test cannot pass by testing nothing.
+- Complete level equality by case analysis on which parameters can be zero, off by default. It can
+  only accept more, never less, and the gap it closes cannot arise on a real export.
+- `samples/Tenet.Explorer`: a hundred lines that read Lean from C# with no Lean installed, built
+  against the published packages rather than by project reference, so CI checks that what is on
+  nuget.org is still usable.
+
+## [0.8.0] - 2026-09-17
+
+Published to nuget.org, and made harder to crash than to answer wrongly.
+
+### Added
+- Packages on nuget.org, published by Trusted Publishing: the job asks GitHub for a short-lived
+  OIDC token and nuget.org validates it against a policy naming this repository and workflow. There
+  is no stored key to leak or rotate.
+- `tenet names`: find out what the declarations in a project are called, which every other command
+  needs as its input and none of them could answer.
+- Declarations resolve by name against a whole project rather than one `.olean` file.
+- A catalog of the kernel's forty rules, with a counter at every rule site, so a green run reports
+  which rules it exercised instead of only that it passed.
+- `difftest --oracle2` asks con-leche who is alone when Tenet and Lean disagree.
+- A nightly three-way differential run.
+- `readercheck`: damage an export in each of the ways a reader defect would, and assert `crosscheck`
+  notices. It previously could not see the defects it exists to catch.
+
+### Fixed
+- A term deeper than the stack is rejected instead of aborting the process. A .NET stack overflow
+  cannot be caught, so without the guard one pathological declaration takes down every other
+  declaration being checked alongside it. The first pass guarded five call sites; an audit found
+  eight more.
+- The differential harness scored a checker that crashed as a checker that agreed, because a missing
+  report read as an empty failure list.
+- The rule catalog was missing four rules, so its coverage read as 33 of 36 when it was 36 of 40.
+- The edge-case corpus was written against what the checks were meant to do rather than what they
+  measurably did.
+- `readercheck` in CI ran the oracle's toolchain against the exporter's output, producing 58 spurious
+  differences. Its own baseline guard is what caught it.
+
 ## [0.7.0] - 2026-09-15
 
 Checked against a checker with a consistency proof, and made to answer to programs as well as
