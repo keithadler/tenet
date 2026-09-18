@@ -210,12 +210,12 @@ public class SafetyTests
     /// <summary>
     /// The one rule no corpus reaches, exercised directly.
     ///
-    /// `DefEqStringLit` is at zero on `Init` for Lean 4.12, 4.24 and 4.34 alike, and on the edge-case corpus. On
-    /// current Lean it is unreachable in Lean's kernel too: both key the rule on `String.ofList`
-    /// (`g_string_mk = {"String", "ofList"}` in type_checker.cpp), both place it after lazy delta reduction, and
-    /// `String.ofList` is now an ordinary definition, so delta unfolds it before the rule is consulted. On 4.12 and
-    /// 4.24 `String.mk` is the real constructor and the rule is live, but nothing in `Init` compares a literal
-    /// against it. Either way no corpus covers it, so this covers it.
+    /// `DefEqStringLit` is at zero on `Init` for Lean 4.12, 4.24 and 4.34 alike, and on the edge-case corpus, and
+    /// this test says why rather than covering it: `String` is a structure, so eta for structures decides a
+    /// literal against its constructor form before the rule named for that case is reached. Lean's kernel places
+    /// its own `try_string_lit_expansion` in the same position, after eta, so the same shadowing applies there.
+    /// The rule is kept because the reference has it; it is not reachable while `String` is a structure, which is
+    /// every real environment and, now that a literal's type is checked, every one this kernel accepts.
     /// </summary>
     [Fact]
     public void StringLiteralAgainstItsConstructorFormIsItsOwnRule()
@@ -243,8 +243,12 @@ public class SafetyTests
             Ax(Name.Of("List", "nil"), Expr.Pi(Name.Of("α"), typeU, listOf(0)), [u]);
             Ax(Name.Of("List", "cons"), Expr.Pi(Name.Of("α"), typeU,
                 Expr.Arrow(Expr.BVar(0), Expr.Arrow(listOf(1), listOf(2)))), [u]);
-            Ax(Name.Of("String"), type0);
-            Ax(Name.Of("String", "mk"), Expr.Arrow(listChar, Expr.Const(Name.Of("String"), [])));
+            // String has to be the inductive a string literal denotes, not merely a constant of that name:
+            // the literal's type is asserted by its representation, so the environment has to agree.
+            Expr strE = Expr.Const(Name.Of("String"), []);
+            env.Add(new InductiveDecl([], 0,
+                [new InductiveType(Name.Of("String"), type0,
+                    [new Constructor(Name.Of("String", "mk"), Expr.Arrow(listChar, strE))])], false));
 
             Assert.Equal(Name.Of("String", "mk"), env.StringLiteralConstructor);   // no String.ofList here
 
@@ -255,13 +259,19 @@ public class SafetyTests
             Rules.Reset();
             var tc = new TypeChecker(env);
             Assert.True(tc.IsDefEq(lit, ctorForm));
-            Assert.True(Rules.Count(Rule.DefEqStringLit) > 0);
 
-            // And the other way round, since the rule tries both orders.
+            // Not by the rule named for this case. String is a structure, so eta for structures gets there first:
+            // it expands the literal into String.mk of its own field, reducing that projection expands the literal
+            // to its character list, and the two sides meet without TryStringLitExpansion being consulted. That
+            // holds in every environment where String is a structure, which is every real one and, since the
+            // literal's type is now checked, every one this kernel will accept.
+            Assert.Equal(0, Rules.Count(Rule.DefEqStringLit));
+            Assert.True(Rules.Count(Rule.DefEqEtaStruct) > 0);
+            Assert.True(Rules.Count(Rule.StringLitToCtor) > 0);
+
+            // What matters is the verdict, and it holds in both directions.
             Rules.Reset();
-            var tc2 = new TypeChecker(env);
-            Assert.True(tc2.IsDefEq(ctorForm, lit));
-            Assert.True(Rules.Count(Rule.DefEqStringLit) > 0);
+            Assert.True(new TypeChecker(env).IsDefEq(ctorForm, lit));
 
             // A different literal must not be accepted.
             var tc3 = new TypeChecker(env);
@@ -383,9 +393,15 @@ public class SafetyTests
             }
             foreach (Primitive p in Enum.GetValues<Primitive>())
             {
+                if (p is Primitive.NatLiteralType or Primitive.StringLiteralType)
+                {
+                    continue;   // these name a type, not a Nat operation
+                }
                 Add(Name.Parse("Nat." + char.ToLowerInvariant(p.ToString()[3]) + p.ToString()[4..]));
             }
-            foreach (string n in new[] { "Nat", "Nat.zero", "Nat.succ", "Bool", "Bool.true", "Bool.false" })
+            foreach (string n in new[] { "Nat", "Nat.zero", "Nat.succ", "Bool", "Bool.true", "Bool.false",
+                                         "String", "String.mk", "String.ofList", "Char", "Char.ofNat",
+                                         "List", "List.nil", "List.cons" })
             {
                 Add(Name.Parse(n));
             }
@@ -394,6 +410,49 @@ public class SafetyTests
             Assert.True(failing.Count == 0,
                 $"{Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(init))))}: "
                 + $"{string.Join(", ", failing)} did not validate, so the kernel will unfold them instead");
+        }
+    }
+
+    /// <summary>
+    /// A numeric literal's type is asserted by its representation, not derived, so the environment has to agree
+    /// that the constant it names is the type the literal means. Without that check a file could declare
+    /// <c>Nat</c> as a proposition and hand a literal over as a proof of it. Declaring that proposition to be
+    /// <c>False</c> gave a proof of False with no <c>sorry</c> and no axioms, which <c>tenet audit</c> reported as
+    /// unconditional.
+    /// </summary>
+    [Fact]
+    public void ALiteralIsNotAProofOfWhateverTheFileCallsNat()
+    {
+        var env = new Environment();
+        env.Add(new InductiveDecl([], 0, [new InductiveType(Name.Of("False"), Expr.Prop, [])], false));
+        // A constant named Nat that is the proposition False.
+        env.Add(new DefinitionDecl(Name.Of("Nat"), [], Expr.Prop, Expr.Const(Name.Of("False"), []),
+            ReducibilityHints.Regular(1), DefinitionSafety.Safe));
+
+        Assert.False(env.PrimitiveOk(Primitive.NatLiteralType));
+        var ex = Assert.Throws<KernelException>(() =>
+            env.Add(new DefinitionDecl(Name.Of("boom"), [], Expr.Const(Name.Of("False"), []),
+                Expr.NatLit(3), ReducibilityHints.Opaque, DefinitionSafety.Safe)));
+        Assert.Contains("Nat", ex.Message, StringComparison.Ordinal);
+        Assert.Null(env.Find(Name.Of("boom")));
+
+        // And the check is what stops it: without it the literal is accepted at that type and the file proves False.
+        bool saved = Primitives.Validate;
+        try
+        {
+            Primitives.Validate = false;
+            var env2 = new Environment();
+            env2.Add(new InductiveDecl([], 0, [new InductiveType(Name.Of("False"), Expr.Prop, [])], false));
+            env2.Add(new DefinitionDecl(Name.Of("Nat"), [], Expr.Prop, Expr.Const(Name.Of("False"), []),
+                ReducibilityHints.Regular(1), DefinitionSafety.Safe));
+            env2.Add(new DefinitionDecl(Name.Of("boom"), [], Expr.Const(Name.Of("False"), []),
+                Expr.NatLit(3), ReducibilityHints.Opaque, DefinitionSafety.Safe));
+            Assert.NotNull(env2.Find(Name.Of("boom")));
+            Assert.Empty(Replay.AxiomsOf(env2.Find, Name.Of("boom")).Axioms);
+        }
+        finally
+        {
+            Primitives.Validate = saved;
         }
     }
 

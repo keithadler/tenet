@@ -24,6 +24,12 @@ namespace Tenet.Kernel;
 /// </summary>
 public enum Primitive
 {
+    /// <summary>The type a numeric literal denotes: the inductive Nat, with zero and succ and nothing else.</summary>
+    NatLiteralType,
+
+    /// <summary>The type a string literal denotes, together with the constructor its expansion goes through.</summary>
+    StringLiteralType,
+
     NatSucc, NatPred, NatAdd, NatSub, NatMul, NatPow, NatBeq, NatBle,
     NatDiv, NatMod, NatGcd, NatLand, NatLor, NatXor, NatShiftLeft, NatShiftRight,
 }
@@ -40,6 +46,8 @@ public static class Primitives
 
     private static Name NameOf(Primitive p) => p switch
     {
+        Primitive.NatLiteralType => Nat,
+        Primitive.StringLiteralType => Name.Of("String"),
         Primitive.NatSucc => Name.Of("Nat", "succ"),
         Primitive.NatPred => Name.Of("Nat", "pred"),
         Primitive.NatAdd => Name.Of("Nat", "add"),
@@ -87,15 +95,31 @@ public static class Primitives
 
     private static bool CheckCore(Environment env, Primitive p)
     {
+        if (p == Primitive.StringLiteralType)
+        {
+            return CheckStringLiteralType(env);
+        }
         if (env.Find(Nat) is not InductiveInfo natInd)
         {
             return false;
         }
-        // Nat itself has to be the two-constructor type the literal representation assumes.
+        // Nat itself has to be the two-constructor type the literal representation assumes. This is what makes a
+        // numeric literal mean a number: without it, `3` is a term of whatever the environment happens to call
+        // Nat, and if that is a proposition then `3` is a proof of it.
         if (natInd.NumParams != 0 || natInd.NumIndices != 0 || natInd.Ctors.Length != 2
             || !natInd.Ctors[0].Equals(Name.Of("Nat", "zero")) || !natInd.Ctors[1].Equals(Name.Of("Nat", "succ")))
         {
             return false;
+        }
+        if (env.Find(Name.Of("Nat", "zero")) is not ConstructorInfo z || !z.Type.Equals(Expr.Const(Nat, []))
+            || env.Find(Name.Of("Nat", "succ")) is not ConstructorInfo sc
+            || !sc.Type.Equals(Expr.Arrow(Expr.Const(Nat, []), Expr.Const(Nat, []))))
+        {
+            return false;
+        }
+        if (p == Primitive.NatLiteralType)
+        {
+            return true;
         }
 
         Name name = NameOf(p);
@@ -195,6 +219,34 @@ public static class Primitives
 
         static Expr True() => Expr.Const(Name.Of("Bool", "true"), []);
         static Expr False() => Expr.Const(Name.Of("Bool", "false"), []);
+    }
+
+    /// <summary>
+    /// A string literal is a term of the type named <c>String</c>, and it reduces through the constructor
+    /// <see cref="Environment.StringLiteralConstructor"/> applied to a list of characters. Both have to be what
+    /// they are named, for the same reason a numeric literal's type does.
+    /// </summary>
+    private static bool CheckStringLiteralType(Environment env)
+    {
+        Name str = Name.Of("String");
+        if (env.Find(str) is not ConstantInfo sInfo || sInfo is not InductiveInfo ind
+            || ind.NumParams != 0 || ind.NumIndices != 0 || ind.LevelParams.Length != 0)
+        {
+            return false;
+        }
+        if (env.Find(Name.Of("Char")) is null || env.Find(Name.Of("List")) is null
+            || env.Find(Name.Of("Char", "ofNat")) is null
+            || env.Find(Name.Of("List", "cons")) is null || env.Find(Name.Of("List", "nil")) is null)
+        {
+            return false;
+        }
+        ConstantInfo? ctor = env.Find(env.StringLiteralConstructor);
+        if (ctor is null || ctor.LevelParams.Length != 0)
+        {
+            return false;
+        }
+        Expr listChar = Expr.App(Expr.Const(Name.Of("List"), [Level.Zero]), Expr.Const(Name.Of("Char"), []));
+        return SameType(env, ctor.Type, Expr.Arrow(listChar, Expr.Const(str, [])));
     }
 
     /// <summary>

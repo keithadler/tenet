@@ -452,11 +452,19 @@ constructor and is now an ordinary definition, with `String.mk` a definition too
 unfolds it first and neither kernel can reach the rule. On 4.12 and 4.24 `String.mk` is the real
 constructor and the rule is live, but no declaration in `Init` ever compares a literal against it.
 
-So the rule is dead in both kernels on current Lean and merely unexercised on older ones, and no
-corpus of either vintage covers it. `SafetyTests` covers it directly instead, building a small
-environment shaped like the older Lean and asserting both that the comparison succeeds and that
-this rule is what decided it. Removing the rule from the kernel makes that test fail, which is
-how it is known to be measuring the rule.
+There is a second reason, found later and stronger than the first. `String` is a structure, so eta
+for structures reaches a literal against its constructor form before `try_string_lit_expansion`
+does: it expands the literal into `String.mk` of its own field, reducing that projection expands
+the literal to its character list, and the two sides meet. Lean's kernel places its own copy of
+the rule in the same position, after eta, so the shadowing applies there too. That does not depend
+on which Lean version is in front of you, and it does not depend on `String.ofList` having become
+a definition. It holds wherever `String` is a structure, which is every real environment.
+
+So the rule is unreachable rather than merely unexercised, in both kernels, and it is kept because
+the reference keeps it. `SafetyTests` asserts that: the comparison succeeds, `DefEqStringLit` does
+not fire, and `DefEqEtaStruct` and `StringLitToCtor` do. An earlier version of that test claimed to
+cover the rule, and only did so because it had built `String` as an opaque constant rather than as
+a structure, which no export contains.
 
 ### A corpus built to be mutated
 

@@ -33,6 +33,22 @@ to `NatAdd`, `NatMul`, `NatPow`, `NatBeq` or `NatBle` having been damaged.
 
 **Turning it off:** `TENET_NO_PRIMITIVE_CHECK=1` restores Lean's behavior of dispatching on the name.
 
+## A literal's type is checked against the environment
+
+**Where:** `TypeChecker.InferLit`, via `Primitive.NatLiteralType` and `Primitive.StringLiteralType`.
+
+**What Lean does:** gives a numeric literal the type `Nat` and a string literal the type `String` by assertion.
+lean4lean's divergences file records that the kernel "was not checking that the literal type actually exists", and
+that this is tolerable for the same reason as the primitives: Lean ships its prelude.
+
+**What Tenet does:** refuses a literal unless the environment's `Nat` is the two-constructor inductive the literal
+denotes, and its `String` is a structure reachable from a list of characters.
+
+**Why:** without it, a numeric literal is a term of whatever the file happens to call `Nat`. An export declaring
+`def Nat : Prop := False` and then `def boom : False := 3` was accepted, with an empty axiom list. `tenet audit`
+called it unconditional. That is a proof of `False` from a file with no `sorry` and no axioms, and it is the most
+serious thing this project has found in itself.
+
 ## Failure caching
 
 **Where:** `TypeChecker.CacheFailures`.

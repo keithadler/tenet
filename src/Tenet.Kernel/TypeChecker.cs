@@ -488,11 +488,29 @@ public sealed class TypeChecker
         }
     }
 
+    /// <summary>
+    /// A literal's type is asserted by its representation rather than derived, so the environment has to agree
+    /// that the constant it names is the type the literal means. Without this check a numeric literal is a term of
+    /// whatever the file calls <c>Nat</c>: declare <c>Nat</c> as a proposition and <c>3</c> becomes a proof of it,
+    /// and if that proposition is <c>False</c> the file has proved False with no axioms at all.
+    /// </summary>
     private Expr InferLit(LitExpr e)
     {
         if (e.Value is NatLiteral n)
         {
             CheckNatSize(n.Value.GetByteCount());
+            if (!SkipPrimitives && !Env.PrimitiveOk(Primitive.NatLiteralType))
+            {
+                throw new KernelException(
+                    "a numeric literal needs Nat to be the inductive type it denotes, with constructors "
+                  + "Nat.zero and Nat.succ; this environment declares something else under that name");
+            }
+        }
+        else if (!SkipPrimitives && !Env.PrimitiveOk(Primitive.StringLiteralType))
+        {
+            throw new KernelException(
+                "a string literal needs String to be the type it denotes, reachable from a list of characters; "
+              + "this environment declares something else under that name");
         }
         return e.Value.Type;
     }
