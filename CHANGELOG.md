@@ -29,6 +29,12 @@ record than one assembled as it goes.
   that attacks it. A name added to the kernel is a new thing an export can lie about, and nothing previously
   said so. Writing the table found `eagerReduce` unattacked; it has a case now.
 - A test for the rules no corpus reaches, so their coldness rests on evidence rather than on an argument.
+- **A negative corpus**, `tests/fixtures/invalid`, of well-formed exports that must be rejected, with both
+  soundness bugs ever found in this checker as permanent regression cases. Checking all of Mathlib with zero
+  failures is a claim about agreement, not about soundness: a kernel whose check returns `true` reports zero
+  failures too, faster. Each case is also asserted to be **accepted in full when its defense is switched off**,
+  without which the corpus would drift into a set of files rejected for being malformed, passing forever and
+  proving nothing. CI runs it through the CLI, not only the test harness.
 - `Trust.Names`, the kernel's own list of the names it takes on trust, checked against its source in both
   directions so the list and the code cannot drift apart quietly.
 - `tenet audit` reports which of those names a project defines itself. That is not an axiom, so nothing else in

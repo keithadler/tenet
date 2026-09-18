@@ -1,0 +1,28 @@
+{
+  "_comment": [
+    "Exports that must be rejected. A 0-failure Mathlib run shows agreement, not soundness: a kernel whose",
+    "check returns true gets 0 failures faster. This corpus is the other half of that claim, and the number",
+    "worth quoting next to the acceptance count.",
+    "",
+    "Each entry names the defense that does the rejecting and, where the attack is otherwise a well-formed",
+    "file, the switch that turns that defense off. With it off the file must be ACCEPTED IN FULL. Without",
+    "that second half the corpus would be vacuous: a file rejected because it is malformed proves nothing,",
+    "and would keep passing after the defense it was written for had been deleted."
+  ],
+  "cases": [
+    {
+      "file": "literal-type.ndjson",
+      "why": "Declares its own Nat as a def of type Prop whose value is False, then boom : False := 3. The literal's type is asserted rather than derived, so 3 becomes a proof of False in a file with no axioms and no sorry.",
+      "rejects": "boom",
+      "defenseOff": "TENET_NO_PRIMITIVE_CHECK",
+      "found": "0.9.0, by reading lean4lean's divergences file. Not reachable by mutation."
+    },
+    {
+      "file": "primitive-body.ndjson",
+      "why": "Declares Nat.add at the right type with a body returning its first argument, then bad : P 4 := h where h : P (Nat.add 2 2). Taking the arithmetic shortcut on the name makes Nat.add 2 2 reduce to 4, which the body it was given does not.",
+      "rejects": "bad",
+      "defenseOff": "TENET_NO_PRIMITIVE_CHECK",
+      "found": "0.9.0, by reading lean4lean's divergences file. Not reachable by mutation."
+    }
+  ]
+}

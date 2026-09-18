@@ -27,13 +27,23 @@ OK: 766950 checked in 10758 modules, 0 failed, 10758 modules mapped, 398.0s, 12 
 
 ## Status
 
-Version 0.7. Every rule of the reference kernel has a counterpart here. Tenet checks all
+Version 0.9. Every rule of the reference kernel has a counterpart here. Tenet checks all
 of Mathlib and its dependencies, 765,497 declarations in 10,726 modules, directly from the
 compiled `.olean` files in about six minutes on a laptop, with zero failures, deriving
-the recursors itself and comparing them field for field against Lean's own. Its verdicts
-have been compared with Lean's kernel on about 130,000 deliberately damaged declarations.
-See [docs/status.md](docs/status.md) for what has been run and how the checks were shown
-not to be vacuous.
+the recursors itself and comparing them field for field against Lean's own.
+
+Read alone that is a claim about agreement, not about soundness. A kernel whose check
+returns `true` reports zero failures on all of Mathlib too, in less time, so the number
+only means something next to what gets rejected. Tenet rejects every export in
+[`tests/fixtures/invalid`](tests/fixtures/invalid), a committed corpus of well-formed
+files written to exploit what a checker assumes, each of which it **accepts in full when
+the defense that catches it is switched off**, which is what stops the corpus quietly
+becoming a set of files rejected for being broken. Both soundness bugs ever found in this
+checker are in there as permanent regression cases. Its verdicts have also been compared
+with Lean's kernel on about 130,000 deliberately damaged declarations, and every theorem
+in the prelude given the previous theorem's proof must be rejected, at least 95% of them,
+with nothing else breaking. See [docs/status.md](docs/status.md) for what has been run and
+how the checks were shown not to be vacuous.
 
 ## Re-checking a published formalization
 

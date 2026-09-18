@@ -26,6 +26,29 @@ jobs:
       # The package ships tools/net8.0, so the older target gets run, not just compiled.
       - run: dotnet run --no-build -c Release -f net8.0 --project src/Tenet.Cli -- check tests/fixtures/Nat.add_succ.ndjson
 
+      # The corpus that must be rejected, run through the CLI rather than the test harness, so the claim holds
+      # for the binary people install. Every file is rejected with the defense on, and accepted in full with it
+      # off: a file rejected because it is malformed would pass the first half forever and prove nothing.
+      - name: The negative corpus is rejected, and lands when its defense is off
+        shell: bash
+        run: |
+          fail=0
+          for f in tests/fixtures/invalid/*.ndjson; do
+            if dotnet run --no-build -c Release -f net10.0 --project src/Tenet.Cli -- check "$f" --quiet >/dev/null 2>&1; then
+              echo "::error::$f was ACCEPTED; every file in the negative corpus must be rejected"
+              fail=1
+            else
+              echo "rejected (as required): $f"
+            fi
+            if TENET_NO_PRIMITIVE_CHECK=1 dotnet run --no-build -c Release -f net10.0 --project src/Tenet.Cli -- check "$f" --quiet >/dev/null 2>&1; then
+              echo "  and accepted with its defense off, so it is testing that defense"
+            else
+              echo "::error::$f is rejected even with TENET_NO_PRIMITIVE_CHECK=1, so it is not demonstrating that defense"
+              fail=1
+            fi
+          done
+          exit $fail
+
   check-prelude:
     # Re-check the Lean prelude from a fresh export on every push to main.
     runs-on: ubuntu-latest
