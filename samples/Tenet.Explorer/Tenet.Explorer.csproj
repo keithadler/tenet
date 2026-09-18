@@ -3,11 +3,10 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <!-- TargetFrameworks, not TargetFramework: the repo's Directory.Build.props sets the plural one,
-         and an inherited plural overrides a local singular. Pinned to net10.0 because the packages
-         this consumes are the published 0.8.0, which predates net8.0 support; widen it to
-         net8.0;net10.0 once a version carrying lib/net8.0 is on nuget.org, so the sample proves
-         that target works for a consumer rather than only in this repo's own build. -->
-    <TargetFrameworks>net10.0</TargetFrameworks>
+         and an inherited plural overrides a local singular, so the singular would be ignored here.
+         Both targets on purpose: this is the only place lib/net8.0 is exercised the way a consumer
+         gets it, from nuget.org rather than from this repo's own build output. -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>tenet-explorer</AssemblyName>
@@ -18,8 +17,8 @@
   <!-- The published packages, not project references: this sample is here to show that what is on
        nuget.org is usable from an ordinary project, which a project reference would not demonstrate. -->
   <ItemGroup>
-    <PackageReference Include="Tenet.Kernel" Version="0.8.0" />
-    <PackageReference Include="Tenet.Olean" Version="0.8.0" />
+    <PackageReference Include="Tenet.Kernel" Version="0.9.0" />
+    <PackageReference Include="Tenet.Olean" Version="0.9.0" />
   </ItemGroup>
 
 </Project>

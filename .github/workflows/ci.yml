@@ -175,12 +175,17 @@ jobs:
           # No Lean toolchain on this runner, so the assertion is that the tool starts and reports
           # usage rather than that it checks anything. The value is above: restore and compile prove
           # the published packages resolve and their API is what the sample expects.
-          set +e
-          out=$(./bin/Release/net10.0/tenet-explorer 2>&1); code=$?
-          set -e
-          echo "$out"
-          [ "$code" = "2" ] || { echo "expected exit 2 for no arguments, got $code"; exit 1; }
-          echo "$out" | grep -q "usage: tenet-explorer" || { echo "no usage line"; exit 1; }
+          # Both targets, because lib/net8.0 reaches a consumer only through a package and this is
+          # the only place that path is walked.
+          for tfm in net8.0 net10.0; do
+            echo "--- $tfm"
+            set +e
+            out=$(./bin/Release/$tfm/tenet-explorer 2>&1); code=$?
+            set -e
+            echo "$out"
+            [ "$code" = "2" ] || { echo "$tfm: expected exit 2 for no arguments, got $code"; exit 1; }
+            echo "$out" | grep -q "usage: tenet-explorer" || { echo "$tfm: no usage line"; exit 1; }
+          done
 
   action:
     # The GitHub Action (action.yml) end to end: build a small Lake project, then check it with the released tenet.
