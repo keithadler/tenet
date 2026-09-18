@@ -42,12 +42,17 @@ jobs:
 
       - name: Check it
         run: |
+          # tee below would otherwise return tee's status and hide a failing check, which is how a red
+          # run gets reported green.
+          set -o pipefail
           # --low-memory switches to the workstation collector, which uses roughly a third of the
           # memory and takes longer. The server collector peaks near 9 GB on Mathlib, which is
           # more headroom than a hosted runner reliably has.
+          # --rules on the largest corpus there is. A rule that 765,000 declarations never reach is a rule
+          # this run says nothing about, and that list is only interesting if something computes it nightly.
           dotnet run --no-build -c Release -f net10.0 --project src/Tenet.Cli -- \
-            check "$MATHLIB/.lake/build/lib/lean/Mathlib.olean" --all --quiet --low-memory \
-            --report "$RUNNER_TEMP/mathlib.json"
+            check "$MATHLIB/.lake/build/lib/lean/Mathlib.olean" --all --quiet --low-memory --rules \
+            --report "$RUNNER_TEMP/mathlib.json" | tee "$RUNNER_TEMP/rules.txt"
 
       - name: Report
         if: always()
@@ -63,6 +68,16 @@ jobs:
           for f in d.get("failures", [])[:20]:
               print(f"- FAIL `{f['name']}`: {f['message'].splitlines()[0][:200]}")
           PY
+          fi
+          if [ -f "$RUNNER_TEMP/rules.txt" ]; then
+            {
+              echo
+              echo "### Rule coverage"
+              echo
+              echo '```'
+              sed -n '/^kernel rules:/,$p' "$RUNNER_TEMP/rules.txt" | grep -vE '^ +[0-9]+ +[A-Za-z]' | head -20
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - uses: actions/upload-artifact@v4
