@@ -51,11 +51,14 @@ jobs:
                 fail=1
               fi
             fi
+          # tr -d '\r' is load-bearing on Windows: python writes CRLF there, so a case with no defense
+          # would arrive as a lone carriage return, which is not empty, and every case would take the
+          # defense branch with a variable name ending in CR. That is what this step failed on first.
           done < <(python3 -c "
           import json
           for c in json.load(open('tests/fixtures/invalid/manifest.json'))['cases']:
               print(c['file'], c.get('defenseOff') or '', sep='\t')
-          ")
+          " | tr -d '\r')
           exit $fail
 
   check-prelude:
