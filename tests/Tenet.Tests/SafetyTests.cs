@@ -166,6 +166,61 @@ public class SafetyTests
     }
 
     /// <summary>
+    /// Checking all of Init exercises 36 of the 40 rules. The four it never reaches are reached here instead, so
+    /// that "no corpus fires this" is backed by a test rather than by an argument about why it should not.
+    ///
+    /// The four are not the same kind of cold. InferBVar is a real refusal that no honest file triggers, and it
+    /// was being counted on a switch arm the loose-bvar guard makes unreachable, so it is counted at the guard
+    /// now and tested here. DefEqFVar cannot be reached at all: the syntactic check decides every pair that
+    /// would satisfy it, exactly as in Lean's is_def_eq_core, so what is pinned here is that fact. NativeReduce
+    /// and DefEqStringLit are reachable and corpus-cold, and have their own tests elsewhere in this file.
+    /// </summary>
+    [Fact]
+    public void TheRulesNoCorpusReachesAreReachedHere()
+    {
+        bool saved = TypeChecker.Stats.Enabled;
+        try
+        {
+            TypeChecker.Stats.Enabled = true;
+            Environment env = LoadFixture();
+
+            // A loose bound variable is not a term. Reaching the checker with one is a bug in whatever built it,
+            // so the rule is an exception and the assertion is that it stays one.
+            Rules.Reset();
+            var bvar = new TypeChecker(env);
+            Assert.Throws<KernelException>(() => bvar.Infer(Expr.BVar(0)));
+            Assert.True(Rules.Count(Rule.InferBVar) > 0);
+
+            // DefEqFVar is subsumed, and this pins the reason. Two distinct FVarExpr objects carrying one id are
+            // structurally equal, so DefEqSyntactic decides them at the top of QuickIsDefEq and the branch in
+            // IsDefEqCore is never entered. Nothing can reach it: any pair that would satisfy it satisfies the
+            // syntactic check first. If that ever stops being true, this test fails and the catalog is wrong again.
+            Rules.Reset();
+            var id = FVarId.Fresh();
+            Expr a = Expr.FVar(id), b = Expr.FVar(id);
+            Assert.False(ReferenceEquals(a, b));
+            Assert.True(new TypeChecker(env).IsDefEq(a, b));
+            Assert.True(Rules.Count(Rule.DefEqSyntactic) > 0);
+            Assert.Equal(0, Rules.Count(Rule.DefEqFVar));
+            Assert.NotNull(Rules.SubsumedBy(Rule.DefEqFVar));
+
+            // Two different ids get past the syntactic check, and then the comparison needs their types, which
+            // a free variable nobody bound does not have. Refusing is right: the alternative is inventing a type
+            // for a variable that is not in scope. This is also why the pair above is the only shape that could
+            // have reached DefEqFVar, and it never gets that far.
+            Rules.Reset();
+            var loose = new TypeChecker(env);
+            Assert.Throws<KernelException>(() => loose.IsDefEq(Expr.FVar(id), Expr.FVar(FVarId.Fresh())));
+            Assert.Equal(0, Rules.Count(Rule.DefEqFVar));
+        }
+        finally
+        {
+            TypeChecker.Stats.Enabled = saved;
+            Rules.Reset();
+        }
+    }
+
+    /// <summary>
     /// The rule counters have to count, or the coverage table they produce is worse than no table: it would report
     /// a rule as unexercised when it fired, or as exercised when it did not.
     /// </summary>

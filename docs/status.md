@@ -25,13 +25,21 @@ written to exploit what the checker assumes rather than from damaging valid ones
 trust surface, which is enumerable: every name the kernel hardcodes. See [testing.md](testing.md).
 
 **The coverage is measured rather than assumed.** `tenet check --rules` counts each of the 40 rules and reports
-which a run never reached. Across all of `Init`, 36 of 40 fire, and `Quot.ind` fires once in 64,814 declarations.
-Passing a large corpus is strong evidence about some rules and almost none about others, and nothing in a green
-run distinguishes them.
+which a run never reached. Across all of `Init`, 36 of the 39 reachable rules fire, and `Quot.ind` fires once in
+64,814 declarations. Passing a large corpus is strong evidence about some rules and almost none about others, and
+nothing in a green run distinguishes them.
+
+Asking that question of a real corpus is what turned up the fortieth. `DefEqFVar` is reported separately because
+no input can reach it: two free variables with one id are structurally equal, so the syntactic check settles them
+before the branch is entered. Lean's `is_def_eq_core` has the same branch, after the same check, and it is
+unreachable there too, so keeping it is right and counting it as a coverage gap was not. The same run found
+`InferBVar` being counted on a switch arm that a guard four lines earlier makes unreachable; the rule is real, so
+it is now counted where the refusal actually happens. The remaining three cold rules each have a test that
+reaches them directly, so nothing in the catalog now rests on an argument about why it should be fine.
 
 Two soundness bugs were found in Tenet on 2026-09-17, both by reading what other checkers check rather than by
 running anything: a numeric literal was given the type `Nat` without asking the environment what `Nat` is, which
-let a file prove `False` with no axioms; and fifteen arithmetic operations were computed from the name alone,
+let a file prove `False` with no axioms; and sixteen arithmetic operations were computed from the name alone,
 which let a file make `2 + 2 = 4` and `2 + 2 = 2` swap places. Both are fixed, both have regression tests that
 reproduce them with the defense off, and the class is now covered systematically.
 

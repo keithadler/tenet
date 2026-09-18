@@ -804,16 +804,22 @@ internal static class Program
     {
         var all = Rules.All().ToList();
         long total = all.Sum(x => x.Hits);
-        var cold = all.Where(x => x.Hits == 0).Select(x => x.Rule.ToString()).ToList();
+        // Two different things, reported separately. A subsumed rule is decided by an earlier check and no input
+        // reaches it; counting it as a coverage gap invents work and buries the rules that are a real gap.
+        var cold = all.Where(x => x.Hits == 0 && Rules.SubsumedBy(x.Rule) is null).Select(x => x.Rule.ToString()).ToList();
+        var subsumed = all.Where(x => Rules.SubsumedBy(x.Rule) is not null)
+                          .Select(x => (Name: x.Rule.ToString(), By: Rules.SubsumedBy(x.Rule)!)).ToList();
+        int reachable = all.Count - subsumed.Count;
         if (WantsJson(args))
         {
             Console.WriteLine(Json(
-                ("command", "rules"), ("total", total), ("exercised", all.Count - cold.Count),
-                ("rules", all.Count), ("unexercised", cold),
+                ("command", "rules"), ("total", total), ("exercised", reachable - cold.Count),
+                ("rules", all.Count), ("reachable", reachable), ("unexercised", cold),
+                ("subsumed", subsumed.Select(x => new RawJson(Json(("rule", x.Name), ("by", x.By)))).ToList()),
                 ("hits", all.Select(x => new RawJson(Json(("rule", x.Rule.ToString()), ("hits", x.Hits)))).ToList())));
             return;
         }
-        Console.WriteLine($"kernel rules: {all.Count - cold.Count} of {all.Count} exercised, {total} firings");
+        Console.WriteLine($"kernel rules: {reachable - cold.Count} of {reachable} reachable rules exercised, {total} firings");
         foreach ((Rule r, long hits) in all)
         {
             Console.WriteLine($"  {hits,12}  {r}");
@@ -825,6 +831,15 @@ internal static class Program
             foreach (string c in cold)
             {
                 Console.WriteLine($"    {c}");
+            }
+        }
+        if (subsumed.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("no input reaches these; an earlier check decides the same case, as in Lean:");
+            foreach ((string name, string by) in subsumed)
+            {
+                Console.WriteLine($"    {name}  <-  {by}");
             }
         }
     }
@@ -1551,6 +1566,10 @@ internal static class Program
         if (stats)
         {
             Console.WriteLine("kernel work: " + TypeChecker.Stats.Summary);
+        }
+        if (Array.IndexOf(args, "--rules") >= 0)
+        {
+            PrintRules(args);
         }
         if (report is not null)
         {

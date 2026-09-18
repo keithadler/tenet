@@ -519,6 +519,11 @@ public sealed class TypeChecker
     {
         if (e.HasLooseBVars)
         {
+            // The rule is recorded here, not on the switch's default arm below, because this guard is what
+            // actually refuses a loose bound variable. Anything carrying one is stopped by HasLooseBVars
+            // before the switch can dispatch on it, which made the counter on that arm unreachable and the
+            // coverage table wrong about its own catalog.
+            Rules.Hit(Rule.InferBVar);
             throw new KernelException("type checker does not support loose bound variables, replace them with free variables before invoking it");
         }
         StackGuard.Check();
@@ -573,7 +578,8 @@ public sealed class TypeChecker
                 r = InferLet(e, inferOnly);
                 break;
             default:
-                Rules.Hit(Rule.InferBVar);
+                // Unreachable: the HasLooseBVars guard above stops every term a BVarExpr can hide in. Kept as a
+                // backstop, without a counter, since a counter here could never fire.
                 throw new KernelException("unexpected bound variable");
         }
         cache[e] = r;

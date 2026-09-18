@@ -196,4 +196,22 @@ public static class Rules
 
     /// <summary>The rules no run has reached. Each one is a part of the kernel the evidence does not cover.</summary>
     public static IEnumerable<Rule> Unexercised() => All().Where(x => x.Hits == 0).Select(x => x.Rule);
+
+    /// <summary>
+    /// Rules that no input can reach, because an earlier check decides the same case first. They are kept because
+    /// Lean's kernel has the branch in the same place and this catalog is a correspondence, not an inventory of
+    /// live code, but a coverage table that lumps them in with untested rules is lying in the direction that
+    /// matters: it reports work still to do where there is none, and hides the rules that genuinely have no test.
+    /// </summary>
+    public static string? SubsumedBy(Rule r) => r switch
+    {
+        // Two free variables with one id are structurally equal, so DefEqSyntactic settles them at the top of
+        // QuickIsDefEq and the branch in IsDefEqCore is never entered. Lean's is_def_eq_core has the same branch,
+        // after the same syntactic check, and it is unreachable there for the same reason.
+        Rule.DefEqFVar => "DefEqSyntactic, which decides structurally equal terms first",
+        _ => null,
+    };
+
+    /// <summary>Rules a run did not reach and that some input could have: the ones a coverage gap is about.</summary>
+    public static IEnumerable<Rule> UnexercisedAndReachable() => Unexercised().Where(r => SubsumedBy(r) is null);
 }

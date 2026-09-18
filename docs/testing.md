@@ -443,7 +443,7 @@ All of `Init`, 64,814 declarations across 649 modules, 52.5 million rule firings
 
 | Reached | Count |
 | --- | --- |
-| 36 of 40 rules | |
+| 36 of 39 reachable rules | |
 | `Beta` | 11,400,486 |
 | `DefEqSyntactic` | 10,109,100 |
 | `InferApp` | 10,089,370 |
@@ -485,6 +485,9 @@ neither. Stating a rule in Lean source is not the same as making the kernel use 
 checking the result, and nothing short of counting can tell the two apart.
 
 The corpus was then written against the measurement rather than against the intent:
+
+Counted out of 40 throughout, which is how the catalog read at the time. One of the forty, `DefEqFVar`, was
+later found to be unreachable by any input, so the honest denominator is 39; see below.
 
 | | before | after | `Init` |
 | --- | --- | --- | --- |
