@@ -21,6 +21,43 @@ bug: a theorem proved by itself was accepted, and `∀ (p : Prop), p` proved tha
 `False`. The two on the accept side were a reader that required index numbers to be dense and in
 order, which the format does not.
 
+## Declaring threads, which is a fair-play matter
+
+The arena's `threads` field defaults to **1**, and its parallel runner reserves that many CPU slots so
+checkers do not oversubscribe each other. Tenet runs one worker per core by default. Submitted without
+declaring it, Tenet would take twelve cores while the harness budgeted one, stealing CPU from whatever
+ran alongside and corrupting the published timings of checkers that did nothing wrong.
+
+`threads: 4`, with a matching `--jobs 4` in the run line. Four is measured, not guessed: on all of `Init`
+wall time is 30.1s at one worker, 13.3s at four and 11.0s at twelve, while summed kernel time across
+workers rises from 26s to 65s. Past four the extra CPU buys almost nothing, so taking it would be both
+unfair and pointless. `con-leche` declares 4 and `eink0rn` 8, so this is the established convention.
+
+## What has been verified, and what has not
+
+Verified:
+
+| | |
+| --- | --- |
+| published suite, `--jobs 4` | **70 / 70** reject, **119 / 119** accept |
+| against `schemas/checker.json` | validates |
+| build in an environment with no .NET | CI, every push |
+| binary needs nothing installed | run under `env -i` |
+| `mathlib` (`.olean`) | 767,307 declarations, 0 failures |
+| `cslib` (`.olean`) | 431,294 declarations, 0 failures |
+| `con-leche` (`.olean`) | 232,881 declarations, 0 failures |
+| `Init` (`.olean`) | 64,814 declarations, 0 failures |
+
+Not verified, and so not claimed:
+
+- **`cedar`.** Never built here.
+- **Timing and memory on the arena's hardware.** Every number above is one laptop.
+- **The large corpora through the NDJSON reader rather than the `.olean` reader.** The four rows above
+  all came through the `.olean` path, and the arena feeds exports. The kernel is the same either way and
+  the reader is not, and the largest export Tenet had ever been run on was 794 MB against the arena's
+  5.2 GB `mathlib`. That gap is being closed by exporting all of Mathlib and checking it end to end
+  before the submission goes out.
+
 ## Two things to settle before submitting
 
 **The arena's environment has no .NET.** Its nix flake provides elan, rustc, node, ocaml, zig, ghc
