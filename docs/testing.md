@@ -347,11 +347,17 @@ declarations passed through it, and nothing in a green run distinguishes a rule 
 a rule that is never called. `tenet check ... --rules` counts each of the kernel's 36 typing and
 reduction rules by name, so that is a measurement rather than an assumption.
 
-All of `Init`, 64,658 declarations across 653 modules, 51.8 million rule firings:
+The catalog has to be complete or the fraction it reports is wrong in the flattering direction.
+Checking it against Lean's `type_checker.cpp`, step by step through `whnf_core` and
+`is_def_eq_core`, found four rules missing from it: the free-variable equality check, the
+proof-by-reflection shortcut against `Bool.true`, `lazy_delta_proj_reduction`, and
+`try_unfold_proj_app`. The denominator was 36 and should have been 40.
+
+All of `Init`, 64,814 declarations across 649 modules, 52.5 million rule firings:
 
 | Reached | Count |
 | --- | --- |
-| 33 of 36 rules | |
+| 36 of 40 rules | |
 | `Beta` | 11,400,486 |
 | `DefEqSyntactic` | 10,109,100 |
 | `InferApp` | 10,089,370 |
@@ -366,17 +372,25 @@ All of `Init`, 64,658 declarations across 653 modules, 51.8 million rule firings
 | `StringLitToCtor` | 29 |
 | `DefEqUnitLike` | 5 |
 | `QuotInd` | **1** |
-| `InferBVar`, `NativeReduce`, `DefEqStringLit` | **0** |
+| `InferBVar`, `NativeReduce`, `DefEqStringLit`, `DefEqFVar` | **0** |
 
 The tail is the interesting part. `Quot.ind` reduced exactly once in all of `Init`, and
 `DefEqUnitLike` five times. Passing 64,658 declarations is strong evidence about `Beta` and
 almost none about `QuotInd`: one firing is one test.
 
-Of the three at zero, two are expected. `InferBVar` is the error path for a loose bound
-variable, which cannot occur in a well-formed export, and `NativeReduce` is the point where
-Tenet refuses `Lean.reduceBool` and `Lean.reduceNat` rather than trusting compiled code.
-`DefEqStringLit` at zero is a real gap: no declaration in `Init` ever compares a string literal
-against its constructor form during a definitional-equality check.
+Of the four at zero, two are expected. `InferBVar` is the error path for a loose bound variable,
+which cannot occur in a well-formed export, and `NativeReduce` is the point where Tenet refuses
+`Lean.reduceBool` and `Lean.reduceNat` rather than trusting compiled code.
+
+`DefEqFVar`, one of the four the catalog had been missing, is zero for a structural reason.
+Reaching the free-variable check in `is_def_eq_core` means arriving there with the same variable
+on both sides, and every path that could do so passes a `quick_is_def_eq` that answers first:
+before any reduction, and again after `whnf_core` whenever either side changed. The only route
+left is `lazy_delta_reduction` leaving both sides as one variable with no check in between, and
+delta unfolds constants, whose values are closed. So it reads as defensive code, present because
+the reference has it there. That is an argument, not a proof, and it is recorded as one.
+
+`DefEqStringLit` at zero has its own explanation, below.
 
 The edge-case corpus exists to fill exactly this kind of hole, and the first measurement said it
 did not. Its README claimed to be dense in K-like reduction and quotient reduction and to be "the
@@ -388,8 +402,8 @@ The corpus was then written against the measurement rather than against the inte
 
 | | before | after | `Init` |
 | --- | --- | --- | --- |
-| declarations | 113 | 155 | 64,658 |
-| rules reached | 25 of 36 | **33 of 36** | 33 of 36 |
+| declarations | 113 | 158 | 64,814 |
+| rules reached | 25 of 40 | **36 of 40** | 36 of 40 |
 | `IotaK` | 0 | 2 | 379 |
 | `QuotInd` | 0 | 1 | 1 |
 | `DefEqEta` | 0 | 4 | 1,014 |
@@ -414,9 +428,9 @@ What each case had to be rewritten into is the interesting part.
   64,658 declarations of `Init` for the single firing found `Quot.indBeta`, the library's own
   statement of that reduction, and the corpus now carries the same shape.
 
-The corpus's remaining gaps are now exactly `Init`'s: `InferBVar`, `NativeReduce` and
-`DefEqStringLit`. The first two are meant to be unreachable, being the error path for a loose
-bound variable and the point where Tenet refuses to trust compiled code. `DefEqStringLit` is the
+The corpus's remaining gaps are now exactly `Init`'s: `InferBVar`, `NativeReduce`,
+`DefEqStringLit` and `DefEqFVar`. The first two are meant to be unreachable, and `DefEqFVar`
+appears to be, for the reason given above. `DefEqStringLit` is the
 one real hole, and it is zero on `Init` for Lean 4.12, 4.24 and 4.34 alike. Reading the reference
 settles why, and it is not a defect here.
 

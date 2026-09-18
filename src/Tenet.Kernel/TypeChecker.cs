@@ -1200,7 +1200,12 @@ public sealed class TypeChecker
         if (e.GetAppFn() is ProjExpr)
         {
             Expr n = WhnfCore(e);
-            return n.Equals(e) ? null : n;
+            if (n.Equals(e))
+            {
+                return null;
+            }
+            Rules.Hit(Rule.UnfoldProjApp);
+            return n;
         }
         return null;
     }
@@ -1463,6 +1468,7 @@ public sealed class TypeChecker
         {
             if (Whnf(t).IsConstOf(BoolTrue))
             {
+                Rules.Hit(Rule.DefEqReflect);
                 return true;
             }
         }
@@ -1500,6 +1506,7 @@ public sealed class TypeChecker
         }
         if (tn is FVarExpr tf && sn is FVarExpr sf && tf.Id == sf.Id)
         {
+            Rules.Hit(Rule.DefEqFVar);
             return true;
         }
         if (tn is ProjExpr tp && sn is ProjExpr sp && tp.StructName.Equals(sp.StructName) && tp.Idx == sp.Idx)
@@ -1508,6 +1515,7 @@ public sealed class TypeChecker
             Expr scStruct = sp.Struct;
             if (LazyDeltaProjReduction(ref tcStruct, ref scStruct, tp.StructName, tp.Idx))
             {
+                Rules.Hit(Rule.DefEqLazyDeltaProj);
                 return true;
             }
         }

@@ -141,6 +141,27 @@ public enum Rule
     /// </summary>
     DefEqStringLit,
 
+    /// <summary>Γ, x : A ⊢ x ≡ x. The same free variable on both sides.</summary>
+    DefEqFVar,
+
+    /// <summary>
+    /// A closed term against Bool.true, reduced rather than compared. Proofs by reflection end here, which is why
+    /// the kernel reduces one side fully instead of looking for a shared structure.
+    /// </summary>
+    DefEqReflect,
+
+    /// <summary>
+    /// Two projections of the same field, compared by unfolding the structures they project from rather than by
+    /// comparing those structures whole.
+    /// </summary>
+    DefEqLazyDeltaProj,
+
+    /// <summary>
+    /// A projection applied to arguments, unfolded through the projection function during lazy delta so that a
+    /// structure built by a definition can meet one built by another.
+    /// </summary>
+    UnfoldProjApp,
+
     /// <summary>Nat literals and successor offsets compared by arithmetic rather than by unfolding Nat.succ.</summary>
     DefEqOffset,
 

@@ -208,6 +208,16 @@ theorem const_levels_bare : Bare.{max u 0} = Bare.{u} := rfl
 theorem const_levels_bare_comm : Bare.{max u v} = Bare.{max v u} := rfl
 theorem const_levels_equal : @idu (Sort (max u 0)) = @idu (Sort u) := rfl
 
+/-! ## Proof by reflection: a closed term reduced all the way to `Bool.true`.
+
+The kernel takes a shortcut for this shape, reducing one side fully rather than looking for
+shared structure, because it is how `decide` proofs are checked.
+-/
+
+theorem reflect_decide : (7 : Nat) < 10 := by decide
+theorem reflect_beq : (2 + 2 = 4) := by decide
+theorem reflect_bool_direct : Nat.ble 3 4 = true := rfl
+
 /-! ## One theorem stated two ways, and a near miss.
 
 `tenet compare` exists for the case where two projects formalize the same claim independently.
