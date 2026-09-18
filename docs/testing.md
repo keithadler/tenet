@@ -378,22 +378,50 @@ Tenet refuses `Lean.reduceBool` and `Lean.reduceNat` rather than trusting compil
 `DefEqStringLit` at zero is a real gap: no declaration in `Init` ever compares a string literal
 against its constructor form during a definitional-equality check.
 
-The edge-case corpus exists to fill exactly this kind of hole, and measuring it shows it does
-not yet:
-
-| | `Init` | `tools/edgecases` |
-| --- | --- | --- |
-| rules reached | 33 of 36 | 25 of 36 |
-| `IotaK` | 379 | **0** |
-| `QuotInd` | 1 | **0** |
-| `DefEqEta` | 1,014 | **0** |
-| `DefEqUnitLike` | 5 | **0** |
-| `DefEqStringLit` | 0 | **0** |
-
-Its README says it is dense in K-like reduction and quotient reduction and that it is "the only
-direct check of several of them the project has". Checking its own 113 declarations reaches
+The edge-case corpus exists to fill exactly this kind of hole, and the first measurement said it
+did not. Its README claimed to be dense in K-like reduction and quotient reduction and to be "the
+only direct check of several of them the project has"; checking its 113 declarations reached
 neither. Stating a rule in Lean source is not the same as making the kernel use that rule while
-checking the result, and until this was counted there was no way to tell the two apart.
+checking the result, and nothing short of counting can tell the two apart.
+
+The corpus was then written against the measurement rather than against the intent:
+
+| | before | after | `Init` |
+| --- | --- | --- | --- |
+| declarations | 113 | 155 | 64,658 |
+| rules reached | 25 of 36 | **33 of 36** | 33 of 36 |
+| `IotaK` | 0 | 2 | 379 |
+| `QuotInd` | 0 | 1 | 1 |
+| `DefEqEta` | 0 | 4 | 1,014 |
+| `DefEqUnitLike` | 0 | 3 | 5 |
+| `DefEqConst` | 0 | 1 | 6,365 |
+| `InferLet` | 0 | 13 | 10,645 |
+| `StringLitToCtor` | 5 | 11 | 29 |
+
+What each case had to be rewritten into is the interesting part.
+
+- The three theorems filed under K-like reduction were comparing one proof against another proof
+  of the same proposition, which proof irrelevance settles before any recursor is touched. They
+  exercise `DefEqProofIrrel` and are now named for it. Reaching K-like reduction takes a motive
+  landing in `Type`, so that irrelevance cannot apply and the kernel has to turn the variable
+  `h : a = a` into `Eq.refl` to reduce.
+- `DefEqConst` needs a bare constant that lazy delta cannot unfold and that carries no arguments,
+  since a definition is unfolded first and an application goes through congruence. An inductive
+  type at two spellings of one level does it.
+- `QuotInd` looked unreachable, because `Quot.ind` always produces a proof and proof irrelevance
+  should settle any comparison of proofs. It does not, because `IsDefEqCore` runs both sides
+  through `whnfCore` before consulting irrelevance, and the recursor reduces there. Bisecting all
+  64,658 declarations of `Init` for the single firing found `Quot.indBeta`, the library's own
+  statement of that reduction, and the corpus now carries the same shape.
+
+The corpus's remaining gaps are now exactly `Init`'s: `InferBVar`, `NativeReduce` and
+`DefEqStringLit`. The first two are meant to be unreachable, being the error path for a loose
+bound variable and the point where Tenet refuses to trust compiled code. `DefEqStringLit` is the
+one real hole, and it is zero on `Init` for Lean 4.12, 4.24 and 4.34 alike. Tenet keys that rule
+on `Environment.StringLiteralConstructor`, which is `String.ofList` wherever it exists, and
+`String.ofList` is an ordinary definition, so lazy delta unfolds it before the rule can be
+reached. Whether Lean's kernel has the same shadowing, and therefore whether the rule is dead in
+both or only in this one, is not yet established.
 
 ### A corpus built to be mutated
 

@@ -9,12 +9,17 @@ It exists for two jobs.
 
 **A baseline.** Both kernels should accept every declaration. They do.
 
-That is weaker evidence than it reads as, and `tenet check . --rules` says how much weaker:
-checking these declarations reaches 25 of the kernel's 36 rules, and among the ones it never
-reaches are K-like reduction, `Quot.ind`, function eta and unit-like eta, four of the rules
-this corpus was written for. Writing a declaration that mentions a rule is not the same as
-making the kernel use it while checking that declaration. Closing those gaps is the open work
-on this corpus.
+`tenet check . --rules` says how much that is worth. The first time it was run against this
+corpus the answer was 25 of the kernel's 36 rules, with K-like reduction, `Quot.ind`, function
+eta and unit-like eta among the ones never reached: four of the rules this file was written for.
+Writing a declaration that mentions a rule is not the same as making the kernel use it while
+checking that declaration.
+
+The cases were rewritten against the measurement and it now reaches 33 of 36, the same as all of
+`Init`, with the same three left over: `InferBVar` and `NativeReduce`, which are meant to be
+unreachable, and `DefEqStringLit`, which no corpus on any Lean version has reached. Keep the
+measurement honest when adding a case: run `--rules` before and after and check that the rule you
+meant to exercise moved.
 
 ```sh
 lake build

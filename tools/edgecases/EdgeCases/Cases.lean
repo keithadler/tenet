@@ -33,11 +33,65 @@ theorem onefield_eta (x : OneField) : x = ⟨x.only⟩ := rfl
 theorem irrel (p : Prop) (h₁ h₂ : p) : h₁ = h₂ := rfl
 theorem irrel_under_binder (p : Prop) (f : p → Nat) (h₁ h₂ : p) : f h₁ = f h₂ := rfl
 
-/-! ## K-like reduction: eliminating a proposition with one constructor and no fields. -/
+/-! ## K-like reduction: eliminating a proposition with one constructor and no fields.
 
-theorem k_true (h : True) : h = True.intro := rfl
-theorem k_eq_rec {α : Type} (a : α) (h : a = a) : h = rfl := rfl
-theorem k_and (p q : Prop) (h : p ∧ q) : h = ⟨h.1, h.2⟩ := rfl
+Counting which rules the kernel actually reaches (`tenet check . --rules`) said the three
+theorems below never reach it. They are true and they are checked, but a proof compared against
+another proof of the same proposition is settled by proof irrelevance before any recursor is
+reduced, so what they exercise is `DefEqProofIrrel`. They are kept, under their real name.
+
+Forcing K-like reduction takes a motive that lands in `Type` rather than `Prop`, so that proof
+irrelevance cannot settle the comparison and the kernel has to turn the variable `h : a = a`
+into `Eq.refl` to reduce the recursor.
+-/
+
+theorem irrel_true (h : True) : h = True.intro := rfl
+theorem irrel_eq_rec {α : Type} (a : α) (h : a = a) : h = rfl := rfl
+theorem irrel_and (p q : Prop) (h : p ∧ q) : h = ⟨h.1, h.2⟩ := rfl
+
+theorem k_eq_rec_type {α : Type} {a : α} (motive : (x : α) → a = x → Type)
+    (m : motive a rfl) (h : a = a) : @Eq.rec α a motive m a h = m := rfl
+
+theorem k_eq_rec_nat {α : Type} {a : α} (f : α → Nat) (h : a = a) :
+    @Eq.rec α a (fun x _ => Nat) (f a) a h = f a := rfl
+
+/-! ## Function eta: `f` and `fun x => f x` are the same function.
+
+Nothing else in this file made the kernel compare a variable against its own eta expansion.
+-/
+
+theorem eta_fun (f : Nat → Nat) : f = fun x => f x := rfl
+theorem eta_fun_dep {α : Type} (P : α → Type) (f : (x : α) → P x) : f = fun x => f x := rfl
+theorem eta_fun_two (f : Nat → Nat → Nat) : f = fun x y => f x y := rfl
+
+/-! ## Unit-like eta: any two elements of a one-constructor, no-field type are equal.
+
+This is not proof irrelevance: `Unit` is in `Type`, so the two sides are data, and the rule that
+settles them is the unit-like case of definitional equality.
+-/
+
+theorem unit_like (a b : Unit) : a = b := rfl
+theorem punit_like (a b : PUnit.{u+1}) : a = b := rfl
+
+structure NoFields where
+
+theorem nofields_like (a b : NoFields) : a = b := rfl
+
+/-! ## String literals against their constructor form.
+
+A literal and the `String` value built from its character list are the same string, and deciding
+that is its own rule in the kernel. No declaration in all of `Init` reaches it.
+-/
+
+-- These do not reach the definitional-equality rule for string literals, and nothing else does
+-- either: `DefEqStringLit` is at zero on Init for Lean 4.12, 4.24 and 4.34 alike. Tenet keys that
+-- rule on `Environment.StringLiteralConstructor`, which is `String.ofList` where it exists, and
+-- `String.ofList` is an ordinary definition, so lazy delta unfolds it before the rule is reached.
+-- What these do exercise is the whnf side, `StringLitToCtor`, which went from 5 firings to 11.
+theorem strlit_ctor : "ab" = String.ofList ['a', 'b'] := rfl
+theorem strlit_empty : "" = String.ofList [] := rfl
+theorem strlit_ctor_rev : String.ofList ['h', 'i'] = "hi" := rfl
+theorem strlit_length_via_list : (String.ofList ['a', 'b', 'c']).length = 3 := rfl
 
 /-! ## Quotients: `Quot.lift` applied to `Quot.mk` must reduce. -/
 
@@ -50,7 +104,23 @@ def parOf (n : Nat) : Par := Quot.mk parity n
 theorem quot_lift_reduces (n : Nat) :
     Quot.lift (fun x => x % 2) (fun _ _ h => h) (parOf n) = n % 2 := rfl
 
-theorem quot_ind_reduces (n : Nat) : (Quot.mk parity n) = parOf n := rfl
+-- Not a `Quot.ind` reduction: it unfolds `parOf` and compares two `Quot.mk` applications.
+theorem quot_mk_unfolds (n : Nat) : (Quot.mk parity n) = parOf n := rfl
+
+/-- `Quot.ind` applied to `Quot.mk`, which the kernel must actually reduce.
+
+Both sides are proofs of a proposition, so it looks as though proof irrelevance should settle it
+without reducing anything. It does not, because `IsDefEqCore` puts both sides through `whnfCore`
+before it consults proof irrelevance, and the recursor application reduces there. This shape is
+the only one in all of `Init` that reaches the rule: bisecting the 64,658 declarations found
+exactly one witness, `Quot.indBeta`, which is the library's own statement of this reduction. -/
+theorem quot_ind_reduces {motive : Quot parity → Prop}
+    (p : ∀ a : Nat, motive (Quot.mk parity a)) (n : Nat) :
+    @Quot.ind Nat parity motive p (Quot.mk parity n) = p n := rfl
+
+/-- `Quot.lift` under a further reduction, so the lift is not the outermost redex. -/
+theorem quot_lift_nested (n : Nat) :
+    (Quot.lift (fun x => x % 2) (fun _ _ h => h) (parOf n)) + 0 = n % 2 := rfl
 
 /-! ## Nested and mutual inductives: recursors derived rather than stored. -/
 
@@ -108,6 +178,35 @@ def layer2 : Nat := layer1 * 2
 def layer3 : Nat := layer2 - 3
 
 theorem layers_reduce : layer3 = 13 := rfl
+
+/-! ## `let` in a term, which the kernel must both type and reduce.
+
+Counting said the corpus never reached `InferLet` or the let-bound free variable in the local
+context, though `Init` reaches both constantly. Nothing here had a `let` in it.
+-/
+
+theorem let_reduces : (let x := 2; x + x) = 4 := rfl
+theorem let_nested : (let x := 2; let y := x + 1; y * y) = 9 := rfl
+theorem let_under_lambda : (fun n : Nat => let d := n + n; d + d) 2 = 8 := rfl
+theorem let_dependent : (let α := Nat; (3 : α)) = 3 := rfl
+
+/-! ## Sorts and constants compared at levels that are equal without being identical.
+
+`max u 0` and `u` are the same universe written two ways, so deciding these goes through level
+equivalence rather than through syntactic equality.
+-/
+
+theorem sort_max_zero : (Sort (max u 0)) = (Sort u) := rfl
+theorem sort_max_comm : (Sort (max u v)) = (Sort (max v u)) := rfl
+-- A definition is unfolded by lazy delta before the constant rule is reached, and a constant
+-- with arguments goes through application congruence, so reaching `DefEqConst` takes a bare
+-- constant that cannot be unfolded: an inductive type at two spellings of one level.
+inductive Bare.{w} : Sort (w + 1) where
+  | mk
+
+theorem const_levels_bare : Bare.{max u 0} = Bare.{u} := rfl
+theorem const_levels_bare_comm : Bare.{max u v} = Bare.{max v u} := rfl
+theorem const_levels_equal : @idu (Sort (max u 0)) = @idu (Sort u) := rfl
 
 /-! ## One theorem stated two ways, and a near miss.
 

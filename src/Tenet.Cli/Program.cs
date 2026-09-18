@@ -1450,6 +1450,8 @@ internal static class Program
                     break;
                 case "--low-memory":
                     break;
+                case "--rules":
+                    break;   // handled where the counters are switched on, below
                 case "--report":
                     if (++i >= args.Length)
                     {
