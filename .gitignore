@@ -21,3 +21,6 @@ tests/exports/*.ndjson
 
 # Lake build outputs and downloaded Lean packages (tools/leancheck)
 .lake/
+
+# The sample writes its page here
+samples/Tenet.Explorer/out/

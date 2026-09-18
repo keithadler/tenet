@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>tenet-explorer</AssemblyName>
+    <RootNamespace>Tenet.Explorer</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!-- The published packages, not project references: this sample is here to show that what is on
+       nuget.org is usable from an ordinary project, which a project reference would not demonstrate. -->
+  <ItemGroup>
+    <PackageReference Include="Tenet.Kernel" Version="0.8.0" />
+    <PackageReference Include="Tenet.Olean" Version="0.8.0" />
+  </ItemGroup>
+
+</Project>

@@ -258,6 +258,26 @@ machine.
 
 Shell completions for bash and zsh are in `completions/`.
 
+## Using it as a library
+
+The kernel, the `.olean` reader and the export reader are published as ordinary packages, so a
+project can read Lean's compiled output without Lean installed:
+
+```bash
+dotnet add package Tenet.Olean
+```
+
+```csharp
+using var m = new OleanModule("Mathlib/Analysis/Complex/Basic.olean");
+foreach (ConstantInfo c in m.DecodeAll())
+    Console.WriteLine($"{c.KindName} {c.Name} : {c.Type}");
+```
+
+`samples/Tenet.Explorer` is a worked example: a hundred lines that turn a declaration into a page
+showing what it says, what it rests on, and the chain to each assumption. It takes the packages
+from nuget.org rather than by project reference, and CI builds it that way, so it doubles as a
+standing check that what was published is still usable.
+
 
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 

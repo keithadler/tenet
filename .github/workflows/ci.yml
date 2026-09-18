@@ -147,6 +147,31 @@ jobs:
           dotnet run --no-build -c Release --project src/Tenet.Cli -- info "$LIB/Init.olean"
           dotnet run --no-build -c Release --project src/Tenet.Cli -- check "$LIB/Init.olean" --all --quiet
 
+  sample:
+    name: The sample builds against the published packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      # Deliberately not a project reference and not in Tenet.slnx: this restores Tenet.Kernel and
+      # Tenet.Olean from nuget.org, so a green run here means what was published is still usable as a
+      # library by someone who has never seen this repository.
+      - name: Build it and check the binary runs
+        run: |
+          cd samples/Tenet.Explorer
+          dotnet build -c Release
+          # No Lean toolchain on this runner, so the assertion is that the tool starts and reports
+          # usage rather than that it checks anything. The value is above: restore and compile prove
+          # the published packages resolve and their API is what the sample expects.
+          set +e
+          out=$(./bin/Release/net10.0/tenet-explorer 2>&1); code=$?
+          set -e
+          echo "$out"
+          [ "$code" = "2" ] || { echo "expected exit 2 for no arguments, got $code"; exit 1; }
+          echo "$out" | grep -q "usage: tenet-explorer" || { echo "no usage line"; exit 1; }
+
   action:
     # The GitHub Action (action.yml) end to end: build a small Lake project, then check it with the released tenet.
     runs-on: ubuntu-latest
