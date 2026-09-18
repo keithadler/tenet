@@ -111,12 +111,12 @@ public static class Quot
     }
 
     /// <summary>Reduce <c>Quot.lift f h (Quot.mk r a)</c> to <c>f a</c> and <c>Quot.ind h (Quot.mk r a)</c> to <c>h a</c>.</summary>
-    public static Expr? TryReduceRec(Expr e, Func<Expr, Expr> whnf)
+    /// <param name="fn">
+    /// The application's head, already computed by the caller. Finding it means walking the whole
+    /// application spine, and WhnfCore has it in hand before it ever calls in here.
+    /// </param>
+    public static Expr? TryReduceRec(Expr e, ConstExpr fn, Func<Expr, Expr> whnf)
     {
-        if (e.GetAppFn() is not ConstExpr fn)
-        {
-            return null;
-        }
         int mkPos, argPos;
         Rule rule;
         if (fn.Name.Equals(QuotLift))

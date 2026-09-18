@@ -130,9 +130,10 @@ public static class Inductive
     }
 
     /// <summary>Iota reduction: reduce a recursor applied to a constructor application.</summary>
-    public static Expr? TryReduceRec(Environment env, Expr e, Func<Expr, Expr> whnf, Func<Expr, Expr> infer, Func<Expr, Expr, bool> isDefEq, Func<Expr, bool> isProp)
+    /// <param name="recFn">The application's head, already computed by the caller; see Quot.TryReduceRec.</param>
+    public static Expr? TryReduceRec(Environment env, Expr e, ConstExpr recFn, Func<Expr, Expr> whnf, Func<Expr, Expr> infer, Func<Expr, Expr, bool> isDefEq, Func<Expr, bool> isProp)
     {
-        if (e.GetAppFn() is not ConstExpr recFn || env.Find(recFn.Name) is not RecursorInfo recVal)
+        if (env.Find(recFn.Name) is not RecursorInfo recVal)
         {
             return null;
         }
