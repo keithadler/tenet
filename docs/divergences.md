@@ -25,11 +25,21 @@ there. Tenet reads a file somebody else produced; that is its entire purpose. An
 reject `2 + 2 = 2`, which is true of it.
 
 **Consequence for differential testing:** on a mutated export that damages a constant named after a primitive,
-Lean keeps computing the operation and accepts declarations that the damaged file no longer states, while Tenet
-unfolds and rejects them. This shows up as Tenet being stricter than Lean and is not a defect. `Tenet.DiffTest`
-reads `unvalidatedPrimitives` from the check report and reports those rejections separately rather than counting
-them as disagreements. On prelude seed 61 that is 85 rejections across 15 variants, every one of them attributable
-to `NatAdd`, `NatMul`, `NatPow`, `NatBeq` or `NatBle` having been damaged.
+Lean keeps computing the operation from the name while Tenet unfolds the body the file actually contains. The two
+then part company in whichever direction the damaged body happens to fall, and both directions occur.
+
+Usually Tenet is the stricter one: Lean accepts arithmetic the damaged file no longer states, and Tenet rejects
+it. On prelude seed 61 that is 85 rejections across 15 variants.
+
+But not always. On seed 128 the damaged `Nat.pow` makes a `decide` proof come out true, so Tenet accepts
+`Char.ofNat._proof_1` and Lean, computing the real value, rejects it. That surfaces as Tenet being *laxer* than
+Lean, which is the alarming direction, and it is the same cause: Tenet is the one reading the file.
+
+`Tenet.DiffTest` reads `unvalidatedPrimitives` from the check report and attributes both directions, naming the
+primitives responsible and every declaration involved rather than quietly dropping them. Attributing an apparent
+soundness disagreement is worth more scrutiny than attributing a strictness one, which is why the declarations are
+printed and the counts kept separate. The first version of this attributed only the strictness direction, and the
+other one failed CI three commits later.
 
 **Turning it off:** `TENET_NO_PRIMITIVE_CHECK=1` restores Lean's behavior of dispatching on the name.
 

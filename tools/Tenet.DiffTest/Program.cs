@@ -151,7 +151,8 @@ internal static class Program
         Console.WriteLine($"baseline: both accept all {bo.All.Count} declarations");
 
         int soundness = 0, strict = 0, agreedRejections = 0, inconclusive = 0;
-        int thirdAsked = 0, thirdWithTenet = 0, thirdWithLean = 0, thirdSilent = 0, expectedStrict = 0;
+        int thirdAsked = 0, thirdWithTenet = 0, thirdWithLean = 0, thirdSilent = 0;
+        int expectedStrict = 0, expectedSoundness = 0;
         var kinds = new Dictionary<string, (int Applied, int Rejected)>();
         for (int v = 0; v < variants; v++)
         {
@@ -177,15 +178,34 @@ internal static class Program
             var tenetRejectsLeanAccepts = t.Failed.Where(n => !o.Failed.Contains(n) && o.All.Contains(n)).ToList();
             int agreed = t.Failed.Count(o.Failed.Contains);
             agreedRejections += agreed;
-            soundness += tenetAcceptsLeanRejects.Count;
-            if (t.Unvalidated.Count == 0) { strict += tenetRejectsLeanAccepts.Count; }
+            if (t.Unvalidated.Count == 0)
+            {
+                soundness += tenetAcceptsLeanRejects.Count;
+                strict += tenetRejectsLeanAccepts.Count;
+            }
             foreach (string k in applied)
             {
                 kinds[k] = kinds.TryGetValue(k, out var c) ? (c.Applied + 1, c.Rejected) : (1, 0);
             }
             Console.WriteLine($"variant {v:D3}: mutations [{string.Join(", ", applied)}]; tenet rejects {t.Failed.Count}, lean rejects {o.Failed.Count}, agreed {agreed}" +
                               (t.Incomplete || o.Incomplete ? " (incomplete read)" : ""));
-            if (tenetAcceptsLeanRejects.Count > 0)
+            if (tenetAcceptsLeanRejects.Count > 0 && t.Unvalidated.Count > 0)
+            {
+                // The mirror of the STRICT case below, and the same cause. Where the variant damaged a constant
+                // named after a primitive, Tenet unfolds the body the file actually contains while Lean computes
+                // from the name, so the two part company in whichever direction the damaged body happens to fall.
+                // Here the damaged arithmetic makes a `decide` proof come out true, so Tenet accepts it and Lean,
+                // computing the real value, does not. Tenet is the one reading the file.
+                expectedSoundness += tenetAcceptsLeanRejects.Count;
+                Console.WriteLine($"  SOUNDNESS, expected: {tenetAcceptsLeanRejects.Count} accepted because the "
+                                + $"variant damaged {string.Join(", ", t.Unvalidated)}, which Tenet then declines "
+                                + "to shortcut and checks by unfolding instead");
+                foreach (string n in tenetAcceptsLeanRejects.Take(10))
+                {
+                    Console.WriteLine("    " + n);
+                }
+            }
+            else if (tenetAcceptsLeanRejects.Count > 0)
             {
                 Console.WriteLine("  SOUNDNESS: Tenet accepts but Lean rejects:");
                 foreach (string n in tenetAcceptsLeanRejects.Take(10)) Console.WriteLine("    " + n + "  |  " + FirstLine(o.Raw, "FAIL " + n));
@@ -262,10 +282,11 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine($"done: {variants} variants, {variants - inconclusive} compared, {inconclusive} inconclusive, "
                         + $"{agreedRejections} agreed rejections, {soundness} SOUNDNESS disagreements, {strict} STRICT disagreements");
-        if (expectedStrict > 0)
+        if (expectedStrict + expectedSoundness > 0)
         {
-            Console.WriteLine($"{expectedStrict} rejection(s) were Tenet declining to shortcut a primitive the "
-                            + "variant had damaged, which is the intended divergence and is not counted above");
+            Console.WriteLine($"{expectedStrict} rejection(s) and {expectedSoundness} acceptance(s) were Tenet "
+                            + "checking a primitive the variant had damaged by unfolding it rather than by "
+                            + "computing from its name, which is the intended divergence and is not counted above");
         }
         Console.WriteLine("mutations applied: " + string.Join(", ", kinds.OrderBy(k => k.Key).Select(k => $"{k.Key} x{k.Value.Applied}")));
         if (useOracle2)
