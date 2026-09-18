@@ -229,6 +229,93 @@ public class HostileTests
         Assert.NotNull(env.Find(Name.Of("_nestedish")));
     }
 
+    // ---------------------------------------------------------------- binder annotations stripped by name
+
+    /// <summary>
+    /// `optParam`, `autoParam`, `outParam` and `semiOutParam` wrap a type and mean nothing to the kernel, so
+    /// `ExprOps.ConsumeTypeAnnotations` strips them while declaring an inductive. It strips by name, without
+    /// checking that the constant is the identity-in-its-first-argument that Lean declares. A file can therefore
+    /// declare `optParam A d` to mean something other than `A` and have the kernel type a parameter at `A`.
+    ///
+    /// It does not get away with it, and not because the annotation is validated: the stripped parameter type is
+    /// compared against the declared one when the constructors are checked, and the mismatch surfaces there. This
+    /// pins that, so the defense cannot be removed as a simplification without the case failing.
+    /// </summary>
+    [Fact]
+    public void AnAnnotationThatIsNotTheIdentityDoesNotSlipThrough()
+    {
+        Environment Build(bool honest)
+        {
+            var env = new Environment();
+            Ax(env, Name.Of("A"), Type0);
+            Ax(env, Name.Of("B"), Type0);
+            Expr a = Expr.Const(Name.Of("A"), []);
+            Ax(env, Name.Of("dflt"), a);
+            // (α : Type) → α → Type, honest body `fun α d => α`, hostile body `fun α d => B`.
+            env.Add(new DefinitionDecl(Name.Of("optParam"), [],
+                Expr.Pi(Name.Of("α"), Type0, Expr.Arrow(Expr.BVar(0), Type0)),
+                Expr.Lam(Name.Of("α"), Type0, Expr.Lam(Name.Of("d"), Expr.BVar(0),
+                    honest ? Expr.BVar(1) : Expr.Const(Name.Of("B"), []))),
+                ReducibilityHints.Regular(1), DefinitionSafety.Safe));
+            return env;
+        }
+        InductiveDecl Ind()
+        {
+            Expr wrapped = Expr.MkApp(Expr.Const(Name.Of("optParam"), []),
+                Expr.Const(Name.Of("A"), []), Expr.Const(Name.Of("dflt"), []));
+            Expr self = Expr.App(Expr.Const(Name.Of("I"), []), Expr.BVar(0));
+            return new InductiveDecl([], 1, [new InductiveType(Name.Of("I"), Expr.Pi(Name.Of("p"), wrapped, Type0),
+                [new Constructor(Name.Of("I", "mk"), Expr.Pi(Name.Of("p"), wrapped, self))])], false);
+        }
+
+        Environment honestEnv = Build(honest: true);
+        honestEnv.Add(Ind());
+        Assert.NotNull(honestEnv.Find(Name.Of("I", "rec")));
+
+        Environment hostile = Build(honest: false);
+        Assert.Throws<KernelException>(() => hostile.Add(Ind()));
+        Assert.Null(hostile.Find(Name.Of("I")));
+    }
+
+    // ---------------------------------------------------------------- what a comparison returns
+
+    /// <summary>
+    /// `Nat.beq` and `Nat.ble` are computed directly and the kernel hands back the constants named `Bool.true` and
+    /// `Bool.false`. Those names are taken on trust too, but a lie about them cannot be made to stick: the
+    /// equations checked before the shortcut is allowed are stated against those very constants, so a body that
+    /// answers differently from the shortcut fails them and the operation is unfolded instead.
+    /// </summary>
+    [Fact]
+    public void AComparisonCannotReturnSomethingItsBodyDoesNot()
+    {
+        var env = new Environment();
+        AddRealNat(env);
+        Expr nat = Expr.Const(Name.Of("Nat"), []);
+        Expr boolE = Expr.Const(Name.Of("Bool"), []);
+        env.Add(new InductiveDecl([], 0, [new InductiveType(Name.Of("Bool"), Type0,
+            [new Constructor(Name.Of("Bool", "false"), boolE),
+             new Constructor(Name.Of("Bool", "true"), boolE)])], false));
+
+        // beq that always answers true, at exactly the right type.
+        env.Add(new DefinitionDecl(Name.Of("Nat", "beq"), [], Expr.Arrow(nat, Expr.Arrow(nat, boolE)),
+            Expr.Lam(Name.Of("a"), nat, Expr.Lam(Name.Of("b"), nat, Expr.Const(Name.Of("Bool", "true"), []))),
+            ReducibilityHints.Regular(1), DefinitionSafety.Safe));
+
+        Assert.False(env.PrimitiveOk(Primitive.NatBeq));   // beq 0 (succ y) ≡ false does not hold of that body
+
+        // So the kernel unfolds it, and answers what the file actually says rather than what BigInteger would.
+        Expr beq01 = Expr.MkApp(Expr.Const(Name.Of("Nat", "beq"), []), Expr.NatLit(0), Expr.NatLit(1));
+        Assert.True(new TypeChecker(env).IsDefEq(beq01, Expr.Const(Name.Of("Bool", "true"), [])));
+        Assert.False(new TypeChecker(env).IsDefEq(beq01, Expr.Const(Name.Of("Bool", "false"), [])));
+
+        WithoutDefenses(() =>
+        {
+            // With the check off the shortcut fires on the name and contradicts the body it was given.
+            Assert.True(new TypeChecker(env).IsDefEq(beq01, Expr.Const(Name.Of("Bool", "false"), [])));
+            return 0;
+        });
+    }
+
     // ---------------------------------------------------------------- compiled code the checker refuses to trust
 
     /// <summary>

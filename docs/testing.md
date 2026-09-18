@@ -373,10 +373,19 @@ Binder names in that list are cosmetic. The rest are assumptions: the type a lit
 operations the kernel computes itself, the constants a string literal expands through, the quotient block, and
 `Lean.reduceBool`.
 
-Two of those turned out to be defended already, and both are in the catalog so they stay that way. Quotient
-reduction fires on `Quot.lift` and `Quot.ind` by name, the same shape as the two bugs, but the kernel constructs
-the quotient constants with the types it requires rather than reading a file's, and will not reduce until it has.
-`Lean.reduceBool` is refused rather than believed, so a claim cannot be laundered through compiled code.
+Working the list found three gaps, since closed, and four places already defended. The defended ones are in the
+catalog too, so that a later simplification cannot quietly remove them:
+
+| Name | How it is defended |
+| --- | --- |
+| `Quot`, `Quot.mk`, `Quot.lift`, `Quot.ind` | the kernel builds the quotient constants with the types it requires rather than reading a file's, and will not reduce until it has |
+| `Eq` | `Quot.CheckEqType` checks its kind, universe count, constructor count, and both exact types before the quotient block is admitted |
+| `Bool`, `Bool.true`, `Bool.false` | a comparison's shortcut is licensed by equations stated against those very constants, so a body that answers differently fails them and is unfolded instead |
+| `optParam`, `autoParam`, `outParam`, `semiOutParam` | stripped by name without validation, but the stripped parameter type is compared against the declared one when constructors are checked, and a wrapper that is not the identity fails there |
+| `Lean.reduceBool`, `Lean.reduceNat` | refused rather than believed, so a claim cannot be laundered through compiled code |
+
+The annotation row is the weakest of these: it is defence in depth rather than by design, and it rests on a check
+whose purpose is something else. It is written down so that it is a decision rather than an accident.
 
 Each case asserts two things: that the attack is refused, and that it succeeds with the defense switched off.
 Without the second half a case can pass because the attack was built wrong, which is how a catalog of attacks
