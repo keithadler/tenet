@@ -240,6 +240,22 @@ dotnet tool install -g tenet          # needs the .NET SDK
 brew install --build-from-source ./Formula/tenet.rb   # macOS, from a checkout
 ```
 
+If `tenet` then answers **"You must install .NET to run this application"**, .NET is installed
+somewhere the tool cannot find. A global .NET tool is a small native shim, and PATH only tells
+your shell where to find that shim; it does not tell the shim where the runtime lives. The shim
+looks at `DOTNET_ROOT` and at `/usr/local/share/dotnet`, and the official `dotnet-install.sh`
+installs to `$HOME/.dotnet` instead, so this is the common case rather than an exotic one:
+
+```bash
+cat >> ~/.zprofile <<'EOF'
+export DOTNET_ROOT="$HOME/.dotnet"
+export PATH="$HOME/.dotnet:$HOME/.dotnet/tools:$PATH"
+EOF
+```
+
+The standalone binary has no such problem: it carries its own runtime and needs nothing on the
+machine.
+
 Shell completions for bash and zsh are in `completions/`.
 
 
@@ -252,7 +268,8 @@ dotnet build -c Release
 dotnet run -c Release --project src/Tenet.Cli -- check path/to/export.ndjson
 ```
 
-Or as a global tool once published: `dotnet tool install -g tenet`.
+Or as a global tool: `dotnet tool install -g tenet` (see **Install** above if it cannot find
+.NET afterwards).
 
 ## Check a Lean project in place
 
