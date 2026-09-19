@@ -174,7 +174,11 @@ substituted variable is the thing NbE is designed never to do.
 So the 79% duplicate rate measured below is a symptom rather than a disease. Substitution keeps reconstructing
 terms it has already constructed; interning would stop paying for them twice, while NbE never builds them.
 
-**The tension this creates is real and is not a performance question.** Tenet's first claim is that it decides
+**The decision, made deliberately: Tenet is not competing on speed.** Faithfulness is the point of it, and
+the two pull opposite ways. Everything below is kept as a record of what was measured and what was ruled out,
+so the question does not get reopened from scratch, but no work is planned against it.
+
+**The tension behind that decision is real and is not a performance question.** Tenet's first claim is that it decides
 exactly what Lean's kernel decides, and it matches Lean's algorithm deliberately, down to the order lazy delta
 unfolds things. Definitional equality in Lean is incomplete on purpose, so *which* pairs get decided depends on
 the reduction strategy, not only on the theory. Swapping in NbE would put that claim at risk in a way no
