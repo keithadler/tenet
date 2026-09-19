@@ -24,6 +24,34 @@ kernel bugs. It could not have found either of the two soundness bugs found in T
 written to exploit what the checker assumes rather than from damaging valid ones. `HostileTests` covers the whole
 trust surface, which is enumerable: every name the kernel hardcodes. See [testing.md](testing.md).
 
+## Auditing Mathlib, not just checking it
+
+Checking Mathlib says its proofs are valid. It says nothing about what they rest on. `tenet audit` run over
+the whole library answers the second question, and as far as I know nobody had:
+
+```
+490,619 declarations defined by Mathlib, in 7,450 modules
+  unconditional (nothing beyond propext, Classical.choice, Quot.sound):  490,580  (100.0%)
+  resting on an assumption:                                                   39
+    lcProof   39 declarations
+```
+
+**Mathlib is clean.** Every declaration in it rests on nothing beyond Lean's three standard axioms, except 39
+that reach `lcProof`, and those are not a mathematical assumption. Lean's own docstring for it says so:
+
+> Auxiliary unsafe constant used by the Compiler when erasing proofs from code. It may look strange to have an
+> axiom that says "every proposition is true", since this is obviously unsound, but the `unsafe` marker ensures
+> that the kernel will not let this through into regular proofs.
+
+The six declarations that invoke it directly are auto-generated proof obligations attached to `unsafe`
+definitions: `Part.unwrap._proof_1`, `Quot.unquot._proof_1`, and four in `FP`. `Part.unwrap` is literally
+`unsafe def unwrap`. They are code-generation artifacts and the `unsafe` marker is what stops them reaching a
+real proof.
+
+Tenet sees them at all only because it replays `unsafe` and `partial` declarations as mutual blocks, where
+Lean's own `Environment.replay` skips them. So this is a place where being more thorough than the reference
+produces a longer list rather than a shorter one, and the right reading of the extra entries is "nothing here".
+
 **The coverage is measured rather than assumed.** `tenet check --rules` counts each of the 40 rules and reports
 which a run never reached. Across all of `Init`, 36 of the 39 reachable rules fire, and `Quot.ind` fires once in
 64,814 declarations. Passing a large corpus is strong evidence about some rules and almost none about others, and
