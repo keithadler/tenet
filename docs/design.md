@@ -237,3 +237,32 @@ The change is kept for the allocation, not the speed. Less memory pressure is wo
 runner, and this project is measured on memory as well as time. But nobody should expect it to make checking
 faster, and the bottleneck it was chased for is untouched: the work is in the 387M node visits themselves, not
 in the garbage they leave behind.
+
+## Why Mathlib costs more than the other corpora
+
+The Lean Kernel Arena scores instructions retired, not wall time. On its corpora Tenet sits within 8% of
+Lean's own kernel on `init`, `std` and `cedar`, and slightly **ahead** on `cslib` at 0.96x. Mathlib is the
+outlier at **1.38x**, and it is worth knowing why before anyone tries to fix it.
+
+Two hypotheses, measured on all of Mathlib, four jobs, quiet machine:
+
+| | CPU | wall | peak RSS |
+| --- | --- | --- | --- |
+| baseline | 1815.7s | 574.7s | 8.88 GB |
+| `TENET_NO_FAILURE_CACHE=1` | 1760.2s | 564.1s | 8.48 GB |
+| `--no-compare` | **1505.5s** | 475.1s | 7.55 GB |
+
+**The failure cache is not it.** Disabling it entirely, along with the 924 faithful retries it causes, moves
+CPU by 3%. The kernel then does noticeably more work (whnfCore +19%, unfolds +24%) for slightly less CPU,
+which says the cache's own bookkeeping roughly cancels what it saves at this scale.
+
+**Deriving and comparing recursors is it, or half of it.** Skipping that work is worth **17% of instructions**
+and 15% of memory. Removing it would put Tenet at about 1.15x official, in line with every other corpus, and
+the cost lands on Mathlib specifically because Mathlib has far more inductive types than anything else on that
+board.
+
+**It stays.** Lean's `Environment.replay` installs the recursors it is handed. Tenet re-derives each one from
+the inductive's own types and constructors and compares field by field with what the exporter wrote, which is
+the check that catches an exporter or a reader that quietly dropped something, and the one path the kernel
+comparison cannot reach. Deleting a real check to climb a column is the one thing a proof checker must not do.
+The honest framing is that 17% of Tenet's Mathlib cost buys something the reference does not attempt.
