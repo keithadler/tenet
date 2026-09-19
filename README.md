@@ -506,8 +506,7 @@ A checker that accepted everything would produce the same clean output, so:
 - **Other methods found three more, also all in Tenet**: checking older toolchains found a
   hardcoded string-literal constant that is actually version dependent, fuzzing the `.olean`
   reader found a corruption path that threw the wrong exception, and profiling found an
-  unbounded printer that could exhaust memory while formatting an error. No bug in Lean's
-  kernel has been found.
+  unbounded printer that could exhaust memory while formatting an error.
 - **It derives rather than trusts.** Recursors and constructor metadata are re-derived from
   the types and constructors alone and compared field by field with what Lean wrote.
 - **It is attacked on purpose, not only damaged at random.** Mutation takes a valid export and
@@ -520,6 +519,51 @@ A checker that accepted everything would produce the same clean output, so:
   in 0.9.0, and both have regression tests that reproduce them with the defense switched off.
   Every name the kernel hardcodes is now read out of its own source by a test and has to be
   accounted for, so a new assumption cannot be added without an attack being written for it.
+
+### The question a kernel cannot answer
+
+Checking says a proof is valid. It says nothing about whether the theorem means what you think, and
+that is the question a mathematician actually has. `tenet statement` gets as close to it as a tool
+can: it reports which constants a statement is built from, and which of those the project defined
+itself, because a wrong definition hides there and nowhere else.
+
+The contrast is the point:
+
+| Theorem | constants in the statement | defined by the project |
+| --- | --- | --- |
+| `Nat.exists_infinite_primes` (Euclid) | 6 | **0** |
+| `Polynomial.Monic.comp` | 9 | **0** |
+| `Nat.Prime.factorization_pow` | 12 | **0** |
+| `Finset.sum_range_succ` | 14 | **0** |
+| `ConLeche.no_False_declaration` | 28 | **14** |
+
+A Mathlib theorem's statement is built entirely from Mathlib and `Init`, so there is nothing bespoke
+to audit: it means what the community's definitions mean, and those have been read by many people.
+A result about a program, like con-leche's proof that it never accepts a file declaring `False`, is
+half its author's own vocabulary. That is not a criticism, it is unavoidable for a theorem about a
+specific artifact. But it locates the trust: fourteen definitions, named, and a reader who wants to
+believe the theorem has to read those fourteen.
+
+No kernel can do this for you. Tenet can tell you where to look.
+
+### What this says about Lean
+
+**Every bug this project has found has been in Tenet.** Two from the differential comparison with
+Lean's kernel, three more from older toolchains, `.olean` fuzzing and profiling, three soundness
+bugs from hostile files, and a reader that demanded more of the export format than the format
+demands. Across all of Mathlib and its dependencies, about 140,000 deliberately damaged declarations
+compared verdict by verdict against Lean's own kernel, 166,048 constants compared between the
+`.olean` reader and Lean's exporter, six toolchains from 4.12 to 4.35, and a corpus written
+specifically to attack a checker, **no bug has been found in Lean's kernel.**
+
+That is worth stating plainly because it is a statement about Lean rather than about Tenet, and it
+is the kind of thing a project cannot credibly say about itself. It is also bounded, and the bounds
+matter more than the headline. An independent *implementation* can only catch a defect in the
+reference's code; a defect in its *design* is one Tenet would likely reproduce, since matching the
+reference kernel's decisions was the goal and its structure was followed deliberately. Tenet is
+tested, not verified, so this is evidence and not proof. And the places Tenet decides differently on
+purpose are listed in [docs/divergences.md](docs/divergences.md), where three of the six entries
+exist precisely because Lean can safely assume something Tenet cannot.
 
 Tenet aims to decide exactly what Lean's kernel decides. [docs/specification.md](docs/specification.md) is the
 correspondence, rule by rule: the judgment each one implements, where it lives here, and where it lives in Lean,

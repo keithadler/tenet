@@ -6,6 +6,39 @@ here, it is a bug and should be reported.
 The practice, and the name of this file, is borrowed from
 [lean4lean](https://github.com/digama0/lean4lean/blob/master/divergences.md).
 
+## What kind of divergence each one is
+
+Asked to sort these into "theory" and "implementation", the honest answer is that almost none of them are
+about the type theory, and the interesting split is elsewhere.
+
+| | Divergence | Kind |
+| --- | --- | --- |
+| 1 | An accelerated primitive is checked before it is trusted | **Threat model** |
+| 2 | A literal's type is checked against the environment | **Threat model** |
+| 3 | The `_nested` namespace is reserved | **Threat model** |
+| 4 | Failure caching | **Optimization, observationally neutral** |
+| 5 | Bounds the reference does not have | **Resource** |
+| 6 | Complete level equality, available and off | **Algorithm against theory** |
+
+**Threat model (1, 2, 3).** Not disagreements about what is true. Lean ships its own prelude and does not
+support replacing it, so deciding from the name that `Nat.add` is addition, or that a numeral is a `Nat`, is
+sound *for Lean*. Tenet reads a file somebody else produced, which is its entire purpose, so the same shortcuts
+are holes. In each case Tenet ends up **closer to the type theory than Lean is**, by doing work Lean can
+correctly skip. None of these can arise on an honest export.
+
+**Optimization (4).** Caching failed definitional-equality comparisons can only make a checker stricter, since
+definitional equality is not transitive. A declaration rejected in that mode is re-checked with the cache off
+and the reference algorithm's verdict is the one reported, so nothing is observable from outside.
+
+**Resource (5).** The theory has no notion of running out of stack or of a hundred million unfoldings. An
+external checker needs one, because a kernel that never returns is as useless as one that answers wrongly.
+
+**Algorithm against theory (6).** The only entry that is genuinely about the theory. Lean's `is_equivalent`
+normalizes each side once and compares, so `imax u v` against a semantically equal `max` form is not settled
+and Lean answers no. Deciding by case analysis on which parameters can be zero settles every such pair, which
+is what the *semantics* of `imax` says, and it can only accept more, never less. It is off by default anyway,
+because deciding what Lean decides is this project's first claim and the gap cannot arise on a real export.
+
 ## An accelerated primitive is checked before it is trusted
 
 **Where:** `Primitives.Check`, consulted by `TypeChecker.ReduceNat`.
