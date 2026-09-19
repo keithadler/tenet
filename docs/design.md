@@ -157,8 +157,27 @@ rate, and deleting it is catastrophic: node visits go from 387M to 3,361M and th
 Lean's terms are shared DAGs, so each of those few hits is skipping an enormous subtree. Anyone looking at the
 hit rate and reaching for the delete key, as I did, should run it with `Replace`'s cache disabled first.
 
-**What was done about it.** Lean's C++ kernel memoizes on the expression node itself, turning a hash insert
-into a field write. That does not port here: workers share expression nodes across threads, so a mutable memo
+### Interning, not tried, and the measurement that says it is worth trying
+
+Of the 186.7M application nodes built while checking `Init`, **147.4M are structurally equal to one already
+built**: 78.9%, leaving 39.3M distinct. Measured by hashing each newly built application and counting how
+often the hash had been seen; at 39.3M distinct values in a 32-bit space the collision error is under 1%, far
+too small to change the conclusion.
+
+So hash-consing would build roughly a fifth as many applications. The allocation saving is the smaller half of
+the prize. The larger half is that interning makes structural equality into pointer equality, and this kernel
+does 12.2M definitional-equality comparisons and 27.7M `whnfCore` lookups whose cost is dominated by comparing
+and hashing terms structurally.
+
+It has not been attempted, and the measurement does not say it pays. What it rules out is the reason not to
+try: the duplication is real and large rather than a few percent. The cost against it is one lookup in a shared
+table per node built, 186.7M of them, across four workers that would contend for it. Sharding or per-thread
+tables trade that contention for lost sharing. Lean's own C++ kernel does not hash-cons, which may be why it
+and this checker sit in the same performance neighbourhood while the Rust implementations on the arena are an
+order of magnitude faster.
+
+**What was done about the memo.** Lean's C++ kernel memoizes on the expression node itself, turning a hash
+insert into a field write. That does not port here: workers share expression nodes across threads, so a mutable memo
 field would need an allocation per entry to be written atomically, which costs more than it saves.
 
 The cheaper half of the same idea does port. The memo was a fresh `Dictionary` per call: 21 million
