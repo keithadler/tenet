@@ -157,7 +157,32 @@ rate, and deleting it is catastrophic: node visits go from 387M to 3,361M and th
 Lean's terms are shared DAGs, so each of those few hits is skipping an enormous subtree. Anyone looking at the
 hit rate and reaching for the delete key, as I did, should run it with `Replace`'s cache disabled first.
 
-### Interning, not tried, and the measurement that says it is worth trying
+### Why the fast checkers are fast: they never substitute
+
+Before attempting anything, read `sokonanoda`, which does Mathlib in 2.1m where Lean's own kernel takes 32.9m.
+Its description says it outright: *"conversion checking uses closures"*, inspired by
+[smalltt](https://github.com/AndrasKovacs/smalltt). The source confirms it. `Closure { env, ctx, body }`,
+`eval(depth, env, expr) -> Value`, `apply_closure(depth, clo, value, _)`, a `Value` type with rigid neutral
+heads and unfold heads, eliminations packed into a `u64`, and `bumpalo::Bump` arenas throughout. The only
+`subst` functions in the whole repository are for universe **levels**. Nothing ever substitutes into a term.
+
+That is normalization by evaluation, and it is a different evaluator, not a faster one. Beta reduction is
+applying a closure to a value in an environment. The work this kernel does, 21M `Replace` calls, 387M node
+visits and 252M expression nodes built, does not exist there at all, because rebuilding a term around a
+substituted variable is the thing NbE is designed never to do.
+
+So the 79% duplicate rate measured below is a symptom rather than a disease. Substitution keeps reconstructing
+terms it has already constructed; interning would stop paying for them twice, while NbE never builds them.
+
+**The tension this creates is real and is not a performance question.** Tenet's first claim is that it decides
+exactly what Lean's kernel decides, and it matches Lean's algorithm deliberately, down to the order lazy delta
+unfolds things. Definitional equality in Lean is incomplete on purpose, so *which* pairs get decided depends on
+the reduction strategy, not only on the theory. Swapping in NbE would put that claim at risk in a way no
+amount of testing fully retires: agreeing on 189 arena tests and on Mathlib is not agreeing on every input.
+A kernel can be a faithful mirror of Lean's algorithm or it can be fast, and those pull in opposite directions.
+That is a decision about what this project is for, not an optimisation to schedule.
+
+### Interning, not tried, and the measurement that said it was worth trying
 
 Of the 186.7M application nodes built while checking `Init`, **147.4M are structurally equal to one already
 built**: 78.9%, leaving 39.3M distinct. Measured by hashing each newly built application and counting how
