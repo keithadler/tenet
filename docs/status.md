@@ -26,8 +26,12 @@ trust surface, which is enumerable: every name the kernel hardcodes. See [testin
 
 ## Auditing Mathlib, not just checking it
 
-Checking Mathlib says its proofs are valid. It says nothing about what they rest on. `tenet audit` run over
-the whole library answers the second question, and as far as I know nobody had:
+Checking Mathlib says its proofs are valid. It says nothing about what they rest on. `tenet audit` answers the
+second question over the whole library at once.
+
+Mathlib already guards this: its CI runs `lean4checker`, which catches any additional axiom being introduced,
+and its own linter source says so. So the result below is a confirmation from an independent implementation
+rather than news, and the only thing it adds is the enumeration: which declarations, and why each is harmless.
 
 ```
 490,619 declarations defined by Mathlib, in 7,450 modules
@@ -36,7 +40,8 @@ the whole library answers the second question, and as far as I know nobody had:
     lcProof   39 declarations
 ```
 
-**Mathlib is clean.** Every declaration in it rests on nothing beyond Lean's three standard axioms, except 39
+**Mathlib is clean, and independently so.** Every declaration in it rests on nothing beyond Lean's three
+standard axioms, except 39
 that reach `lcProof`, and those are not a mathematical assumption. Lean's own docstring for it says so:
 
 > Auxiliary unsafe constant used by the Compiler when erasing proofs from code. It may look strange to have an
