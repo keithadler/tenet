@@ -3,37 +3,67 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.11.0] - 2026-09-20
+
+Tenet joined the [Lean Kernel Arena](https://arena.lean-lang.org), which benchmarks proof checkers for Lean.
+It scores 70 of 70 on the must-reject corpus and 127 of 127 on the must-accept one, tied with the best there,
+and is the only entry on .NET.
 
 ### Added
+- **The arena submission**, in `packaging/arena/`, kept in this repo so the exit-code mapping gets reviewed
+  when the CLI's exit codes change. A CI job downloads the arena's own published test suite on every push,
+  runs all 189 files through a self-contained binary with `env -i`, and fails on anything short of a perfect
+  score, so a regression goes red here rather than on somebody else's dashboard. `threads: 4` is declared and
+  matched with `--jobs 4`: the runner reserves that many CPU slots, and a parallel checker that does not say so
+  takes CPU from whatever runs beside it and skews other people's published numbers.
+- `tenet check` can **decline** a file instead of rejecting it: exit 4, printing `DECLINED`, when every failure
+  is a refusal to vouch rather than a finding that something is wrong. Refusing to believe the output of
+  compiled code (`Lean.reduceBool`, `Lean.reduceNat`) is the case that matters, and reporting it as a rejection
+  claimed the proof was invalid, which Tenet was never in a position to say. The negative corpus records which
+  outcome each case expects and the test fails if either collapses into the other.
 - `OleanModule.DeprecationOf` reads `@[deprecated]`: the replacement name, the note and the version, which is
-  what a reader needs before acting on a lemma that Mathlib has moved on from.
+  what a reader needs before acting on a lemma Mathlib has moved on from.
 - `OleanModule.KeysInExtension` answers which declarations an environment extension has an entry for, without
   decoding the payload, which is how to ask whether a declaration is protected, noncomputable, a class, or
   carries any other name-keyed attribute. An extension whose entries are not name-keyed reports none rather
-  than guessing; the rule and why it is not stricter are in the method's own documentation.
-
-### Added
-- `tenet check` can **decline** a file instead of rejecting it: exit 4, printing `DECLINED`, when every
-  failure is a refusal to vouch rather than a finding that something is wrong. Refusing to believe the output
-  of compiled code (`Lean.reduceBool`, `Lean.reduceNat`) is the case that matters, and reporting it as a
-  rejection claimed the proof was invalid, which Tenet was never in a position to say. The negative corpus
-  records which outcome each case expects and the test fails if either collapses into the other.
-- A `flake.nix`, so the [Lean Kernel Arena](https://arena.lean-lang.org) has a .NET SDK to build with: its
-  environment has none, and a checker needing something else brings its own. A CI job runs the arena's build
-  and run lines verbatim over the negative corpus, so a broken flake goes red here rather than in a pull
-  request somewhere else.
-- `packaging/arena/`, the checker definition to submit, kept in this repo so the exit-code mapping is reviewed
-  when the CLI's exit codes change.
+  than guessing.
 
 ### Fixed
-- The native AOT publish had been failing since it was introduced, and the release workflow falls back to a
+- **The native AOT publish had been failing since it was introduced**, and the release workflow falls back to a
   self-contained build when it does, silently. Two releases shipped 32 MB binaries while the README promised
   4 MB ones. `Trim="true"` on the DATAS runtime option makes it a feature switch, which ILC rejects outright;
-  the option is now set without it for AOT builds. Measured after the fix: 4.85 MB and 10 ms to start.
-- The GitHub Action and the sample point at 0.10.0. Both have to trail the repo's version until a release is
-  actually published, and bumping them inside the release commit made CI download a release that commit was
-  about to create.
+  the option is now set without it for AOT builds. Measured after: 4.85 MB and 10 ms to start.
+- The substitution memo in `ExprOps.Replace` was a fresh `Dictionary` on each of 21 million calls. It is rented
+  from a per-thread pool now: **42% less allocation** on `Init`, 54.6 GB to 31.5 GB, and 37% less collector
+  pause. Worth about 1% of wall time, measured on a quiet machine with interleaved pairs, and kept for the
+  allocation rather than the speed.
+- The GitHub Action and the sample point at the published release. Both have to trail the repo's version until
+  a release actually exists, and bumping them inside the release commit made CI download a release that commit
+  was about to create.
+
+### Documented
+- **Where the time goes**, by counting rather than timing: 252M expression nodes built per `Init` check, 187M of
+  them applications, 143M of those from `Replace` rebuilding terms around substituted variables. Not the
+  garbage collector, whose allocation and pause are identical at one worker, four and twelve.
+- **Why the fast checkers are fast.** `sokonanoda` does Mathlib in a fourteenth of the instructions, and its
+  conversion checking uses closures rather than substitution. That is a different evaluator, not a tuned one,
+  and adopting it would put at risk the claim this project rests on, since Lean's definitional equality is
+  incomplete on purpose and which pairs get decided depends on the reduction strategy. **Speed is deliberately
+  not a goal**; the measurements are kept so the question is not reopened from scratch.
+- **Why Mathlib costs 1.38x the reference in instructions** where every other corpus is within 8%: 17% of it is
+  deriving every recursor and comparing it field by field with what the exporter wrote, which Lean's replay does
+  not attempt. It stays.
+- **What this says about Lean**: every bug this project has found has been in Tenet, and across all of Mathlib,
+  140,000 damaged declarations, 166,048 constants compared against Lean's exporter and six toolchains, no bug
+  has been found in Lean's kernel. With its bounds stated, because an independent implementation catches
+  defects in the reference's code and not in its design.
+- **What kind each divergence is.** Three of six are threat model rather than theory: Lean ships its own prelude
+  so it can safely decide things from a name that Tenet cannot, and in each of those Tenet ends up closer to the
+  type theory than Lean by doing work Lean can correctly skip.
+- An audit of all of Mathlib: 490,619 declarations, 100% resting on nothing beyond `propext`, `Classical.choice`
+  and `Quot.sound`, and 39 on `lcProof`, which is the compiler's stub for erasing proofs from `unsafe`
+  definitions. Mathlib's CI already guards this with `lean4checker`, so this confirms independently rather than
+  discovering.
 
 ## [0.10.0] - 2026-09-18
 
