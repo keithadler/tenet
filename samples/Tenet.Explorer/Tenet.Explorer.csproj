@@ -19,8 +19,8 @@
   <!-- The published packages, not project references: this sample is here to show that what is on
        nuget.org is usable from an ordinary project, which a project reference would not demonstrate. -->
   <ItemGroup>
-    <PackageReference Include="Tenet.Kernel" Version="0.10.0" />
-    <PackageReference Include="Tenet.Olean" Version="0.10.0" />
+    <PackageReference Include="Tenet.Kernel" Version="0.11.0" />
+    <PackageReference Include="Tenet.Olean" Version="0.11.0" />
   </ItemGroup>
 
 </Project>

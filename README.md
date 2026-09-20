@@ -255,9 +255,11 @@ setting is now pinned off, and with it pinned the two runtimes perform the same.
 
 ## Install
 
-A release attaches a standalone binary for each platform: no .NET installation, about 4 MB, and
-roughly 7 ms to start. Download it from the
-[releases page](https://github.com/keithadler/tenet/releases), or:
+A release attaches a standalone binary for each platform, none of which need .NET installed. The
+Linux one is compiled ahead of time: about 6 MB, and roughly 10 ms to start. The macOS and Windows
+binaries are self-contained rather than native, about 30 MB and slower to start, because native
+compilation cannot cross operating systems and the release is built on a Linux runner. Download from
+the [releases page](https://github.com/keithadler/tenet/releases), or:
 
 ```bash
 dotnet tool install -g tenet          # needs the .NET SDK
