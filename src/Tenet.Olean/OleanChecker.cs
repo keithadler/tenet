@@ -86,6 +86,22 @@ public sealed class OleanChecker : IDisposable
              + "  always write them to the .olean, so no kernel can check this declaration from module data alone.";
     }
     private readonly Dictionary<Name, Name> _owner = new(); // constant -> module
+
+    // Two modules may declare the same name when neither imports the other, which is ordinary in a project
+    // holding several executables: verso has eight separate `Config` structures. Keyed by name alone, the
+    // second one is lost and every reference to it silently resolves to the first, so the kernel compares a
+    // term against a type from an unrelated program and reports a type mismatch that is not there. Verso
+    // produced 33 such rejections against declarations Lean had just compiled.
+    //
+    // Only names with more than one declaring module go in here, which is a handful even in a large project,
+    // and resolution consults it only for those names.
+    private readonly Dictionary<Name, List<Name>> _ambiguous = new();
+
+    // The module being checked. Its import closure decides which declaration an ambiguous name means, exactly
+    // as it does for Lean: a module can only see what it imports.
+    private Name? _scope;
+    private HashSet<Name>? _scopeClosure;
+    private readonly Dictionary<Name, HashSet<Name>> _closureCache = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Name, byte> _touched = new(); // modules decoded from since the last trim
 
     public OleanChecker(LeanSearchPath search) => _search = search;
@@ -135,7 +151,18 @@ public sealed class OleanChecker : IDisposable
         _modules[module] = m;
         foreach (Name c in m.ConstantNames)
         {
-            _owner.TryAdd(c, module);
+            if (!_owner.TryAdd(c, module))
+            {
+                // a second declaration of a name: remember every module that has one
+                if (!_ambiguous.TryGetValue(c, out List<Name>? all))
+                {
+                    _ambiguous[c] = all = new List<Name> { _owner[c] };
+                }
+                if (!all.Contains(module))
+                {
+                    all.Add(module);
+                }
+            }
         }
         order.Add(module);
         visiting.Remove(module);
@@ -170,15 +197,79 @@ public sealed class OleanChecker : IDisposable
         }
     }
 
-    /// <summary>Decode a constant from whichever loaded module declares it.</summary>
+    /// <summary>
+    /// Decode a constant from the module that the module under check can actually see.
+    ///
+    /// For all but a handful of names there is one declaring module and this is a dictionary lookup. For a
+    /// name several modules declare, the one in scope wins: the module being checked if it declares the name
+    /// itself, otherwise whichever declaring module is in its import closure. That is what the name means in
+    /// that module, and resolving it any other way answers a question nobody asked.
+    /// </summary>
     public ConstantInfo? Resolve(Name n)
     {
+        if (_ambiguous.Count > 0 && _ambiguous.TryGetValue(n, out List<Name>? all))
+        {
+            Name? pick = PickInScope(n, all);
+            if (pick is null)
+            {
+                return null;
+            }
+            _touched[pick] = 0;
+            return _modules[pick].FindConstant(n);
+        }
         if (!_owner.TryGetValue(n, out Name? m))
         {
             return null;
         }
         _touched[m] = 0;
         return _modules[m].FindConstant(n);
+    }
+
+    /// <summary>Which of several declaring modules the module under check can see, nearest first.</summary>
+    private Name? PickInScope(Name n, List<Name> all)
+    {
+        if (_scope is Name scope)
+        {
+            foreach (Name m in all)
+            {
+                if (m.Equals(scope))
+                {
+                    return m;      // the module's own declaration always wins
+                }
+            }
+            HashSet<Name>? closure = _scopeClosure;
+            if (closure is not null)
+            {
+                foreach (Name m in all)
+                {
+                    if (closure.Contains(m))
+                    {
+                        return m;
+                    }
+                }
+                // Nothing the scope imports declares it. Refusing is the honest answer: the name is not in
+                // scope, and returning some other module's declaration is how the wrong type gets compared.
+                return null;
+            }
+        }
+        return all[0];
+    }
+
+    /// <summary>Check the following module in its own scope, so ambiguous names mean what they mean there.</summary>
+    private void EnterScope(Name module)
+    {
+        _scope = module;
+        if (_ambiguous.Count == 0)
+        {
+            _scopeClosure = null;
+            return;
+        }
+        if (!_closureCache.TryGetValue(module, out HashSet<Name>? closure))
+        {
+            closure = new HashSet<Name>(DependencyOrder(new[] { module }));
+            _closureCache[module] = closure;
+        }
+        _scopeClosure = closure;
     }
 
     public OleanCheckResult Check(IReadOnlyList<Name> targets, OleanCheckOptions? options = null)
@@ -212,6 +303,9 @@ public sealed class OleanChecker : IDisposable
         foreach (Name module in modulesInOrder)
         {
             mi++;
+            // Ambiguous names mean whatever this module can see, so resolution is scoped before anything in it
+            // is decoded or checked.
+            EnterScope(module);
             OleanModule m = _modules[module];
             long decodeStart = Stopwatch.GetTimestamp();
             var constants = m.DecodeAll().ToList();
@@ -301,7 +395,10 @@ public sealed class OleanChecker : IDisposable
             result.Checked += checkedHere;
             result.SkippedOldCodegen += skippedHere;
             result.ModulesChecked++;
-            if (options.EvictBetweenModules)
+            // With ambiguous names present the environment's cache has to be dropped between modules whatever
+            // the caller asked for: a constant resolved in one module's scope is the wrong constant in the
+            // next one's, and a cache that outlives the scope reintroduces exactly the bug this scoping fixes.
+            if (options.EvictBetweenModules || _ambiguous.Count > 0)
             {
                 env.EvictResolved();
                 foreach (Name t in _touched.Keys)
