@@ -1,6 +1,11 @@
-/-- Two modules, neither importing the other, both naming a structure `Config`. -/
-structure Config where
-  names : Array Nat := #[]
-  mode  : String
+prelude
+/-- Self-contained: imports nothing, so checking it needs no Lean toolchain on the machine. -/
+inductive Tag where
+  | one
+  | two
 
-def useA (c : Config) : Config := { c with names := c.names.push 1 }
+structure Config where
+  tag  : Tag
+  more : Tag
+
+def useA (c : Config) : Config := { c with tag := c.more }
