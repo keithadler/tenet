@@ -189,6 +189,16 @@ jobs:
           dotnet run --no-build -c Release -f net10.0 --project src/Tenet.Cli -- names "$LIB" --all add_comm \
             | grep -qx "Nat.add_comm"
 
+      - name: Does `tenet axioms` still agree with `#print axioms`?
+        run: |
+          # The C# tests say what the axiom walk should answer. This says Lean agrees, which is the only
+          # reason those expectations are worth anything: they were transcribed from a run of this script,
+          # and a transcription nothing re-checks is a claim about Lean that quietly stops being true.
+          # It also asserts the one place the two disagree, leanprover/lean4#15226, so a fix upstream
+          # surfaces here rather than going unnoticed.
+          dotnet publish src/Tenet.Cli -c Release -f net10.0 -o axiom-bin
+          ./tests/fixtures/axioms/compare.sh "$PWD/axiom-bin/tenet"
+
       - name: Does crosscheck notice a damaged declaration?
         run: |
           # lean4export's sysroot, not leancheck's: the two pin different Lean versions, and crosschecking an

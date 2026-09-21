@@ -508,6 +508,19 @@ public static class Replay
     /// the number of constants reached. A proof resting on nothing but <c>propext</c>, <c>Classical.choice</c> and
     /// <c>Quot.sound</c> is complete in Lean's logic; <c>sorryAx</c> marks a hole. Constants the lookup cannot find
     /// are passed over, so the caller should check the declaration first.
+    ///
+    /// Every way of being wrong here that matters is a way of reporting too few. This is the command that decides
+    /// whether a project has holes in it, and an under-report reads exactly like a clean proof. Two under-reports
+    /// were live in this function until a fixture that compares it against Lean case by case caught them: an axiom
+    /// reachable only through a constructor's field type was invisible, so a structure whose field rested on
+    /// <c>sorry</c> came back with no axioms at all, and an axiom stated in terms of another one hid the second.
+    ///
+    /// So the out-edges follow Lean's <c>CollectAxioms.collect</c> case for case; see <see cref="AxiomEdges"/>.
+    ///
+    /// The traversal keeps one accumulator and one <c>seen</c> set for the whole walk and caches nothing per
+    /// constant. That is what makes it immune to leanprover/lean4#15226, where Lean's own per-constant cache cannot
+    /// tell an in-progress sentinel from a finished answer, and an inductive read from an importing module comes
+    /// back with fewer axioms than the same inductive read from the module that defines it.
     /// </summary>
     public static (SortedSet<Name> Axioms, long Visited) AxiomsOf(Func<Name, ConstantInfo?> find, Name start)
     {
@@ -532,14 +545,58 @@ public static class Replay
             if (c is AxiomInfo)
             {
                 axioms.Add(cur);
-                continue;
             }
-            foreach (Name u in UsedConstants(c))
+            foreach (Name u in AxiomEdges(c))
             {
                 todo.Push(u);
             }
         }
         return (axioms, visited);
+    }
+
+    /// <summary>
+    /// What one constant reaches while axioms are being collected, mirroring Lean's <c>CollectAxioms.collect</c>.
+    ///
+    /// This is deliberately not <see cref="UsedConstants"/>, in both directions. An inductive names its
+    /// constructors directly rather than waiting to find them inside an expression, because it never mentions them
+    /// in its own type. A recursor reaches its type and not the right-hand sides of its rules, which is narrower
+    /// than <c>UsedConstants</c> and is Lean's choice; nothing is lost by it, because a rule's right-hand side is
+    /// built out of the inductive's own constructors and those are reached through the inductive. The quotient
+    /// primitives reach nothing, being given rather than derived, which does not stop <c>Quot.sound</c> reporting:
+    /// it is an axiom in its own right and is recorded as one.
+    /// </summary>
+    private static HashSet<Name> AxiomEdges(ConstantInfo c)
+    {
+        var used = new HashSet<Name>();
+        if (c is QuotInfo)
+        {
+            return used;
+        }
+        void Visit(Expr e) => ExprOps.ForEach(e, (t, _) =>
+        {
+            if (t is ConstExpr k)
+            {
+                used.Add(k.Name);
+            }
+            return true;
+        });
+        Visit(c.Type);
+        if (c.Value is Expr v)
+        {
+            Visit(v);
+        }
+        if (c is OpaqueInfo o)
+        {
+            Visit(o.OpaqueValue);
+        }
+        if (c is InductiveInfo ind)
+        {
+            foreach (Name ctor in ind.Ctors)
+            {
+                used.Add(ctor);
+            }
+        }
+        return used;
     }
 
     public static HashSet<Name> UsedConstants(ConstantInfo c)
@@ -561,6 +618,18 @@ public static class Replay
         if (c is OpaqueInfo o)
         {
             Visit(o.OpaqueValue);
+        }
+        if (c is InductiveInfo ind)
+        {
+            // An inductive depends on its constructors. An axiom used only in a field type is reachable no other
+            // way, so without this edge `why` cannot explain a dependency that `axioms` reports and the dependents
+            // walk behind `audit` misses the types that carry a hole. Lean's collectAxioms makes the same edge.
+            // It costs the olean checker's ordering nothing: an inductive and its constructors are one unit there,
+            // and only edges that leave a unit are looked at.
+            foreach (Name ctor in ind.Ctors)
+            {
+                used.Add(ctor);
+            }
         }
         if (c is RecursorInfo r)
         {

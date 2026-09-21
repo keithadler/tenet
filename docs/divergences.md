@@ -19,6 +19,7 @@ about the type theory, and the interesting split is elsewhere.
 | 4 | Failure caching | **Optimization, observationally neutral** |
 | 5 | Bounds the reference does not have | **Resource** |
 | 6 | Complete level equality, available and off | **Algorithm against theory** |
+| 7 | `#print axioms` under-reports across a module boundary | **Upstream defect** |
 
 **Threat model (1, 2, 3).** Not disagreements about what is true. Lean ships its own prelude and does not
 support replacing it, so deciding from the name that `Nat.add` is addition, or that a numeral is a `Nat`, is
@@ -32,6 +33,10 @@ and the reference algorithm's verdict is the one reported, so nothing is observa
 
 **Resource (5).** The theory has no notion of running out of stack or of a hundred million unfoldings. An
 external checker needs one, because a kernel that never returns is as useless as one that answers wrongly.
+
+**Upstream defect (7).** The only entry where Lean is wrong rather than differently right, and the only one
+outside the kernel proper: it is about what `tenet axioms` reports, not about what the kernel accepts. Tenet
+matches `#print axioms` everywhere except one case, and in that case `#print axioms` contradicts itself.
 
 **Algorithm against theory (6).** The only entry that is genuinely about the theory. Lean's `is_equivalent`
 normalizes each side once and compares, so `imax u v` against a semantically equal `max` form is not settled
@@ -162,3 +167,39 @@ way.
 would report, correctly, as a disagreement. The gap it closes cannot arise on a real export, since the elaborator
 never stores an unsimplified `imax _ (max _ 1)`. Costing nothing measurable on `Init` either way, it is worth
 having and not worth defaulting to.
+
+## `#print axioms` under-reports across a module boundary
+
+**Where:** `Replay.AxiomsOf` and `Replay.AxiomEdges`, behind `tenet axioms`, `tenet why` and `tenet audit`.
+
+Lean answers `#print axioms S9` one way from the module that defines `S9` and another way from a module that
+imports it. For the structure in [leanprover/lean4#15226](https://github.com/leanprover/lean4/issues/15226),
+whose field type rests on `Classical.choice`, the defining module correctly reports `[Classical.choice]` and an
+importing module reports no axioms at all. Tenet reports `Classical.choice` from either.
+
+This is not a difference of opinion. Lean disagrees with itself, and the wrong answer is the one that says a
+declaration rests on nothing.
+
+`Lean.CollectAxioms.collect` caches one axiom set per constant so that an imported declaration is walked once.
+An inductive and its constructors refer to each other, so a sentinel goes into the cache before the recursion
+starts. Nothing distinguishes that sentinel from a finished result. When a constructor's walk reaches its own
+inductive while the inductive's entry is still being computed, the constructor reads the sentinel, and the
+inductive is then cached with only what had been collected by that point. Which of the two is walked first
+depends on the order the module's constants come out in, which is why the bug fires for some modules and not
+others, and why the reproduction in `tests/fixtures/axioms/` is kept exactly as it was reported.
+
+Tenet keeps one accumulator and one `seen` set for the whole walk and caches nothing per constant. There is no
+per-constant result to be poisoned, so there is no sentinel to mistake for an answer, and the module a
+declaration is read from cannot change what it rests on. This costs a repeat of the walk for each query, which
+is the right trade for a command that is asked about one declaration at a time and whose whole job is to be
+right about holes.
+
+**Tenet has no standing to be smug about this.** The same walk had two under-reports of its own until the
+fixture that compares it against Lean case by case was written: an axiom reachable only through a
+constructor's field type was invisible, so a structure whose field rested on `sorry` came back clean, and
+reaching an axiom ended the walk, so an axiom stated in terms of another hid the second. Both were found by
+reading #15226 and asking whether Tenet had the same class of bug. It had a worse one, in every module rather
+than only across an import.
+
+**If Lean fixes it**, `tests/fixtures/axioms/compare.sh` fails and says so. The right response is to delete
+this entry and fold the reproduction into the main comparison, not to keep a divergence that no longer exists.
