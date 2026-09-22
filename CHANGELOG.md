@@ -3,6 +3,25 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.11.1] - 2026-09-21
+
+### Fixed
+- **Checking a project directory could reject sound declarations.** Every module is mapped into one
+  environment and each constant was resolved by name alone, first module wins. Two modules may declare the
+  same name when neither imports the other, which is ordinary in any project with more than one executable:
+  [verso](https://github.com/leanprover/verso) has eight top-level `Config` structures. The second
+  declaration was lost, references to it resolved to the first, and the kernel then compared a term against a
+  type from an unrelated program and reported a type mismatch that was not there. Verso produced 33 such
+  rejections against declarations Lean had just compiled.
+
+  A name now means what the module under check can see: its own declaration first, otherwise whichever
+  declaring module is in its import closure, and nothing if the module imports none of them. Only names
+  declared by more than one module are tracked, so an unambiguous project is unaffected, measured identical on
+  Lean's core library at 64,675 declarations in 654 modules before and after.
+
+  Checking an export is unaffected: an export is one flat environment with no two declarations sharing a name,
+  and it goes through a different reader entirely. Arena results do not change.
+
 ## [0.11.0] - 2026-09-20
 
 Tenet joined the [Lean Kernel Arena](https://arena.lean-lang.org), which benchmarks proof checkers for Lean.
