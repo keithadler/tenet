@@ -49,6 +49,8 @@ internal static class Program
           --slow <seconds>            report declarations slower than this (default 1)
           --stack-mb <n>              stack size for each checking thread, in MB (default 512)
           --low-memory                use the workstation garbage collector (about a third of the memory, slower)
+          --fit-heaps                 give the collector one heap per worker instead of one per core
+                                        (about a third less memory on a large input, a few percent slower)
           --report <file.json>        also write the outcome (counts, failures, slow declarations) as JSON
         options for .olean targets:
           --lib <dir>                 add a library root (Root/A/B.olean for module A.B); repeatable. Lake build trees
@@ -85,6 +87,10 @@ internal static class Program
             // The GC flavor is fixed at startup: relaunch ourselves with the workstation collector.
             return Relaunch(args);
         }
+        if (HeapCountToAdopt(args) is int heaps)
+        {
+            return RelaunchWithHeaps(args, heaps);
+        }
         try
         {
             return args[0] switch
@@ -117,6 +123,110 @@ internal static class Program
             Console.Error.WriteLine("error: " + e.Message);
             return 2;
         }
+    }
+
+    /// <summary>
+    /// How many GC heaps this run should use, or null to leave the collector alone.
+    ///
+    /// The server collector sizes itself from the machine, not from the work: on an eight-core runner it builds
+    /// eight heaps and keeps gen0 headroom in each, while only the declared workers ever allocate. On a large
+    /// export that headroom is most of the peak. Measured on a 164k-declaration export, pinning the heap count to
+    /// the worker count took peak resident from 3.03 GB to 2.09 GB for the same instructions, 989.3 G against
+    /// 988.3 G over three runs each.
+    ///
+    /// It was first tried on the arena's run line, applied to everything, and their CI showed why that is wrong.
+    /// A single-declaration test runs one worker whatever <c>--jobs</c> says, and its peak is live data rather than
+    /// headroom. Fewer heaps give nothing back there and make each collection cover more of a large live set:
+    /// magma-string-n4 +16.8% instructions, magma-list-pair-n21 +14.5%, app-lam +11.0%.
+    ///
+    /// So the decision belongs here, where the input can be looked at, and the two cases are three orders of
+    /// magnitude apart: the arena's single-declaration tests run 0.6 MB to 10 MB, its corpora 324 MB to 5.6 GB.
+    /// The threshold sits in the empty space between them, where being wrong by a factor of thirty still lands on
+    /// the right side. An input too small to keep the workers busy keeps today's behavior.
+    ///
+    /// It is off unless <c>--fit-heaps</c> asks for it, and that is a deliberate default. The arena, which is the
+    /// closest thing this checker has to a scoreboard, ranks on wrongly accepted proofs, then wrongly rejected
+    /// ones, then the time to check Mathlib. Peak memory is displayed there and ranked nowhere. Measured here on
+    /// all of Init at four workers of twelve cores, three interleaved runs each, this takes peak resident from
+    /// 1.95 GB to 1.32 GB and costs 3.3% more CPU, 43.17s against 41.79s. Spending the one number that is ranked
+    /// to buy a number that is not would be a straight loss, so the default does not.
+    ///
+    /// What it is for is the person checking Mathlib on a laptop, where 13 GB is the difference between a run and
+    /// a swap storm, and where three percent is nothing. <c>--low-memory</c> remains the heavier hammer: the
+    /// workstation collector, about a third of the memory and a good deal slower.
+    ///
+    /// Only <c>check</c> is affected, and only when the collector would otherwise build more heaps than this run
+    /// has workers.
+    /// </summary>
+    private static int? HeapCountToAdopt(string[] args)
+    {
+        if (args.Length < 2 || args[0] != "check"
+            || Array.IndexOf(args, "--fit-heaps") < 0
+            || System.Environment.GetEnvironmentVariable("TENET_HEAPS") is not null
+            || System.Environment.GetEnvironmentVariable("DOTNET_GCHeapCount") is not null
+            || Array.IndexOf(args, "--low-memory") >= 0
+            || System.Environment.ProcessPath is null)
+        {
+            return null;
+        }
+
+        int jobs = System.Environment.ProcessorCount;
+        for (int i = 1; i + 1 < args.Length; i++)
+        {
+            if (args[i] == "--jobs" && int.TryParse(args[i + 1], out int j) && j >= 1)
+            {
+                jobs = j;
+            }
+        }
+        // Nothing to win when the collector is already no wider than the work.
+        if (jobs >= System.Environment.ProcessorCount)
+        {
+            return null;
+        }
+
+        // --all checks the whole import closure, which is nothing like the size of the module named. Init.olean is
+        // under 6 KB and its closure is the entire prelude.
+        return Array.IndexOf(args, "--all") >= 0 || InputIsLargeEnough(args[1]) ? jobs : null;
+    }
+
+    /// <summary>
+    /// Is the target big enough that collector headroom, rather than live data, is what the peak is made of?
+    /// A directory is a built project and always counts. Anything the size cannot be read for does not, because
+    /// guessing wrong costs instructions on exactly the tests that are measured most closely.
+    /// </summary>
+    private static bool InputIsLargeEnough(string target)
+    {
+        const long Threshold = 64L * 1024 * 1024;
+        try
+        {
+            if (Directory.Exists(target))
+            {
+                return true;
+            }
+            var f = new FileInfo(target);
+            return f.Exists && f.Length >= Threshold;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static int RelaunchWithHeaps(string[] args, int heaps)
+    {
+        // HeapCountToAdopt has already refused a null path, so this is the one it found.
+        var psi = new ProcessStartInfo(System.Environment.ProcessPath!) { UseShellExecute = false };
+        foreach (string a in args)
+        {
+            psi.ArgumentList.Add(a);
+        }
+        psi.Environment["TENET_HEAPS"] = heaps.ToString(CultureInfo.InvariantCulture);
+        // Hex, not decimal. The runtime reads the DOTNET_ GC knobs as hexadecimal, so twelve workers written as
+        // "12" would ask for eighteen heaps. It goes unnoticed up to nine, which is where it was first written.
+        psi.Environment["DOTNET_GCHeapCount"] = heaps.ToString("x", CultureInfo.InvariantCulture);
+        using Process p = Process.Start(psi) ?? throw new InvalidOperationException("failed to relaunch");
+        p.WaitForExit();
+        return p.ExitCode;
     }
 
     private static int Relaunch(string[] args)
@@ -529,6 +639,7 @@ internal static class Program
               --slow SECONDS        list declarations slower than this (default 1)
               --verbose             name each declaration before checking it (.olean only)
               --low-memory          workstation collector: about a third the memory, slower
+              --fit-heaps           one GC heap per worker, not per core: less memory, slightly slower
               --fail-fast           stop at the first failure
               --quiet               only the final line
             """,
@@ -1522,6 +1633,7 @@ internal static class Program
                     i++;
                     break;
                 case "--low-memory":
+                case "--fit-heaps":
                     break;
                 case "--rules":
                     break;   // handled where the counters are switched on, below
@@ -1707,6 +1819,7 @@ internal static class Program
                     report = args[i];
                     break;
                 case "--low-memory": break;
+                case "--fit-heaps": break;
                 case "--timing": break;   // read directly where the breakdown is printed
                 case "--sarif":
                     if (++i >= args.Length) return Fail("--sarif needs a file name");
