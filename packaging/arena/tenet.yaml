@@ -35,15 +35,8 @@ run: |
   # which is an error and is left to surface as one rather than being hidden as a decline.
   # `|| c=$?` rather than a bare call: the arena runs this through /bin/sh without -e, so a bare call
   # would be fine, but this is correct under either and the difference is invisible until it is not.
-  # DOTNET_GCHeapCount=4 for the same reason as --jobs 4, and it has to be said separately because the
-  # .NET GC sizes itself from the machine's core count, not from what this checker was budgeted. Left
-  # unset on a twelve-core box the runtime builds twelve heaps and each keeps its own gen0 headroom,
-  # which is memory this checker declared it would not take. Measured on the `Lean` export, 164,133
-  # declarations: peak resident 3.5 GB unset against 2.1 GB at four, for the same instructions
-  # (128.5s CPU against 125.9s). Wall time is about 9% worse because collection stops overlapping as
-  # well, and that is the right trade on a board that scores instructions and memory.
   c=0
-  DOTNET_GCHeapCount=4 ./arena-bin/tenet check "$IN" --quiet --jobs 4 || c=$?
+  ./arena-bin/tenet check "$IN" --quiet --jobs 4 || c=$?
   case $c in
     0|1) exit $c ;;
     4)   exit 2 ;;

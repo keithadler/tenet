@@ -33,43 +33,50 @@ wall time is 30.1s at one worker, 13.3s at four and 11.0s at twelve, while summe
 workers rises from 26s to 65s. Past four the extra CPU buys almost nothing, so taking it would be both
 unfair and pointless. `con-leche` declares 4 and `eink0rn` 8, so this is the established convention.
 
-## Declaring heaps, which is the same matter again
+## Heap count, measured and then withdrawn
 
-`threads: 4` tells the harness how many CPU slots to reserve. It does not tell the .NET garbage
-collector anything, and the collector is the part that decides how much memory the process takes.
-Server GC sizes itself from the machine's core count: on a twelve-core box it builds twelve heaps,
-each holding its own gen0 headroom, whether or not four threads are all that will ever run. So a
-checker can declare four threads honestly and still take a big machine's worth of memory, which is
-what Tenet was doing.
+`threads: 4` tells the harness how many CPU slots to reserve and tells the .NET collector nothing.
+Server GC sizes itself from the machine's core count, so on the arena's eight-core runner it builds
+eight heaps, each holding its own gen0 headroom, while only four workers ever run. Setting
+`DOTNET_GCHeapCount=4` on the run line fixes that, and on the corpora it looks free. Measured on the
+`Lean` export, 164,133 declarations, `--jobs 4` throughout, three runs each:
 
-Measured on the `Lean` export, 164,133 declarations and 11.98M expressions, `--jobs 4` throughout:
+| | instructions | peak resident |
+| --- | --- | --- |
+| eight heaps | 989.3 G | 3.03 GB |
+| four heaps | 988.3 G | **2.09 GB** |
 
-| | wall | CPU | peak resident |
-| --- | --- | --- | --- |
-| unset (twelve heaps) | 26.3s | 128.5s | **3.67 GB** |
-| `DOTNET_GCHeapCount=4` | 29.3s | 125.9s | **2.06 GB** |
-| `DOTNET_GCHeapCount=2` | 35.8s | 130.7s | 1.71 GB |
-| `DOTNET_GCConserveMemory=9` as well | 31.4s | 130.8s | 1.74 GB |
-| workstation GC | 47.1s | 133.1s | 1.33 GB |
+31% of the memory for no instructions. It was submitted, and then withdrawn, because the corpora are
+not the whole board.
 
-Four heaps cuts peak resident by **44%** and costs nothing in instructions, which is the metric the
-board scores: CPU is 125.9s against 128.5s, inside the run-to-run spread. Wall time is about 9%
-worse, because collection no longer overlaps checking across as many threads. On a board that scores
-instructions and memory rather than wall clock, that is the right way round.
+**The `perf/` tests are single-declaration.** `--jobs 4` runs one worker on them, so their peak
+resident is live data rather than collector headroom and there is nothing for a smaller heap count to
+give back. Cutting it only makes each collection cover more of a large live set. Comparing the arena's
+own CI run of the change against the last published round, on their hardware:
 
-Two and `GCConserveMemory=9` were tried and are not worth it. Both buy about another 0.3 GB and give
-back the instruction saving, and two costs 22% of wall time on top.
+| | instructions | peak resident |
+| --- | --- | --- |
+| `perf/magma-string-n4` | +16.8% | +9.4% |
+| `perf/magma-list-pair-n21` | +14.5% | -18.8% |
+| `perf/magma-string-pair-n9` | +12.8% | -2.3% |
+| `perf/app-lam` | +11.0% | 0.0% |
+| `perf/magma-list-deep-n36` | +10.6% | +2.0% |
+| `perf/grind-ring-5` | -7.9% | -2.3% |
 
-The workstation row is there to say where the floor is. 1.33 GB is close to the live data itself:
-the environment holds every declaration including proof terms, because later ones may refer to them.
-Anything under that number needs a change to what is retained, not to how it is collected. Dropping
-a theorem's value once it has been checked would do it, since nothing else can unfold a theorem in
-practice, but Lean's kernel does treat theorems as unfoldable and the whole claim of this project is
-that it decides what Lean decides. That is a faithfulness question, not a tuning one, and it is not
-being answered by guessing.
+Twenty-five scored tests paying instructions so seven corpora can save memory, where the arena's PR CI
+runs the twenty-five and not the seven, is not a trade to ask a maintainer to take on faith.
 
-The setting is on the `run` line beside `--jobs 4` rather than baked into the build, so the two
-numbers that have to agree are on adjacent lines and a reviewer can see that they do.
+Four other shapes were measured and are worse. A hard heap cap, the equivalent of eink0rn's `-M13g`,
+reaches 1.65 GB on the export and then **aborts with exit 134** once the live set passes it, and a cap
+safe for Mathlib does nothing for con-leche. `GCConserveMemory=9` buys 0.3 GB and returns the
+instruction saving. Nursery sizing is inside the noise. DATAS is a wash on the corpora and does not
+recover the `perf/` cost. One worker reaches 1.28 GB for 12% more instructions and four times the wall
+clock.
+
+**Where this belongs is inside the checker.** The collector has to be sized before the input is read,
+which is why the run line was asked to guess, but the checker can see the input's size at startup and
+relaunch itself, which is machinery `--low-memory` already has. That is the version worth submitting,
+with both sides measured.
 
 ## What has been verified, and what has not
 

@@ -82,7 +82,7 @@ jobs:
         run: |
           run_line=$(sed -n '/^run: |/,$p' packaging/arena/tenet.yaml | grep -v '^ *#')
           fail=0
-          for needle in '--jobs 4' 'DOTNET_GCHeapCount=4'; do
+          for needle in '--jobs 4'; do
             case $run_line in
               *"$needle"*) ;;
               *) echo "::error::packaging/arena/tenet.yaml no longer passes $needle, but this job still does"; fail=1 ;;
@@ -100,12 +100,11 @@ jobs:
           # with none at all proves the binary needs nothing installed.
           # `|| c=$?` rather than a bare call: this step runs under `bash -e`, where a non-zero return ends
           # the script before the next line can read $?.
-          # `--jobs 4` and `DOTNET_GCHeapCount=4` are both from the run line and both have to be here, or
-          # this job scores a configuration the arena will never run. The step below fails if either one
-          # stops appearing in tenet.yaml.
+          # `--jobs 4` is from the run line and has to be here, or this job scores a configuration the
+          # arena will never run. The step below fails if it stops appearing in tenet.yaml.
           check() {
             local c=0
-            env -i DOTNET_GCHeapCount=4 "$PWD/arena-bin/tenet" check "$1" --quiet --jobs 4 >/dev/null 2>&1 || c=$?
+            env -i "$PWD/arena-bin/tenet" check "$1" --quiet --jobs 4 >/dev/null 2>&1 || c=$?
             case $c in
               0|1) return $c ;;
               4)   return 2 ;;

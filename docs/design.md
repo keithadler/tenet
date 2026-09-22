@@ -259,9 +259,19 @@ expressions, `--jobs 4` throughout, on a twelve-core machine:
 
 **Server GC sizes itself from the machine, not from `--jobs`.** Twelve cores means twelve heaps, each
 carrying its own gen0 headroom, even though only four workers ever run. Telling it four cuts peak
-resident by 44% and costs nothing in instructions: 125.9s of CPU against 128.5s, well inside the
-run-to-run spread this workload has. Wall time is 9% worse because collection stops overlapping
-checking across as many threads, which is the right trade on a board that scores instructions.
+resident by 44% here (31% against the eight heaps the arena's own runner would build) and costs
+nothing in instructions: 988.3 G against 989.3 G over three runs each. Wall time is 9% worse because
+collection stops overlapping checking across as many threads.
+
+**On a workload with one declaration it is a loss, and that is most of the arena's scored tests.**
+The 25 `perf/` tests each check a single declaration, so `--jobs 4` runs one worker and the peak is
+live data rather than headroom. There is nothing for a smaller heap count to give back, and each
+collection covers more of a large live set. Measured on the arena's own hardware, `magma-string-n4`
+is +16.8% instructions, `magma-list-pair-n21` +14.5%, `app-lam` +11.0%, `magma-list-deep-n36` +10.6%;
+only `grind-ring-5` improves, at -7.9%. The setting was submitted to the arena and withdrawn for this
+reason. Sizing the collector is a decision that has to be made before the input is read, so it belongs
+inside the checker, which can see the input's size at startup and relaunch, rather than on a run line
+that has to guess.
 
 This is not the heap-count claim that was thrown out earlier in this file. That one was about
 *speed*, came from three samples, and dissolved. This is about *memory*, where a 44% difference is
