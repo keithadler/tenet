@@ -238,6 +238,50 @@ runner, and this project is measured on memory as well as time. But nobody shoul
 faster, and the bottleneck it was chased for is untouched: the work is in the 387M node visits themselves, not
 in the garbage they leave behind.
 
+## Where the memory goes, measured
+
+The arena scores memory as well as instructions, and memory is where Tenet is furthest from the
+reference: on `con-leche` it was 3.7 GB against the official kernel's 872 MB, a factor of 4.4, while
+instructions were only 31% over. Time had been measured to death (above) and memory had not been
+measured at all, so that is where the headroom was.
+
+Most of it is not live data. Measured on the `Lean` export, 164,133 declarations and 11.98M
+expressions, `--jobs 4` throughout, on a twelve-core machine:
+
+| | wall | CPU | peak resident |
+| --- | --- | --- | --- |
+| baseline (server GC, heaps unset) | 26.3s | 128.5s | **3.67 GB** |
+| `DOTNET_GCHeapCount=4` | 29.3s | 125.9s | **2.06 GB** |
+| `DOTNET_GCHeapCount=2` | 35.8s | 130.7s | 1.71 GB |
+| `DOTNET_GCHeapCount=4` + `GCConserveMemory=9` | 31.4s | 130.8s | 1.74 GB |
+| `DOTNET_PROCESSOR_COUNT=4` | 30.2s | 127.8s | 2.18 GB |
+| workstation GC | 47.1s | 133.1s | 1.33 GB |
+
+**Server GC sizes itself from the machine, not from `--jobs`.** Twelve cores means twelve heaps, each
+carrying its own gen0 headroom, even though only four workers ever run. Telling it four cuts peak
+resident by 44% and costs nothing in instructions: 125.9s of CPU against 128.5s, well inside the
+run-to-run spread this workload has. Wall time is 9% worse because collection stops overlapping
+checking across as many threads, which is the right trade on a board that scores instructions.
+
+This is not the heap-count claim that was thrown out earlier in this file. That one was about
+*speed*, came from three samples, and dissolved. This is about *memory*, where a 44% difference is
+far outside the noise and reproduces on every run.
+
+**The floor is the environment, and it is about 1.3 GB.** The workstation row measures roughly the
+live set, since a single-heap non-concurrent collector keeps little headroom. Streaming does not
+help: the environment holds every declaration, proof terms included, because a later declaration may
+refer to any earlier one. The `ExportFile` tables the reader fills are a red herring, at 11.98M
+expression slots and 970k name slots they are under 110 MB of references to objects the environment
+already holds.
+
+**What would go below the floor, and why it has not been done.** A theorem's value is needed to check
+that theorem and, in practice, never again: a theorem's type is a `Prop`, and proof irrelevance
+decides proofs equal without looking at them. Dropping values after checking would take a large bite
+out of 1.3 GB on any corpus that is mostly proofs, which is all of them. But Lean's kernel does treat
+theorems as delta-unfoldable, and the one claim this project rests on is that it decides what Lean
+decides. Trading that for memory is a question about what Tenet is, in the same family as the NbE
+decision above, and it is not being settled by assuming proof irrelevance always gets there first.
+
 ## Why Mathlib costs more than the other corpora
 
 The Lean Kernel Arena scores instructions retired, not wall time. On its corpora Tenet sits within 8% of

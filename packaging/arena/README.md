@@ -33,13 +33,52 @@ wall time is 30.1s at one worker, 13.3s at four and 11.0s at twelve, while summe
 workers rises from 26s to 65s. Past four the extra CPU buys almost nothing, so taking it would be both
 unfair and pointless. `con-leche` declares 4 and `eink0rn` 8, so this is the established convention.
 
+## Declaring heaps, which is the same matter again
+
+`threads: 4` tells the harness how many CPU slots to reserve. It does not tell the .NET garbage
+collector anything, and the collector is the part that decides how much memory the process takes.
+Server GC sizes itself from the machine's core count: on a twelve-core box it builds twelve heaps,
+each holding its own gen0 headroom, whether or not four threads are all that will ever run. So a
+checker can declare four threads honestly and still take a big machine's worth of memory, which is
+what Tenet was doing.
+
+Measured on the `Lean` export, 164,133 declarations and 11.98M expressions, `--jobs 4` throughout:
+
+| | wall | CPU | peak resident |
+| --- | --- | --- | --- |
+| unset (twelve heaps) | 26.3s | 128.5s | **3.67 GB** |
+| `DOTNET_GCHeapCount=4` | 29.3s | 125.9s | **2.06 GB** |
+| `DOTNET_GCHeapCount=2` | 35.8s | 130.7s | 1.71 GB |
+| `DOTNET_GCConserveMemory=9` as well | 31.4s | 130.8s | 1.74 GB |
+| workstation GC | 47.1s | 133.1s | 1.33 GB |
+
+Four heaps cuts peak resident by **44%** and costs nothing in instructions, which is the metric the
+board scores: CPU is 125.9s against 128.5s, inside the run-to-run spread. Wall time is about 9%
+worse, because collection no longer overlaps checking across as many threads. On a board that scores
+instructions and memory rather than wall clock, that is the right way round.
+
+Two and `GCConserveMemory=9` were tried and are not worth it. Both buy about another 0.3 GB and give
+back the instruction saving, and two costs 22% of wall time on top.
+
+The workstation row is there to say where the floor is. 1.33 GB is close to the live data itself:
+the environment holds every declaration including proof terms, because later ones may refer to them.
+Anything under that number needs a change to what is retained, not to how it is collected. Dropping
+a theorem's value once it has been checked would do it, since nothing else can unfold a theorem in
+practice, but Lean's kernel does treat theorems as unfoldable and the whole claim of this project is
+that it decides what Lean decides. That is a faithfulness question, not a tuning one, and it is not
+being answered by guessing.
+
+The setting is on the `run` line beside `--jobs 4` rather than baked into the build, so the two
+numbers that have to agree are on adjacent lines and a reviewer can see that they do.
+
 ## What has been verified, and what has not
 
 Verified:
 
 | | |
 | --- | --- |
-| published suite, `--jobs 4` | **70 / 70** reject, **119 / 119** accept |
+| published suite, `--jobs 4` | **71 / 71** reject, **122 / 122** accept (2026-09-21; it was 70 and 119) |
+| the same, with `DOTNET_GCHeapCount=4` under `env -i` | unchanged, **71 / 71** and **122 / 122** |
 | against `schemas/checker.json` | validates |
 | build in an environment with no .NET | CI, every push |
 | binary needs nothing installed | run under `env -i` |
