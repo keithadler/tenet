@@ -9,6 +9,13 @@
 set -o pipefail
 
 tenet=${1:?usage: compare.sh <path to tenet binary>}
+# A tenet that cannot run prints nothing, and nothing reads as "no axioms": every case expecting an
+# empty set would then pass. That happened once, against a binary that had been deleted, so refuse
+# to start unless the binary answers.
+if ! "$tenet" version > /dev/null 2>&1; then
+  echo "cannot run tenet at '$tenet'; refusing to compare, since a silent tenet looks like a clean one" >&2
+  exit 2
+fi
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -61,8 +68,8 @@ echo "== the importing module, where Lean and Tenet are known to disagree =="
 # leanprover/lean4#15226, using the issue's own files: the bug turns on the order a module's constants
 # are walked in, so the larger fixture above does not trigger it and this minimal one does.
 #
-# Lean under-reports here while reporting correctly from the defining module. Tenet gives the same
-# answer from either. The disagreement is asserted rather than tolerated, so that a fix upstream shows
+# Lean reports nothing here and Classical.choice from the defining module. Tenet gives the defining
+# module's answer from either. The disagreement is asserted rather than tolerated, so that a fix upstream shows
 # up as a failure here instead of going unnoticed.
 lean Minimal.lean -o Minimal.olean > minimal-out.txt 2>&1
 LEAN_PATH="$work" lean MinimalImporter.lean -o MinimalImporter.olean > importer-out.txt 2>&1
@@ -89,11 +96,11 @@ if [ "$importing_lean" = "$defining_lean" ]; then
   echo "NOTE lean now agrees with itself across modules: #15226 looks fixed. Fold Minimal.lean into"
   echo "     the loop above and delete this section."
 elif [ -n "$importing_lean" ]; then
-  printf 'FAIL lean reports [%s] from the importing module, which is neither the old wrong answer\n' "$importing_lean"
+  printf 'FAIL lean reports [%s] from the importing module, which is neither its old importing-module answer\n' "$importing_lean"
   echo "     nor the defining module's. Read #15226 again before touching anything here."
   fail=1
 else
-  echo "ok   lean under-reports from the importing module, as #15226 describes (tenet is checked above)"
+  echo "ok   lean still reports nothing from the importing module, as #15226 describes (tenet is checked above)"
 fi
 
 exit $fail

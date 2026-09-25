@@ -19,8 +19,9 @@ transcriptions of a run of this; the script is what keeps the transcription hone
 
 `Minimal.lean` and `MinimalImporter.lean` are the reproduction from
 [leanprover/lean4#15226](https://github.com/leanprover/lean4/issues/15226), unchanged. Lean answers
-`#print axioms S9` correctly from the module that defines `S9` and incorrectly from a module that
-imports it: `collectAxioms` caches one axiom set per constant, and the sentinel it inserts to break
+`#print axioms S9` one way from the module that defines `S9` and another way from a module that
+imports it. Lean's maintainers call it an inconsistency rather than a wrong answer, since whether an
+inductive rests on its constructors' axioms is a convention; the cause is that `collectAxioms` caches one axiom set per constant, and the sentinel it inserts to break
 the inductive/constructor cycle cannot be told apart from a finished result, so the inductive is
 cached with whatever had been collected when the constructor's walk reached it.
 
@@ -31,7 +32,7 @@ the script says so and asks for the section to be folded into the main loop.
 
 The reproduction is kept in its own module rather than folded into `Axioms.lean` because the bug
 turns on the order a module's constants are walked in during export. `Axioms.lean` has the same
-shape and Lean answers it correctly from an importing module. Keeping the issue's own file unchanged
+shape and Lean gives the same answer from both modules. Keeping the issue's own file unchanged
 is what makes it reproduce.
 
 ## Running it
