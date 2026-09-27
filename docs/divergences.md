@@ -15,7 +15,7 @@ about the type theory, and the interesting split is elsewhere.
 | --- | --- | --- |
 | 1 | An accelerated primitive is checked before it is trusted | **Threat model** |
 | 2 | A literal's type is checked against the environment | **Threat model** |
-| 3 | The `_nested` namespace is reserved | **Threat model** |
+| 3 | The `_nested` namespace is reserved | **Threat model, stricter than Lean** |
 | 4 | Failure caching | **Optimization, observationally neutral** |
 | 5 | Bounds the reference does not have | **Resource** |
 | 6 | Complete level equality, available and off | **Algorithm against theory** |
@@ -24,8 +24,10 @@ about the type theory, and the interesting split is elsewhere.
 **Threat model (1, 2, 3).** Not disagreements about what is true. Lean ships its own prelude and does not
 support replacing it, so deciding from the name that `Nat.add` is addition, or that a numeral is a `Nat`, is
 sound *for Lean*. Tenet reads a file somebody else produced, which is its entire purpose, so the same shortcuts
-are holes. In each case Tenet ends up **closer to the type theory than Lean is**, by doing work Lean can
-correctly skip. None of these can arise on an honest export.
+are holes. In 1 and 2 Tenet ends up **closer to the type theory than Lean is**, by doing work Lean can
+correctly skip, and neither can arise on an honest export. 3 is a different kind of entry. The type theory
+has nothing to say about it, Lean has no hole there, and Tenet is simply **stricter than Lean**: it refuses a
+name Lean accepts. That is a deliberate policy choice, not a matter of agreeing with Lean more closely.
 
 **Optimization (4).** Caching failed definitional-equality comparisons can only make a checker stricter, since
 definitional equality is not transitive. A declaration rejected in that mode is re-checked with the cache off
@@ -100,18 +102,32 @@ serious thing this project has found in itself.
 
 ## The `_nested` namespace is reserved
 
-**Where:** `Environment.AddCore(Declaration, ...)`.
+**Where:** `Environment.AddCore(Declaration, ...)`. The check Lean itself makes is `Inductive.CheckNoNestedAux`.
 
-**What Lean does:** rejects a declaration using the reserved `_nested` prefix, reserving the whole namespace
-against unrelated user declarations. lean4lean checks only constructor types and notes the difference.
+**What Lean does:** since [leanprover/lean4#14616](https://github.com/leanprover/lean4/pull/14616) (merged
+2026-07-31), `environment::add_inductive` calls `check_no_nested_aux`. That function rejects an inductive block
+if its type, or the type of one of its constructors, mentions a constant or the structure of a `proj` whose name
+has the `_nested` prefix. Nothing else is checked. The names a declaration introduces are not looked at, and
+axioms, definitions, theorems and opaques are not checked at all, so the namespace is **not** reserved:
+`axiom _nested.squatter : Prop` is accepted. `tests/fixtures/invalid/reserved-namespace.ndjson` comes back
+`SUMMARY ok=1 failed=0` through `tools/leancheck` on Lean 4.34.1 (checked 2026-09-27). A squatter also does not
+disturb the elimination: `elim_nested_inductive_fn::mk_unique_name` skips any name already in the environment
+and takes the next free index. lean4lean checks only constructor types and notes the difference.
 
-**What Tenet does:** the same as Lean, rejecting any declaration whose own name sits in that namespace, in
-addition to the existing check on the types.
+**What Tenet does:** makes Lean's check, in `Inductive.CheckNoNestedAux`. It also rejects any declaration of any
+kind whose own name is `_nested` or sits under it, counting every name an inductive block introduces. This is a
+**strictness divergence**, and a deliberate one: an export declaring `_nested.squatter` is accepted by Lean and
+rejected by Tenet.
 
-**Why:** eliminating a nested inductive derives auxiliary types under that prefix. A file that occupies one of
-those names first is betting on how the elimination resolves the name it finds, and that is a question worth not
-having. The kernel's own auxiliaries are installed through `AddCore(ConstantInfo)`, which does not go through this
-check, so an honest file loses nothing.
+**Why:** eliminating a nested inductive derives auxiliary types under that prefix. Lean is not wrong to allow a
+squatter, since `mk_unique_name` walks past it, and Tenet's `MkUniqueName` does the same. The case for going
+further is that, without the reservation, a file can occupy a name the kernel is about to derive. Whether that
+matters then depends on the elimination resolving names the way Lean's does, and it has to keep doing so from
+one release to the next. A name no ordinary declaration needs is cheaper to refuse than that is to keep
+re-establishing. The kernel's own auxiliaries are installed through `AddCore(ConstantInfo)`, which does not go
+through this check, so the reservation never trips on Tenet's own work. The cost is the divergence itself: a
+file Lean accepts is rejected if it names a declaration into `_nested`. As the top of this file says, a
+difference from Lean that is not listed here is a bug. This one is listed on purpose.
 
 ## Failure caching
 
