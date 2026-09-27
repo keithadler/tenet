@@ -192,6 +192,12 @@ parser and replays it through `Lean.Kernel.Environment.addDeclCore`, printing `O
 the export exactly as Tenet does, and installing a failed declaration unchecked so later
 ones can still be judged, again as Tenet does.
 
+It pins Lean 4.34.1. It pinned 4.34.0-rc2 until every executable from that toolchain began
+aborting with SIGTRAP at thread exit on macOS 27 (libmalloc's "pointer being freed was not
+allocated", from `_pthread_tsd_cleanup`), which killed leancheck before it flushed a verdict.
+`src/kernel` has the same tree hash from 4.34.0-rc2 through 4.34.1, so the move costs no kernel
+coverage, and both versions give identical verdicts on the differential runs.
+
 With `LEANCHECK_TIMES=1` in the environment, leancheck also prints `TIME name microseconds`
 to stderr for every declaration, the wall-clock time Lean's kernel spent in `addDeclCore`.
 This is the ground truth for Tenet's performance work: the same export checked by both,
@@ -656,6 +662,8 @@ heights), runs both checkers on each, and reports two kinds of disagreement:
 ```bash
 cd tools/leancheck && lake build && cd ../..          # needs elan; `lean` must be on PATH
 dotnet build -c Release
+# leancheck runs `lean` to find the sysroot. Without an elan default toolchain, name one:
+export ELAN_TOOLCHAIN="$(cat tools/leancheck/lean-toolchain)"
 tools/Tenet.DiffTest/bin/Release/net10.0/Tenet.DiffTest \
   --export exports/Init.Prelude.ndjson \
   --tenet src/Tenet.Cli/bin/Release/net10.0/tenet \
