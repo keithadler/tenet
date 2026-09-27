@@ -71,7 +71,7 @@
       "why": "Declares _nested.squatter, occupying a name the kernel derives auxiliary types into when eliminating a nested inductive.",
       "rejects": "_nested.squatter",
       "defenseOff": null,
-      "found": "A divergence from lean4lean, which checks only constructor types. Lean reserves the whole namespace and so does Tenet.",
+      "found": "A deliberate strictness divergence from Lean, which accepts this file (tools/leancheck on Lean 4.34.1: ok=1 failed=0). Lean's check_no_nested_aux (lean4#14616) rejects only an inductive whose type or constructor types mention a _nested constant, and lean4lean checks only constructor types. Tenet additionally reserves the whole namespace. See docs/divergences.md.",
       "outcome": "rejected"
     },
     {
