@@ -434,8 +434,8 @@ that statement is right remains a question for people who read it.
 ## Exports written to attack the checker
 
 The mutation harness takes a valid export and breaks it. That finds places where two implementations of one
-specification drift apart, which is what it is for, and it found both of the real Lean kernel bugs this project
-has caught. It cannot find a file written on purpose to exploit what the checker assumes, because a damaged valid
+specification drift apart, which is what it is for, and it found both of the real kernel bugs this project has
+caught, each in Tenet rather than Lean. It cannot find a file written on purpose to exploit what the checker assumes, because a damaged valid
 file is not one.
 
 Both soundness bugs found in Tenet itself were files of the second kind, and neither was reachable by mutation:
@@ -646,7 +646,7 @@ recursor arity.
 
 This method has a ceiling worth stating. Mutating an export is good at finding places where
 two implementations of the same specification drift apart, which is how both real kernel bugs
-here were caught. It is unlikely to find a deep soundness bug in Lean, because such a bug needs
+found so far, each in Tenet, were caught. It is unlikely to find a deep soundness bug in Lean, because such a bug needs
 a term someone constructed deliberately against the type theory, not one produced by damaging
 a valid term at random. Fuzzing finds implementation disagreements; it does not find design
 flaws, and nobody should read a clean campaign as evidence that none exist.
