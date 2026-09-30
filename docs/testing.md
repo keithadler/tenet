@@ -251,6 +251,13 @@ The nightly rotates through seven slices by day of year rather than re-proving o
 the name list as an artifact, so the union grows on its own instead of when somebody remembers to add a slice.
 A module Mathlib master has renamed costs one night: the job falls back to the first slice and says so.
 
+Since 2026-09-30 the job runs on a pinned Mathlib commit rather than master. Mathlib's 2026-09-29 dependency
+update brought in an import-graph that loads Lake, `Mathlib.Init` imports it, and Lake declares its type
+families with real axioms (`Lake.DataType.module` and the rest). con-leche's proof covers only Lean's three
+standard axioms, so it stops at the first of these rather than accepting a file its proof says nothing about.
+Tenet accepted that export in full. The pin is the commit before the update, and comes off when import-graph
+keeps Lake out of what `ImportGraph.Tools` loads.
+
 ### Checking the proof itself
 
 Running Tenet and con-leche on the same export and having both accept transfers con-leche's proof to what
