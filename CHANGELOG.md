@@ -3,7 +3,7 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.11.2] - 2026-10-12
 
 ### Fixed
 - **An export with no metadata record was accepted.** An empty file, or one that is not lean4export output, printed
