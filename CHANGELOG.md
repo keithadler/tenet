@@ -3,6 +3,18 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **An export with no metadata record was accepted.** An empty file, or one that is not lean4export output, printed
+  `OK: 0 checked` and exited 0, so an exporter that died before writing anything read as a pass. It is now
+  `INCOMPLETE` and exits 3, as `tenet-jvm` already did.
+
+### Changed
+- **README: "no bug has been found in Lean's kernel" is narrowed to what this project found.** Soundness bugs in
+  Lean's kernel were reported and fixed in July and August 2026 (lean4#14576, #14613, #14616, #14806, #14807); Tenet
+  did not find them. The README now says so and lists which of those exploits Tenet rejects.
+
 ## [0.11.1] - 2026-09-21
 
 ### Fixed

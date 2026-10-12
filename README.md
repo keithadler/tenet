@@ -552,15 +552,27 @@ No kernel can do this for you. Tenet can tell you where to look.
 
 **Every bug this project has found has been in Tenet.** Two from the differential comparison with
 Lean's kernel, three more from older toolchains, `.olean` fuzzing and profiling, three soundness
-bugs from hostile files, and a reader that demanded more of the export format than the format
-demands. Across all of Mathlib and its dependencies, about 140,000 deliberately damaged declarations
-compared verdict by verdict against Lean's own kernel, 166,048 constants compared between the
-`.olean` reader and Lean's exporter, six toolchains from 4.12 to 4.35, and a corpus written
-specifically to attack a checker, **no bug has been found in Lean's kernel.**
+bugs from hostile files, a reader that demanded more of the export format than the format
+demands, and one that accepted an empty export as "OK: 0 checked". Across all of Mathlib and its
+dependencies, about 140,000 deliberately damaged declarations compared verdict by verdict against
+Lean's own kernel, 166,048 constants compared between the `.olean` reader and Lean's exporter, six
+toolchains from 4.12 to 4.35, and a corpus written specifically to attack a checker, **this project
+has not found a bug in Lean's kernel.**
 
-That is worth stating plainly because it is a statement about Lean rather than about Tenet, and it
-is the kind of thing a project cannot credibly say about itself. It is also bounded, and the bounds
-matter more than the headline. An independent *implementation* can only catch a defect in the
+Others have. In July and August 2026 several soundness bugs in Lean's kernel were reported and fixed, each
+deriving `False` with no axioms: wrong-structure projections
+([lean4#14576](https://github.com/leanprover/lean4/issues/14576)), sorts that are `Prop` only after universe
+normalization ([#14613](https://github.com/leanprover/lean4/pull/14613)), `_nested` auxiliary types
+([#14616](https://github.com/leanprover/lean4/pull/14616)), order-dependent `is_def_eq` caching
+([#14806](https://github.com/leanprover/lean4/pull/14806)) and an `is_prop` that did not require a sort
+([#14807](https://github.com/leanprover/lean4/pull/14807)). This project did not find them, so a corpus that
+found none was not showing there were none. Tenet rejects the exploits for #14576, #14613, #14806 and #14807
+(checked against the [Lean Kernel Arena](https://github.com/leanprover/lean-kernel-arena)'s `tests/bugs`),
+and two of its divergences (3 and 4 in [docs/divergences.md](docs/divergences.md)) exist for the same reasons as #14616 and #14806; #14616's own
+exploit has not been run.
+
+A negative result about Lean is the kind of thing a project cannot credibly say about itself, and
+this one is bounded; the bounds matter more than the headline. An independent *implementation* can only catch a defect in the
 reference's code; a defect in its *design* is one Tenet would likely reproduce, since matching the
 reference kernel's decisions was the goal and its structure was followed deliberately. Tenet is
 tested, not verified, so this is evidence and not proof. And the places Tenet decides differently on
