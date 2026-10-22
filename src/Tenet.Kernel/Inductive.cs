@@ -331,9 +331,22 @@ public static class Inductive
 
         private Expr GetParamType(int i) => _lctx.Get(_params[i]).Type;
 
-        private Expr MkLocalDecl(Name n, Expr t, BinderInfo bi = BinderInfo.Default) => _lctx.MkLocalDecl(n, ExprOps.ConsumeTypeAnnotations(t), bi);
+        /// <summary>
+        /// Strip <c>optParam</c>, <c>autoParam</c>, <c>outParam</c> and <c>semiOutParam</c> from a binder type, but only
+        /// when the result is definitionally equal to what was written. Lean's kernel strips by name and assumes the
+        /// official prelude; a file that declares its own <c>autoParam</c> can then make a binder look like a proof
+        /// (leanbugs lean-0026, lean4#15704, closed upstream as outside the kernel's threat model). Checking costs one
+        /// <c>IsDefEq</c> per annotated binder and changes nothing for the honest definitions.
+        /// </summary>
+        private Expr ConsumeAnnotations(Expr t)
+        {
+            Expr r = ExprOps.ConsumeTypeAnnotations(t);
+            return !ReferenceEquals(r, t) && IsDefEq(t, r) ? r : t;
+        }
 
-        private Expr MkLocalDeclFor(PiExpr t) => _lctx.MkLocalDecl(t.BinderName, ExprOps.ConsumeTypeAnnotations(t.Domain), t.Info);
+        private Expr MkLocalDecl(Name n, Expr t, BinderInfo bi = BinderInfo.Default) => _lctx.MkLocalDecl(n, ConsumeAnnotations(t), bi);
+
+        private Expr MkLocalDeclFor(PiExpr t) => _lctx.MkLocalDecl(t.BinderName, ConsumeAnnotations(t.Domain), t.Info);
 
         private Expr Whnf(Expr t) => Tc().Whnf(t);
         private Expr InferType(Expr t) => Tc().Infer(t);

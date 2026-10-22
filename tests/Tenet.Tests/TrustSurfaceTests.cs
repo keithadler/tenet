@@ -83,10 +83,10 @@ public class TrustSurfaceTests
 
         ["_nested"] = "TheNamespaceTheKernelDerivesIntoIsNotAvailable",
 
-        ["outParam"] = "AnAnnotationThatIsNotTheIdentityDoesNotSlipThrough",
-        ["semiOutParam"] = "AnAnnotationThatIsNotTheIdentityDoesNotSlipThrough",
-        ["optParam"] = "AnAnnotationThatIsNotTheIdentityDoesNotSlipThrough",
-        ["autoParam"] = "AnAnnotationThatIsNotTheIdentityDoesNotSlipThrough",
+        ["outParam"] = "AnAnnotationThatIsNotTheIdentityIsNotStripped",
+        ["semiOutParam"] = "AnAnnotationThatIsNotTheIdentityIsNotStripped",
+        ["optParam"] = "AnAnnotationThatIsNotTheIdentityIsNotStripped",
+        ["autoParam"] = "AnAnnotationThatIsNotTheIdentityIsNotStripped",
 
         ["eagerReduce"] = "AnAnnotationThatOnlyChangesEffortCannotChangeAnAnswer",
 

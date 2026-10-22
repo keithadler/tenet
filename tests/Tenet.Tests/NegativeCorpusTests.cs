@@ -20,7 +20,7 @@ namespace Tenet.Tests;
 /// </summary>
 public class NegativeCorpusTests
 {
-    private sealed record Case(string File, string Why, string Rejects, string? DefenseOff, string Found, string Outcome);
+    private sealed record Case(string File, string Why, string Rejects, string? DefenseOff, string Found, string Outcome, string[] Cascade);
 
     private static string? FindCorpus()
     {
@@ -49,7 +49,9 @@ public class NegativeCorpusTests
                 c.GetProperty("rejects").GetString()!,
                 c.TryGetProperty("defenseOff", out JsonElement d) ? d.GetString() : null,
                 c.GetProperty("found").GetString()!,
-                c.GetProperty("outcome").GetString()!));
+                c.GetProperty("outcome").GetString()!,
+                // Declarations that fail only because they use the rejected one; the attack needs them to exist.
+                c.TryGetProperty("cascade", out JsonElement cs) ? cs.EnumerateArray().Select(x => x.GetString()!).ToArray() : []));
         }
         return cases;
     }
@@ -86,8 +88,11 @@ public class NegativeCorpusTests
             // And the file is otherwise sound enough to reach that declaration: it parsed to the end, and
             // nothing before the attack failed. Without this a truncated file would count as a pass.
             Assert.Null(r.ReadError);
-            Assert.True(r.Failures.Count == 1,
-                $"{c.File} failed {r.Failures.Count} declarations; exactly one, {c.Rejects}, should fail");
+            // Exactly the named declaration, plus any that fail only because they depend on it.
+            string[] failed = r.Failures.Select(f => f.Name.ToString()).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            string[] expected = c.Cascade.Append(c.Rejects).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            Assert.True(failed.SequenceEqual(expected),
+                $"{c.File} failed [{string.Join(", ", failed)}]; expected exactly [{string.Join(", ", expected)}]");
         }
     }
 

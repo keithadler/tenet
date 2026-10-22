@@ -47,7 +47,7 @@ public static class Trust
         Name.Of("Quot"), Name.Of("Quot", "mk"), Name.Of("Quot", "lift"), Name.Of("Quot", "ind"), Name.Of("Eq"),
     ];
 
-    /// <summary>Wrappers stripped by name, and the annotation that only changes how hard the checker works.</summary>
+    /// <summary>Wrappers stripped by name when the inductive checker reads a binder, and only if the result is definitionally equal to what was written; and the annotation that only changes how hard the checker works.</summary>
     public static readonly Name[] AnnotationNames =
     [
         Name.Of("optParam"), Name.Of("autoParam"), Name.Of("outParam"), Name.Of("semiOutParam"),

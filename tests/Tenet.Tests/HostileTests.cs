@@ -232,17 +232,19 @@ public class HostileTests
     // ---------------------------------------------------------------- binder annotations stripped by name
 
     /// <summary>
-    /// `optParam`, `autoParam`, `outParam` and `semiOutParam` wrap a type and mean nothing to the kernel, so
-    /// `ExprOps.ConsumeTypeAnnotations` strips them while declaring an inductive. It strips by name, without
-    /// checking that the constant is the identity-in-its-first-argument that Lean declares. A file can therefore
-    /// declare `optParam A d` to mean something other than `A` and have the kernel type a parameter at `A`.
+    /// `optParam`, `autoParam`, `outParam` and `semiOutParam` wrap a type and mean nothing to the kernel, so the
+    /// inductive checker strips them from binder types. Lean's kernel strips by name and assumes the official
+    /// prelude (lean4#15704, closed upstream on that ground). Tenet strips only when the result is definitionally
+    /// equal to what was written, so a file that declares `optParam A d` to mean something other than `A` keeps
+    /// the binder as written and cannot make a parameter look like what it is not.
     ///
-    /// It does not get away with it, and not because the annotation is validated: the stripped parameter type is
-    /// compared against the declared one when the constructors are checked, and the mismatch surfaces there. This
-    /// pins that, so the defense cannot be removed as a simplification without the case failing.
+    /// The honest definition is stripped as before. The hostile one is accepted as the inductive it is, with its
+    /// parameter typed at the unfolded wrapper, which is sound; the recursor the file claims, derived from the
+    /// stripped type, then differs from the one derived here and the export is rejected at the comparison
+    /// (see `autoparam-large-elimination.ndjson` in the negative corpus).
     /// </summary>
     [Fact]
-    public void AnAnnotationThatIsNotTheIdentityDoesNotSlipThrough()
+    public void AnAnnotationThatIsNotTheIdentityIsNotStripped()
     {
         Environment Build(bool honest)
         {
@@ -267,14 +269,16 @@ public class HostileTests
             return new InductiveDecl([], 1, [new InductiveType(Name.Of("I"), Expr.Pi(Name.Of("p"), wrapped, Type0),
                 [new Constructor(Name.Of("I", "mk"), Expr.Pi(Name.Of("p"), wrapped, self))])], false);
         }
+        bool ParamIsWrapped(Environment env) =>
+            ((PiExpr)env.Find(Name.Of("I", "rec"))!.Type).Domain.IsAppOfArity(Name.Of("optParam"), 2);
 
         Environment honestEnv = Build(honest: true);
         honestEnv.Add(Ind());
-        Assert.NotNull(honestEnv.Find(Name.Of("I", "rec")));
+        Assert.False(ParamIsWrapped(honestEnv));
 
         Environment hostile = Build(honest: false);
-        Assert.Throws<KernelException>(() => hostile.Add(Ind()));
-        Assert.Null(hostile.Find(Name.Of("I")));
+        hostile.Add(Ind());
+        Assert.True(ParamIsWrapped(hostile));
     }
 
     // ---------------------------------------------------------------- what a comparison returns

@@ -81,6 +81,18 @@
       "defenseOff": null,
       "found": "Tenet refuses rather than reducing, so this is a rejection and not a reduction. Also pins that the refusal is reported as a failed declaration rather than crashing the run.",
       "outcome": "declined"
+    },
+    {
+      "file": "autoparam-large-elimination.ndjson",
+      "why": "Declares its own root-level autoParam whose value is its second argument, then a Prop inductive P whose constructor takes (p : autoParam Prop Type) (x : p). Stripping autoParam by name reads p as a Prop, so x looks like a proof and P gets large elimination, while the constructor check sees p's domain unfold to Type. With large elimination and proof irrelevance the file proves False with no axioms.",
+      "rejects": "Exploit.P",
+      "defenseOff": null,
+      "found": "leanbugs lean-0026 (lean4#15704). Lean closed the issue as outside the kernel's threat model, since the C++ kernel assumes the official prelude, so Tenet followed the reference here and accepted the file until this defense. Tenet now strips an annotation only if the result is definitionally equal to what was written. tenet-jvm already rejected it, by a different route.",
+      "outcome": "rejected",
+      "cascade": [
+        "Exploit.f",
+        "Exploit.exploit"
+      ]
     }
   ]
 }
