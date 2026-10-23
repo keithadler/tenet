@@ -19,8 +19,8 @@ rules, the judgment each implements, the method here and the function in Lean's 
 a reader can audit the correspondence instead of believing it. [divergences.md](divergences.md) names every place
 Tenet decides differently on purpose. A test keeps the first complete and the build fails without it.
 
-**It has been attacked, not only fuzzed.** The mutation harness breaks valid exports and has found two real Lean
-kernel bugs. It could not have found either of the two soundness bugs found in Tenet itself, which came from files
+**It has been attacked, not only fuzzed.** The mutation harness breaks valid exports and has found two real kernel
+bugs, both in Tenet. It could not have found either of Tenet's two soundness bugs, which came from files
 written to exploit what the checker assumes rather than from damaging valid ones. `HostileTests` covers the whole
 trust surface, which is enumerable: every name the kernel hardcodes. See [testing.md](testing.md).
 

@@ -197,12 +197,13 @@ public class HostileTests
     // ---------------------------------------------------------------- names the kernel derives into
 
     /// <summary>
-    /// Eliminating a nested inductive generates auxiliary types under the `_nested` prefix. Lean reserves that
-    /// whole namespace against ordinary declarations; Tenet used to reject only a declaration whose *type*
-    /// mentioned it, so a file could sit on a name the kernel was about to derive. What that buys an attacker
-    /// depends on how the elimination resolves the name it finds, which is exactly the question worth not having:
-    /// the namespace is reserved now, and the kernel's own auxiliaries are installed by a path that does not go
-    /// through this check, so an honest file loses nothing.
+    /// Eliminating a nested inductive generates auxiliary types under the `_nested` prefix. Lean rejects only an
+    /// inductive whose types mention that prefix (lean4#14616) and accepts any other declaration named into it.
+    /// Tenet used to reject only a declaration whose *type* mentioned it, so a file could sit on a name the kernel
+    /// was about to derive. What that buys an attacker depends on how the elimination resolves the name it finds,
+    /// which is exactly the question worth not having: Tenet now reserves the namespace, a deliberate strictness
+    /// divergence from Lean recorded in docs/divergences.md. The kernel's own auxiliaries are installed by a path
+    /// that does not go through this check, so the reservation never trips on the kernel's own work.
     /// </summary>
     [Fact]
     public void TheNamespaceTheKernelDerivesIntoIsNotAvailable()

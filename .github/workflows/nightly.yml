@@ -106,10 +106,19 @@ jobs:
           sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/swift /opt/hostedtoolcache/CodeQL || true
           df -h / | tail -1
 
+      # Pinned, not master. Mathlib's 2026-09-29 dependency update (27726143) moved import-graph to a
+      # version that loads Lake, and Mathlib.Init imports it, so every slice now carries Lake's type-family
+      # axioms (Lake.DataType.module and the rest). con-leche's proof covers only Lean's three standard
+      # axioms and stops at the first other one, as it should. This is the commit before that update.
+      # Unpin once import-graph keeps Lake out of what ImportGraph.Tools loads.
       - name: Build Mathlib from its own cache
+        env:
+          MATHLIB_REV: 5e043698502894993991089b2dd893867c0db5c2
         run: |
-          git clone --depth 1 https://github.com/leanprover-community/mathlib4 "$RUNNER_TEMP/mathlib4"
+          git init -q "$RUNNER_TEMP/mathlib4"
           cd "$RUNNER_TEMP/mathlib4"
+          git fetch -q --depth 1 https://github.com/leanprover-community/mathlib4 "$MATHLIB_REV"
+          git checkout -q FETCH_HEAD
           lake exe cache get
           lake build Mathlib.Init
 

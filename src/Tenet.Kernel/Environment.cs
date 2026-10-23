@@ -275,10 +275,12 @@ public sealed class Environment
     }
 
     /// <summary>
-    /// The prefix the nested-inductive elimination generates its auxiliary types into. Lean reserves the whole
+    /// The prefix the nested-inductive elimination generates its auxiliary types into. Tenet reserves the whole
     /// namespace against ordinary declarations; without that, a file can squat on a name the kernel is about to
-    /// derive. The kernel's own auxiliaries do not come through here, they are installed with
-    /// <see cref="AddCore(ConstantInfo)"/>, so reserving it costs a legitimate file nothing.
+    /// derive. This is stricter than Lean, which only rejects an inductive whose types mention the prefix (see
+    /// <c>Inductive.CheckNoNestedAux</c>) and accepts, say, <c>axiom _nested.squatter</c>; docs/divergences.md
+    /// has why. The kernel's own auxiliaries do not come through here, they are installed with
+    /// <see cref="AddCore(ConstantInfo)"/>, so the reservation never trips on the kernel's own work.
     /// </summary>
     private static readonly Name NestedPrefix = Name.Of("_nested");
 

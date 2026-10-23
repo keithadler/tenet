@@ -38,6 +38,9 @@ internal static class Program
     {
         /// <summary>Primitives Tenet would not shortcut on this variant, because the mutation damaged one.</summary>
         public List<string> Unvalidated { get; init; } = [];
+
+        /// <summary>The checker's exit code, or -1 if it was killed for running past the timeout.</summary>
+        public int ExitCode { get; init; }
     }
 
     private static int Main(string[] args)
@@ -113,7 +116,15 @@ internal static class Program
         Verdicts bo = RunOracle(oracle, export, outDir, "baseline");
         if (bo.Incomplete || bo.All.Count == 0)
         {
-            Console.WriteLine("the oracle produced no verdicts; is `lean` on PATH? (leancheck needs it to find the Lean sysroot)");
+            Console.WriteLine($"the oracle produced no verdicts; it {DescribeExit(bo.ExitCode)}");
+            if (Signal(bo.ExitCode) is null && bo.ExitCode != -1)
+            {
+                // A crash says nothing about PATH, and suggesting it sends people looking in the wrong place: Lean
+                // 4.34.0-rc2 aborted with SIGTRAP at thread exit on macOS 27, before leancheck flushed a line.
+                Console.WriteLine("is `lean` on PATH? leancheck runs it to find the Lean sysroot, and outside a Lean project");
+                Console.WriteLine("that needs elan to have a default toolchain, or ELAN_TOOLCHAIN set to the one in");
+                Console.WriteLine("tools/leancheck/lean-toolchain");
+            }
             Console.WriteLine(bo.Raw.Length > 600 ? bo.Raw[..600] : bo.Raw);
             return 2;
         }
@@ -171,7 +182,7 @@ internal static class Program
             if (o.Incomplete || t.Incomplete)
             {
                 inconclusive++;
-                Console.WriteLine($"variant {v:D3}: mutations [{string.Join(", ", applied)}]; a checker could not read the variant (tenet incomplete: {t.Incomplete}, lean incomplete: {o.Incomplete}); kept for inspection");
+                Console.WriteLine($"variant {v:D3}: mutations [{string.Join(", ", applied)}]; a checker could not read the variant (tenet incomplete: {t.Incomplete}, lean incomplete: {o.Incomplete}{(o.Incomplete ? $", lean {DescribeExit(o.ExitCode)}" : "")}); kept for inspection");
                 continue;
             }
             var tenetAcceptsLeanRejects = o.Failed.Where(n => !t.Failed.Contains(n)).ToList();
@@ -387,7 +398,25 @@ internal static class Program
         }
         // The oracle ends every complete run with a SUMMARY line; anything else means Lean crashed or aborted.
         if (code == 2 || (all.Count == 0 && failed.Count == 0) || !output.Contains("SUMMARY ok=", StringComparison.Ordinal)) incomplete = true;
-        return new Verdicts(failed, all, incomplete, output);
+        return new Verdicts(failed, all, incomplete, output) { ExitCode = code };
+    }
+
+    /// <summary>
+    /// The signal that killed a checker, if its exit code says one did. .NET reports death by signal N on Unix as
+    /// exit code 128 + N, the shell's convention, so a program that genuinely exits with such a code reads the same.
+    /// </summary>
+    private static int? Signal(int exitCode) =>
+        !OperatingSystem.IsWindows() && exitCode is > 128 and < 128 + 65 ? exitCode - 128 : null;
+
+    private static string DescribeExit(int exitCode)
+    {
+        if (exitCode == -1) return "was killed after the timeout";
+        if (Signal(exitCode) is int sig)
+        {
+            string name = sig switch { 4 => "SIGILL", 5 => "SIGTRAP", 6 => "SIGABRT", 9 => "SIGKILL", 11 => "SIGSEGV", _ => "" };
+            return $"died on signal {sig}{(name.Length > 0 ? " (" + name + ")" : "")} (exit code {exitCode})";
+        }
+        return $"exited with code {exitCode}";
     }
 
     /// <summary>

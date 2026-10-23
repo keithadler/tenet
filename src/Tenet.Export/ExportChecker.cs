@@ -485,8 +485,18 @@ public static class ExportChecker
                 CheckOne(env, decl, () => CheckOrder(decl, i, position), options, tally, () => file.Decls.Count);
             }
         });
-        return Finish(tally, env, n => position.TryGetValue(n, out int p) ? p : null);
+        CheckResult done = Finish(tally, env, n => position.TryGetValue(n, out int p) ? p : null);
+        done.ReadError ??= MissingMetadata(file);
+        return done;
     }
+
+    /// <summary>
+    /// An export with no metadata record (an empty file, or one that is not lean4export output) has nothing in it to
+    /// vouch for. It must not read as "OK: 0 checked", which is what an exporter that died before writing anything
+    /// would otherwise look like.
+    /// </summary>
+    private static ExportFormatException? MissingMetadata(ExportFile file) =>
+        file.Meta is null ? new ExportFormatException(1, "no metadata record: not a lean4export file") : null;
 
     /// <summary>Run <paramref name="body"/> on <see cref="CheckOptions.Jobs"/> dedicated large-stack threads and wait for all of them.</summary>
     private static void RunWorkers(CheckOptions options, Action body)
@@ -789,7 +799,7 @@ public static class ExportChecker
         }
         CheckResult result = Finish(tally, env, n => position.TryGetValue(n, out int p) ? p : null);
         result.Stream = new StreamInfo(file.Meta, declCount, file.Exprs.Count, file.Names.Count - 1, file.Levels.Count - 1, parseTime.Elapsed);
-        result.ReadError = readError;
+        result.ReadError = readError ?? MissingMetadata(file);
         return result;
     }
 

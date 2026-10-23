@@ -192,6 +192,12 @@ parser and replays it through `Lean.Kernel.Environment.addDeclCore`, printing `O
 the export exactly as Tenet does, and installing a failed declaration unchecked so later
 ones can still be judged, again as Tenet does.
 
+It pins Lean 4.34.1. It pinned 4.34.0-rc2 until every executable from that toolchain began
+aborting with SIGTRAP at thread exit on macOS 27 (libmalloc's "pointer being freed was not
+allocated", from `_pthread_tsd_cleanup`), which killed leancheck before it flushed a verdict.
+`src/kernel` has the same tree hash from 4.34.0-rc2 through 4.34.1, so the move costs no kernel
+coverage, and both versions give identical verdicts on the differential runs.
+
 With `LEANCHECK_TIMES=1` in the environment, leancheck also prints `TIME name microseconds`
 to stderr for every declaration, the wall-clock time Lean's kernel spent in `addDeclCore`.
 This is the ground truth for Tenet's performance work: the same export checked by both,
@@ -244,6 +250,13 @@ checks module by module and keeps no single environment to list.
 The nightly rotates through seven slices by day of year rather than re-proving one of them forever, and uploads
 the name list as an artifact, so the union grows on its own instead of when somebody remembers to add a slice.
 A module Mathlib master has renamed costs one night: the job falls back to the first slice and says so.
+
+Since 2026-09-30 the job runs on a pinned Mathlib commit rather than master. Mathlib's 2026-09-29 dependency
+update brought in an import-graph that loads Lake, `Mathlib.Init` imports it, and Lake declares its type
+families with real axioms (`Lake.DataType.module` and the rest). con-leche's proof covers only Lean's three
+standard axioms, so it stops at the first of these rather than accepting a file its proof says nothing about.
+Tenet accepted that export in full. The pin is the commit before the update, and comes off when import-graph
+keeps Lake out of what `ImportGraph.Tools` loads.
 
 ### Checking the proof itself
 
@@ -428,8 +441,8 @@ that statement is right remains a question for people who read it.
 ## Exports written to attack the checker
 
 The mutation harness takes a valid export and breaks it. That finds places where two implementations of one
-specification drift apart, which is what it is for, and it found both of the real Lean kernel bugs this project
-has caught. It cannot find a file written on purpose to exploit what the checker assumes, because a damaged valid
+specification drift apart, which is what it is for, and it found both of the real kernel bugs this project has
+caught, each in Tenet rather than Lean. It cannot find a file written on purpose to exploit what the checker assumes, because a damaged valid
 file is not one.
 
 Both soundness bugs found in Tenet itself were files of the second kind, and neither was reachable by mutation:
@@ -640,7 +653,7 @@ recursor arity.
 
 This method has a ceiling worth stating. Mutating an export is good at finding places where
 two implementations of the same specification drift apart, which is how both real kernel bugs
-here were caught. It is unlikely to find a deep soundness bug in Lean, because such a bug needs
+found so far, each in Tenet, were caught. It is unlikely to find a deep soundness bug in Lean, because such a bug needs
 a term someone constructed deliberately against the type theory, not one produced by damaging
 a valid term at random. Fuzzing finds implementation disagreements; it does not find design
 flaws, and nobody should read a clean campaign as evidence that none exist.
@@ -656,6 +669,8 @@ heights), runs both checkers on each, and reports two kinds of disagreement:
 ```bash
 cd tools/leancheck && lake build && cd ../..          # needs elan; `lean` must be on PATH
 dotnet build -c Release
+# leancheck runs `lean` to find the sysroot. Without an elan default toolchain, name one:
+export ELAN_TOOLCHAIN="$(cat tools/leancheck/lean-toolchain)"
 tools/Tenet.DiffTest/bin/Release/net10.0/Tenet.DiffTest \
   --export exports/Init.Prelude.ndjson \
   --tenet src/Tenet.Cli/bin/Release/net10.0/tenet \

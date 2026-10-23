@@ -160,6 +160,27 @@ public class ReaderRobustnessTests
     }
 
     [Fact]
+    public void AnEmptyFileIsNeverOk()
+    {
+        using var ms = new MemoryStream([]);
+        CheckResult r = ExportChecker.CheckStreaming(ms, new CheckOptions { Jobs = 1 });
+        Assert.NotNull(r.ReadError);
+        Assert.False(r.Success);
+    }
+
+    [Fact]
+    public void AFileWithoutAMetadataRecordIsNeverOk()
+    {
+        // Every line of a real export except the first (the metadata record).
+        string[] lines = File.ReadAllLines(Fixture("Nat.add_succ.ndjson"));
+        Assert.Contains("\"meta\"", lines[0], StringComparison.Ordinal);
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(string.Join('\n', lines.Skip(1)) + "\n"));
+        CheckResult r = ExportChecker.CheckStreaming(ms, new CheckOptions { Jobs = 1 });
+        Assert.NotNull(r.ReadError);
+        Assert.False(r.Success);
+    }
+
+    [Fact]
     public void StreamingChecksEverythingBeforeATruncation()
     {
         byte[] bytes = File.ReadAllBytes(Fixture("Nat.add_succ.ndjson"));
