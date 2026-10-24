@@ -3,12 +3,14 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.11.3] - 2026-10-23
 
 ### Changed
 - **Checked against Lean 4.35.0.** `Init` exported from 4.35.0 checks with 0 failures in both Tenet (57,919 declarations)
   and the reference kernel, and all of `Init` read from the toolchain's `.olean` files checks with 0 failures
   (64,658 declarations). The CI `olean-compat` matrix now runs 4.35.0 in place of 4.35.0-rc3.
+  A differential run of 60 mutated variants of `Init.Prelude` against the 4.35.0 kernel agreed on 14,210 rejections, with
+  no soundness and no strictness disagreement. Not rechecked on 4.35.0: Mathlib and the other large corpora.
 - **Lean 4.35.0 removed native reduction from its kernel.** `reduce_native` is gone from `type_checker.cpp`, so the
   reference no longer evaluates `Lean.reduceBool` or `Lean.reduceNat`. Tenet still refuses them, which is the
   stricter reading; on a file that uses them Tenet reports a declined declaration where the 4.35.0 kernel reports an
