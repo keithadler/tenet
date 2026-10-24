@@ -454,7 +454,7 @@ internal static class Program
 
         var sw = Stopwatch.StartNew();
         ExportFile file = NdjsonReader.ReadFile(args[0]);
-        var exported = new Environment();
+        var exported = new Environment { NativeReductionRemoved = LeanVersion.KernelHasNoNativeReduction(file.Meta?.LeanVersion) };
         foreach (ExportDecl d in file.Decls)
         {
             ExportChecker.AddUnchecked(exported, d);
@@ -888,7 +888,7 @@ internal static class Program
             return new Target(checker.Resolve, DocStrings(checker, defined), checker, $"{module} and its imports", defined, [module]);
         }
         ExportFile file = NdjsonReader.ReadFile(path);
-        var env = new Environment();
+        var env = new Environment { NativeReductionRemoved = LeanVersion.KernelHasNoNativeReduction(file.Meta?.LeanVersion) };
         foreach (ExportDecl d in file.Decls)
         {
             ExportChecker.AddUnchecked(env, d);

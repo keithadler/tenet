@@ -46,7 +46,7 @@ differently, [divergences.md](divergences.md) says so and why.
 | `NatLitOp` | An arithmetic operation on Nat literals computed directly: add, sub, mul, div, mod, pow, gcd, and the bitwise ones. | `ReduceBinNatOp` | `reduce_nat` |
 | `NatLitPred` | A predicate on Nat literals computed directly: decEq, beq, ble. | `ReduceBinNatPred` | `reduce_nat` |
 | `StringLitToCtor` | A string literal expanded into its constructor form over a list of characters. | `ReduceProjCore` | `string_lit_to_constructor` |
-| `NativeReduce` | Lean.reduceBool and Lean.reduceNat, which would require running compiled code. Tenet refuses rather than trusting it, so reaching this rule is a rejection and not a reduction. | `ReduceNative` | `reduce_native`<br>Lean evaluates up to 4.34 and has no such rule from 4.35.0; Tenet refuses (see divergences.md) |
+| `NativeReduce` | Lean.reduceBool and Lean.reduceNat, which would require running compiled code. For exports from Lean 4.34 and earlier, or a Lean Tenet cannot identify, Tenet declines rather than trusting it, so reaching this rule is a decline and not a reduction. For exports from Lean 4.35 and later the rule does not exist and the terms are ordinary constants (`Environment.NativeReductionRemoved`), so a proof that needs them is rejected as a type mismatch, as the reference does. | `ReduceNative` | `reduce_native`<br>Lean evaluates up to 4.34 and has no such rule from 4.35.0-rc1; Tenet declines on those versions and does not reduce on 4.35 and later (see divergences.md) |
 
 ## Definitional equality
 

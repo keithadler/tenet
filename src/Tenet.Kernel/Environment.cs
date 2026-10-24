@@ -16,10 +16,17 @@ public sealed class Environment
 
     public Environment() { }
 
+    /// <summary>
+    /// The Lean that wrote this environment's declarations has no in-kernel native reduction (see <see cref="LeanVersion"/>),
+    /// so <c>Lean.reduceBool</c> and <c>Lean.reduceNat</c> are ordinary constants here and are not declined.
+    /// </summary>
+    public bool NativeReductionRemoved { get; set; }
+
     private Environment(Environment parent, HashSet<Name>? hidden)
     {
         _parent = parent;
         _hidden = hidden;
+        NativeReductionRemoved = parent.NativeReductionRemoved;
         _quotInitialized = parent._quotInitialized && (hidden is null || !hidden.Contains(Quot.QuotName));
     }
 

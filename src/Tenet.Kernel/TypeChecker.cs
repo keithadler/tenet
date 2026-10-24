@@ -782,8 +782,12 @@ public sealed class TypeChecker
         return UnfoldDefinitionCore(e);
     }
 
-    private static Expr? ReduceNative(Expr e)
+    private Expr? ReduceNative(Expr e)
     {
+        if (Env.NativeReductionRemoved)
+        {
+            return null;
+        }
         if (e is AppExpr a && a.Arg is ConstExpr && a.Fn is ConstExpr f && (f.Name.Equals(LeanReduceBool) || f.Name.Equals(LeanReduceNat)))
         {
             Rules.Hit(Rule.NativeReduce);

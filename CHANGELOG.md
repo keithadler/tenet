@@ -3,6 +3,18 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Native reduction is declined or rejected according to the Lean that wrote the export.** Lean 4.35 removed in-kernel
+  native reduction (`reduce_native` is gone from `type_checker.cpp` from 4.35.0-rc1; `Lean.ofReduceBool` no longer exists, and
+  `native_decide` already produced a per-proof axiom on 4.34). For an export from Lean 4.35 or later, `Lean.reduceBool` and
+  `Lean.reduceNat` are now ordinary constants, so a file that leans on them fails as a type mismatch (exit 1), as it does in
+  Lean. For 4.34 and earlier, and for an export whose Lean version is missing, unparsable or a nightly, Tenet still declines
+  (exit 4): those kernels may have accepted it, and Tenet will not vouch for running compiled code. Real 4.35 exports do not
+  contain these terms, so no verdict on a real library changes; the difference shows only on hand-written files.
+  23 tests pin the version rule and both outcomes, serial and parallel; ignoring the new flag makes 4 of them fail.
+
 ## [0.11.3] - 2026-10-23
 
 ### Changed
