@@ -198,6 +198,12 @@ allocated", from `_pthread_tsd_cleanup`), which killed leancheck before it flush
 `src/kernel` has the same tree hash from 4.34.0-rc2 through 4.34.1, so the move costs no kernel
 coverage, and both versions give identical verdicts on the differential runs.
 
+Lean 4.35.0 is the first release where `src/kernel` differs: `type_checker.cpp` no longer contains `reduce_native`,
+so the kernel does not evaluate `Lean.reduceBool` or `Lean.reduceNat` at all (the other change, in `environment.cpp`,
+corrects an `extern` declaration's return type and does not affect checking). On 2026-10-23 `Init` exported from
+4.35.0 was checked by both: 57,919 declarations, 0 failures each, and a 60-variant differential run on `Init.Prelude`
+gave 14,210 agreed rejections, 0 soundness and 0 strictness disagreements. One variant was inconclusive.
+
 With `LEANCHECK_TIMES=1` in the environment, leancheck also prints `TIME name microseconds`
 to stderr for every declaration, the wall-clock time Lean's kernel spent in `addDeclCore`.
 This is the ground truth for Tenet's performance work: the same export checked by both,

@@ -190,6 +190,7 @@ toolchain and checks its whole `Init` library in place.
 
 | Toolchain | `.olean` format | Declarations in `Init` | Result |
 | --- | --- | --- | --- |
+| 4.35.0 | 2 | 64,658 | 0 failures |
 | 4.34.0-rc2 | 2 | 64,814 | 0 failures |
 | 4.33.1 | 2 | 64,656 | 0 failures |
 | 4.28.0 | 2 | 56,236 | 0 failures |
