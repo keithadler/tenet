@@ -36,6 +36,12 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/leanprover-community/mathlib4 "$RUNNER_TEMP/mathlib4"
           cd "$RUNNER_TEMP/mathlib4"
+          # releases.lean-lang.org sometimes stalls; fetch the toolchain with retries before lake needs it.
+          for i in 1 2 3 4 5; do
+            elan toolchain install "$(cat lean-toolchain)" && break
+            echo "toolchain download failed (attempt $i), retrying"; sleep $((i*30))
+            [ "$i" = 5 ] && exit 1
+          done
           lake exe cache get
           lake build Mathlib.Init          # enough to populate the tree; the cache supplies the rest
           echo "MATHLIB=$RUNNER_TEMP/mathlib4" >> "$GITHUB_ENV"
@@ -119,6 +125,12 @@ jobs:
           cd "$RUNNER_TEMP/mathlib4"
           git fetch -q --depth 1 https://github.com/leanprover-community/mathlib4 "$MATHLIB_REV"
           git checkout -q FETCH_HEAD
+          # releases.lean-lang.org sometimes stalls; fetch the toolchain with retries before lake needs it.
+          for i in 1 2 3 4 5; do
+            elan toolchain install "$(cat lean-toolchain)" && break
+            echo "toolchain download failed (attempt $i), retrying"; sleep $((i*30))
+            [ "$i" = 5 ] && exit 1
+          done
           lake exe cache get
           lake build Mathlib.Init
 
