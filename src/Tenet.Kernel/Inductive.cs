@@ -87,8 +87,9 @@ public static class Inductive
         return isDefEq(appType, newType) ? newCtorApp : e;
     }
 
-    private static Expr ToCtorWhenStructure(Environment env, Name inductName, Expr e, Func<Expr, Expr> whnf, Func<Expr, Expr> infer, Func<Expr, bool> isProp)
+    private static Expr ToCtorWhenStructure(Environment env, RecursorInfo recVal, Expr e, Func<Expr, Expr> whnf, Func<Expr, Expr> infer, Func<Expr, bool> isProp)
     {
+        Name inductName = recVal.GetMajorInduct();
         if (!IsNonRecStructure(env, inductName) || IsConstructorApp(env, e) is not null)
         {
             return e;
@@ -98,7 +99,18 @@ public static class Inductive
         {
             return e;
         }
-        if (isProp(eType))
+        if (env.Eta437)
+        {
+            // Lean 4.37 (lean4#15371): no eta for a proposition that is not a subsingleton, and the test for that is
+            // whether the recursor eliminates into every sort, read off as one more universe parameter than the first
+            // inductive type of its block has. The major's own type would not do: an auxiliary recursor of a nested
+            // inductive has a major of another type. `env.get` on purpose, as in the reference.
+            if (recVal.LevelParams.Length == env.Get(recVal.All[0]).LevelParams.Length)
+            {
+                return e;
+            }
+        }
+        else if (isProp(eType))
         {
             return e;
         }
@@ -151,7 +163,12 @@ public static class Inductive
             byK = !ReferenceEquals(forced, major);
             major = forced;
         }
-        major = whnf(major);
+        // Lean 4.37 (lean4#15371) leaves a proof alone: reducing one can fail to terminate, and whatever a recursor
+        // needs from it is supplied by rule K above or by eta below.
+        if (!env.Eta437 || !isProp(infer(major)))
+        {
+            major = whnf(major);
+        }
         if (major.IsNatLit)
         {
             major = NatLitToConstructor(major);
@@ -163,7 +180,7 @@ public static class Inductive
         }
         else
         {
-            major = ToCtorWhenStructure(env, recVal.GetMajorInduct(), major, whnf, infer, isProp);
+            major = ToCtorWhenStructure(env, recVal, major, whnf, infer, isProp);
         }
         RecursorRule? rule = recVal.GetRuleFor(major);
         if (rule is null)
@@ -203,10 +220,12 @@ public static class Inductive
         foreach (InductiveType t in d.Types)
         {
             CheckNoFVar(t.Name, t.Type);
+            CheckNoLooseBVars(t.Type);
             CheckNoNestedAux(t.Name, t.Type);
             foreach (Constructor c in t.Ctors)
             {
                 CheckNoFVar(c.Name, c.Type);
+                CheckNoLooseBVars(c.Type);
                 CheckNoNestedAux(c.Name, c.Type);
             }
         }
@@ -232,6 +251,19 @@ public static class Inductive
         if (e.HasFVar)
         {
             throw new KernelException($"declaration '{n}' contains free variables");
+        }
+    }
+
+    /// <summary>
+    /// A type or constructor type of an inductive declaration must be closed. Lean checks this up front since 4.37
+    /// (lean4#16512); before that a loose bound variable in a constructor field could slip past, because the
+    /// telescope walk instantiated it away. Refused for every Lean version: no well-formed export has one.
+    /// </summary>
+    private static void CheckNoLooseBVars(Expr e)
+    {
+        if (e.HasLooseBVars)
+        {
+            throw new KernelException("type checker does not support loose bound variables, replace them with free variables before invoking it");
         }
     }
 

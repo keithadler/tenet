@@ -81,6 +81,22 @@
       "defenseOff": null,
       "found": "Tenet refuses rather than reducing, so this is a rejection and not a reduction. Also pins that the refusal is reported as a failed declaration rather than crashing the run.",
       "outcome": "declined"
+    },
+    {
+      "file": "partial-constructor-eta.ndjson",
+      "why": "Eta437.boxEta : forall f : Bool -> Box, f = Box.mk := fun f => Eq.refl f. Lean 4.37 compares a term with a partially applied structure constructor by applying both to fresh variables and comparing projections. Done carelessly, that accepts any function into a structure as the constructor itself. Here proj 0 (f x) against x must fail.",
+      "rejects": "Eta437.boxEta",
+      "defenseOff": null,
+      "found": "Lean's own test for lean4#15373 (tests/elab/12520_1.lean), rebuilt as an export from expressions Lean wrote; see tests/fixtures/eta437. Lean 4.36.0 and 4.37.0-rc1 both reject it (tools/leancheck, 2026-11-19). The file says Lean 4.37.0-rc1, so the new eta path is the one being exercised.",
+      "outcome": "rejected"
+    },
+    {
+      "file": "loose-bvar-inductive.ndjson",
+      "why": "inductive T : Type -> Type with T.mk : (a : Type) -> (y : #1) -> T #1, where #1 in the field's type points past every binder. A term with a dangling variable has no meaning, and the telescope walk can instantiate it away before anything looks.",
+      "rejects": "T",
+      "defenseOff": null,
+      "found": "lean4#16489, fixed in Lean 4.37 by lean4#16512, which called it benign. Lean 4.37.0-rc1 rejects the declaration with the same message; Lean 4.36.0 accepted the inductive type. Tenet rejected this file before it had the up-front check as well, when the constructor's type reached the type checker, so the case pins the verdict and not the new check: removing the check leaves it rejected.",
+      "outcome": "rejected"
     }
   ]
 }

@@ -1174,7 +1174,9 @@ public sealed class TypeChecker
         {
             return false;
         }
-        if (s.GetAppNumArgs() != fVal.NumParams + fVal.NumFields)
+        int numCtorArgs = fVal.NumParams + fVal.NumFields;
+        int given = s.GetAppNumArgs();
+        if (Env.Eta437 ? given > numCtorArgs : given != numCtorArgs)
         {
             return false;
         }
@@ -1182,9 +1184,28 @@ public sealed class TypeChecker
         {
             return false;
         }
-        if (!IsDefEq(Infer(t), Infer(s)))
+        Expr tType = Infer(t);
+        Expr sType = Infer(s);
+        if (!IsDefEq(tType, sType))
         {
             return false;
+        }
+        if (given < numCtorArgs)
+        {
+            // Lean 4.37 (lean4#15373): a partially applied constructor is a function, so compare both sides applied to
+            // fresh variables for the missing fields. The type of a constructor application is a Pi telescope as
+            // written, so no normalization is needed to walk it.
+            while (sType is PiExpr pi)
+            {
+                Expr x = Lctx.MkLocalDecl(pi.BinderName, pi.Domain, pi.Info);
+                t = Expr.App(t, x);
+                s = Expr.App(s, x);
+                sType = ExprOps.Instantiate1(pi.Body, x);
+            }
+            if (s.GetAppNumArgs() != numCtorArgs)
+            {
+                return false;
+            }
         }
         s.GetAppArgs(out Expr[] sArgs);
         for (int i = fVal.NumParams; i < sArgs.Length; i++)
@@ -1523,6 +1544,19 @@ public sealed class TypeChecker
             }
         }
 
+        // Lean 4.37 (lean4#15103) asks about proof irrelevance before normalizing either side, so that a proof is
+        // never reduced here; earlier kernels ask after.
+        bool irrelFirst = Env.Eta437;
+        if (irrelFirst)
+        {
+            r = IsDefEqProofIrrel(t, s);
+            if (r != LBool.Undef)
+            {
+                Rules.Hit(Rule.DefEqProofIrrel);
+                return r == LBool.True;
+            }
+        }
+
         Expr tn = WhnfCore(t, false, true);
         Expr sn = WhnfCore(s, false, true);
 
@@ -1535,11 +1569,14 @@ public sealed class TypeChecker
             }
         }
 
-        r = IsDefEqProofIrrel(tn, sn);
-        if (r != LBool.Undef)
+        if (!irrelFirst)
         {
-            Rules.Hit(Rule.DefEqProofIrrel);
-            return r == LBool.True;
+            r = IsDefEqProofIrrel(tn, sn);
+            if (r != LBool.Undef)
+            {
+                Rules.Hit(Rule.DefEqProofIrrel);
+                return r == LBool.True;
+            }
         }
 
         r = LazyDeltaReduction(ref tn, ref sn);

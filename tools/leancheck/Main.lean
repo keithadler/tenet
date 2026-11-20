@@ -9,7 +9,7 @@ are re-derived from their types and constructors and the derived constructors an
 compared field by field with the exported ones.
 -/
 import Lean
-import Export.Parse
+import LeanExport.Parse
 
 open Lean
 
@@ -177,7 +177,7 @@ def checkQuot (consts : Std.HashMap Name ConstantInfo) : M Unit := do
 
 def run (path : String) : IO UInt32 := do
   let handle ← IO.FS.Handle.mk path .read
-  let exported ← Export.parseStream (IO.FS.Stream.ofHandle handle)
+  let exported ← LeanExport.parseStream (IO.FS.Stream.ofHandle handle)
   let kenv := (← mkEmptyEnvironment).toKernelEnv
   let consts := exported.constMap
   let times := (← IO.getEnv "LEANCHECK_TIMES").isSome
