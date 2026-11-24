@@ -85,7 +85,25 @@ public sealed class LeanSearchPath
         }
     }
 
-    /// <summary>The elan toolchain whose Lean version string matches, if installed under <c>~/.elan/toolchains</c>.</summary>
+    /// <summary>
+    /// Where elan keeps its toolchains: <c>$ELAN_HOME/toolchains</c> when <c>ELAN_HOME</c> is set, as elan itself
+    /// does, else <c>~/.elan/toolchains</c>.
+    /// </summary>
+    public static string ElanToolchains()
+    {
+        string? elanHome = System.Environment.GetEnvironmentVariable("ELAN_HOME");
+        if (string.IsNullOrEmpty(elanHome))
+        {
+            string home = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
+            elanHome = Path.Combine(home, ".elan");
+        }
+        return Path.Combine(elanHome, "toolchains");
+    }
+
+    /// <summary>
+    /// The library of <c>LEAN_SYSROOT</c> if set, and the elan toolchain whose Lean version string matches, if one is
+    /// installed under <see cref="ElanToolchains"/>.
+    /// </summary>
     public void AddToolchainFor(string leanVersion)
     {
         string? sysroot = System.Environment.GetEnvironmentVariable("LEAN_SYSROOT");
@@ -93,8 +111,7 @@ public sealed class LeanSearchPath
         {
             Add(Path.Combine(sysroot, "lib", "lean"));
         }
-        string home = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
-        string toolchains = Path.Combine(home, ".elan", "toolchains");
+        string toolchains = ElanToolchains();
         if (!Directory.Exists(toolchains))
         {
             return;

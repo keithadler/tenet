@@ -16,8 +16,7 @@ public class OleanTests
         {
             return env;
         }
-        string home = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
-        string toolchains = Path.Combine(home, ".elan", "toolchains");
+        string toolchains = LeanSearchPath.ElanToolchains();
         if (!Directory.Exists(toolchains))
         {
             return null;
