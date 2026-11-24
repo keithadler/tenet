@@ -3,6 +3,20 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.11.5] - 2026-11-24
+
+### Fixed
+- **A binder annotation is stripped only if it means what its name says.** `optParam`, `autoParam`, `outParam` and
+  `semiOutParam` were stripped from binder types by name while an inductive type was checked, as Lean's kernel does. A
+  file that declares its own `autoParam` could make a constructor argument look like a proof, give a `Prop` inductive
+  large elimination, and prove `False` with no axioms (leanbugs lean-0026, lean4#15704). Tenet 0.11.4 and earlier accept
+  such a file. Lean's own kernel accepts it too and the issue was closed upstream as outside its threat model, since that
+  kernel assumes the official prelude; Tenet reads files from anywhere, so it does not. The annotation is now stripped
+  only when the result is definitionally equal to what was written. The file is in the negative corpus
+  (`autoparam-large-elimination.ndjson`), rejected at `Exploit.P`. No verdict on an honest export is meant to change: the
+  whole `Lean` library from 4.35.0-rc4 (171,705 constants) still checks with 0 failures. Not rechecked: Mathlib and the
+  other large corpora.
+
 ## [0.11.4] - 2026-11-19
 
 ### Changed

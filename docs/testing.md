@@ -502,11 +502,11 @@ catalog too, so that a later simplification cannot quietly remove them:
 | `Quot`, `Quot.mk`, `Quot.lift`, `Quot.ind` | the kernel builds the quotient constants with the types it requires rather than reading a file's, and will not reduce until it has |
 | `Eq` | `Quot.CheckEqType` checks its kind, universe count, constructor count, and both exact types before the quotient block is admitted |
 | `Bool`, `Bool.true`, `Bool.false` | a comparison's shortcut is licensed by equations stated against those very constants, so a body that answers differently fails them and is unfolded instead |
-| `optParam`, `autoParam`, `outParam`, `semiOutParam` | stripped by name without validation, but the stripped parameter type is compared against the declared one when constructors are checked, and a wrapper that is not the identity fails there |
+| `optParam`, `autoParam`, `outParam`, `semiOutParam` | stripped only when the result is definitionally equal to what was written; before 0.11.5 they were stripped by name, and a comparison made for another reason was thought to catch a dishonest one, which it did not (`autoparam-large-elimination.ndjson`) |
 | `Lean.reduceBool`, `Lean.reduceNat` | refused rather than believed, so a claim cannot be laundered through compiled code |
 
-The annotation row is the weakest of these: it is defence in depth rather than by design, and it rests on a check
-whose purpose is something else. It is written down so that it is a decision rather than an accident.
+The annotation row was listed as the weakest of these, resting on a check whose purpose was something else, and it
+fell: lean-0026 got past it. The check is now made where the annotation is stripped.
 
 Each case asserts two things: that the attack is refused, and that it succeeds with the defense switched off.
 Without the second half a case can pass because the attack was built wrong, which is how a catalog of attacks
