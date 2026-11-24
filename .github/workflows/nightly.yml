@@ -246,33 +246,50 @@ jobs:
           "$T" check "$M" --all --quiet | tee "$RUNNER_TEMP/proof.txt"
           grep -qE '^OK' "$RUNNER_TEMP/proof.txt" || { echo "Tenet did not accept con-leche's proof in full"; exit 1; }
 
-          "$T" axioms "$M" ConLeche.no_False_declaration | tee "$RUNNER_TEMP/ax.txt"
-          # Anything beyond Lean's three standard axioms means the soundness theorem is carrying an
-          # assumption; a sorry would surface here too. The axiom lines are the indented ones.
-          # `|| true` on both greps: a grep that matches nothing exits 1 and would end the step under -e.
-          bad=$(grep -E '^  ' "$RUNNER_TEMP/ax.txt" | grep -vE '^  (propext|Classical\.choice|Quot\.sound)$' || true)
-          if [ -n "$bad" ]; then
-            echo "no_False_declaration rests on something beyond the three standard axioms:"
-            echo "$bad"
-            exit 1
-          fi
-          # And all three are actually named, so an empty or reworded report cannot pass as a clean one.
-          for a in propext Classical.choice Quot.sound; do
-            grep -qxF "  $a" "$RUNNER_TEMP/ax.txt" || { echo "expected axiom $a not reported"; exit 1; }
+          # The theorems to audit are read from con-leche's source rather than named here: upstream renames
+          # and regroups them (no_False_declaration became main_no_False and its siblings), and a fixed name
+          # broke this job on the first such change. Every `main_*` theorem in MainTheorem.lean is a claim
+          # about a run of the binary, so all of them are audited; finding none is itself a failure.
+          thms=$(grep -oE '^theorem main_[A-Za-z0-9_]+' "$RUNNER_TEMP/cl/ConLeche/MainTheorem.lean" | sed 's/^theorem /ConLeche./')
+          [ -n "$thms" ] || { echo "no main_* theorems found in ConLeche/MainTheorem.lean"; exit 1; }
+
+          : > "$RUNNER_TEMP/ax-all.txt"
+          for t in $thms; do
+            "$T" axioms "$M" "$t" | tee "$RUNNER_TEMP/ax.txt"
+            cat "$RUNNER_TEMP/ax.txt" >> "$RUNNER_TEMP/ax-all.txt"
+            # Anything beyond Lean's three standard axioms means the theorem is carrying an assumption;
+            # a sorry would surface here too. The axiom lines are the indented ones.
+            # `|| true`: a grep that matches nothing exits 1 and would end the step under -e.
+            bad=$(grep -E '^  ' "$RUNNER_TEMP/ax.txt" | grep -vE '^  (propext|Classical\.choice|Quot\.sound)$' || true)
+            if [ -n "$bad" ]; then
+              echo "$t rests on something beyond the three standard axioms:"
+              echo "$bad"
+              exit 1
+            fi
+            # And all three are actually named, so an empty or reworded report cannot pass as a clean one.
+            for a in propext Classical.choice Quot.sound; do
+              grep -qxF "  $a" "$RUNNER_TEMP/ax.txt" || { echo "$t: expected axiom $a not reported"; exit 1; }
+            done
           done
 
           {
             echo "## Tenet checked the proof that con-leche is sound"
             echo
             echo "- $(grep -E '^OK' "$RUNNER_TEMP/proof.txt")"
-            echo "- \`ConLeche.no_False_declaration\`: $(head -1 "$RUNNER_TEMP/ax.txt")"
-            echo "- axioms: propext, Classical.choice, Quot.sound, and nothing else"
+            for t in $thms; do
+              echo "- \`$t\`: $(grep -F "$t depends on" "$RUNNER_TEMP/ax-all.txt" | head -1 | sed -e "s/^$t //" -e "s/ and these axioms:$//")"
+            done
+            echo "- axioms of every one: propext, Classical.choice, Quot.sound, and nothing else"
             echo
-            echo "What this does not establish: that the theorem says what you want. Its statement is built"
-            echo "from constants con-leche defines itself, and a wrong definition would hide there."
-            echo '```'
-            "$T" statement "$M" ConLeche.no_False_declaration | head -25
-            echo '```'
+            echo "What this does not establish: that the theorems say what you want. Their statements are"
+            echo "built from constants con-leche defines itself, and a wrong definition would hide there."
+            for t in $thms; do
+              case "$t" in *_no_False)
+                echo '```'
+                "$T" statement "$M" "$t" | head -25
+                echo '```'
+              esac
+            done
           } >> "$GITHUB_STEP_SUMMARY"
 
   three-way:
