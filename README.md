@@ -337,7 +337,8 @@ tenet check ~/.elan/toolchains/*/lib/lean/Init.olean --all     # the whole core 
 Every module in the import closure is memory-mapped and its constants are decoded only when
 the kernel looks them up, so memory stays proportional to the module being checked rather than
 to everything it imports. Library roots are found from the Lake build tree around the target,
-`LEAN_PATH`, and the elan toolchain matching the module's Lean version; add more with `--lib`.
+`LEAN_PATH`, `LEAN_SYSROOT`, and the elan toolchain matching the module's Lean version (under
+`$ELAN_HOME/toolchains`, by default `~/.elan/toolchains`); add more with `--lib`.
 `partial` and `unsafe` definitions are checked too, as the mutual blocks Lean added them as.
 
 ## Produce an export to check

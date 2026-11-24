@@ -3,6 +3,17 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **The matching toolchain is found when elan lives outside `~/.elan`.** `LeanSearchPath.AddToolchainFor` looked
+  only in `~/.elan/toolchains`, ignoring `ELAN_HOME`, which elan itself honors. On a machine whose elan is
+  elsewhere (a CI container, a shared toolchain directory, a home where `~/.elan` is missing or a dangling link),
+  `tenet check` and every tool built on `Tenet.Olean`, such as LeanViz, stopped with `cannot find module 'Init'`
+  although the right toolchain was installed. It now looks in `$ELAN_HOME/toolchains` when `ELAN_HOME` is set,
+  else `~/.elan/toolchains`; `LeanSearchPath.ElanToolchains()` says which. `ElanHomeTests` builds a fake toolchain
+  under a temporary `ELAN_HOME` and fails if the lookup ignores it.
+
 ## [0.11.4] - 2026-11-19
 
 ### Changed
