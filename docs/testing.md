@@ -16,12 +16,13 @@ The real test is the Lean core library. Exports are large (all of `Init` is abou
 and are never committed; generate them:
 
 ```bash
-git clone https://github.com/leanprover/lean4export
-cd lean4export && lake build
+# Lean 4.36 and later ship the exporter as `leanexport`; for earlier versions build
+# https://github.com/leanprover/lean4export and use `lake env .lake/build/bin/lean4export`.
 mkdir -p ~/tenet-exports
-lake env .lake/build/bin/lean4export Init.Prelude > ~/tenet-exports/Init.Prelude.ndjson
-lake env .lake/build/bin/lean4export Init.Core    > ~/tenet-exports/Init.Core.ndjson
-lake env .lake/build/bin/lean4export Init         > ~/tenet-exports/Init.ndjson
+cd tools/leancheck
+lake env leanexport Init.Prelude > ~/tenet-exports/Init.Prelude.ndjson
+lake env leanexport Init.Core    > ~/tenet-exports/Init.Core.ndjson
+lake env leanexport Init         > ~/tenet-exports/Init.ndjson
 ```
 
 Then either run the checker directly:
@@ -197,6 +198,21 @@ aborting with SIGTRAP at thread exit on macOS 27 (libmalloc's "pointer being fre
 allocated", from `_pthread_tsd_cleanup`), which killed leancheck before it flushed a verdict.
 `src/kernel` has the same tree hash from 4.34.0-rc2 through 4.34.1, so the move costs no kernel
 coverage, and both versions give identical verdicts on the differential runs.
+
+Lean 4.35.0 is the first release where `src/kernel` differs: `type_checker.cpp` no longer contains `reduce_native`,
+so the kernel does not evaluate `Lean.reduceBool` or `Lean.reduceNat` at all (the other change, in `environment.cpp`,
+corrects an `extern` declaration's return type and does not affect checking). On 2026-10-23 `Init` exported from
+4.35.0 was checked by both: 57,919 declarations, 0 failures each, and a 60-variant differential run on `Init.Prelude`
+gave 14,210 agreed rejections, 0 soundness and 0 strictness disagreements. One variant was inconclusive.
+
+It pins Lean 4.36.0 since 2026-11-19 and reads exports with the parser Lean ships (`LeanExport`, bundled since 4.36)
+instead of depending on the lean4export repository. `src/kernel` in 4.36.0 differs from 4.35.0 only by removed dead
+code. Lean 4.37.0-rc1 is the next release that decides differently (lean4#15103, #15371, #15373, and the up-front
+loose bound variable check of #16512); Tenet applies those rules to exports from 4.37 and later, and
+`tests/fixtures/eta437` says how that is tested. On 2026-11-19 the oracle was built on both versions and run against
+Tenet on mutated `Init.Prelude` (60 variants) and `Init.Core` (20 variants) exported by the same toolchain:
+11,565 agreed rejections on 4.36.0 and 11,711 on 4.37.0-rc1, 0 soundness and 0 strictness disagreements, 3 variants
+of 160 inconclusive. The pin stays on 4.36.0, the stable release; a 4.37 oracle is built by changing `lean-toolchain`.
 
 With `LEANCHECK_TIMES=1` in the environment, leancheck also prints `TIME name microseconds`
 to stderr for every declaration, the wall-clock time Lean's kernel spent in `addDeclCore`.

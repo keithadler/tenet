@@ -168,16 +168,14 @@ jobs:
         run: |
           curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-      - name: Build lean4export
-        run: |
-          git clone --depth 1 https://github.com/leanprover/lean4export
-          cd lean4export && lake build
       - name: Export Init.Prelude and Init.Core
         run: |
+          # Lean ships the exporter since 4.36 (`leanexport`, the same code as lean4export), so the export,
+          # the oracle and the .olean files all come from the one toolchain tools/leancheck pins.
           mkdir -p exports
-          cd lean4export
-          lake env .lake/build/bin/lean4export Init.Prelude > ../exports/Init.Prelude.ndjson
-          lake env .lake/build/bin/lean4export Init.Core > ../exports/Init.Core.ndjson
+          cd tools/leancheck
+          lake env leanexport Init.Prelude > ../../exports/Init.Prelude.ndjson
+          lake env leanexport Init.Core > ../../exports/Init.Core.ndjson
       - run: dotnet build -c Release
       - run: dotnet run --no-build -c Release -f net10.0 --project src/Tenet.Cli -- check exports/Init.Prelude.ndjson
       - run: dotnet run --no-build -c Release -f net10.0 --project src/Tenet.Cli -- check exports/Init.Core.ndjson
@@ -215,12 +213,12 @@ jobs:
 
       - name: Does crosscheck notice a damaged declaration?
         run: |
-          # lean4export's sysroot, not leancheck's: the two pin different Lean versions, and crosschecking an
-          # export against another version's .olean reports version differences as reader defects. The harness
-          # refuses to run on a baseline that is not already clean, which is how this was caught.
-          cd lean4export
+          # The sysroot of the toolchain that wrote the export: crosschecking an export against another
+          # version's .olean reports version differences as reader defects. The harness refuses to run on a
+          # baseline that is not already clean, which is how this was caught.
+          cd tools/leancheck
           LIB="$(lake env printenv LEAN_SYSROOT)/lib/lean"
-          cd ..
+          cd ../..
           dotnet build -c Release tools/Tenet.DiffTest
           # Crosscheck carries the whole claim that the .olean reader is faithful, because comparing verdicts
           # cannot catch a reader bug. Until this ran, it had only ever been given undamaged input, where it
@@ -271,7 +269,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [v4.35.0-rc3, v4.34.1, v4.34.0, v4.33.1, v4.28.0, v4.24.0, v4.16.0, v4.12.0]
+        toolchain: [v4.37.0-rc1, v4.36.0, v4.35.0, v4.34.1, v4.34.0, v4.33.1, v4.28.0, v4.24.0, v4.16.0, v4.12.0]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4

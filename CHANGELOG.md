@@ -3,6 +3,73 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.11.4] - 2026-11-19
+
+### Changed
+- **The Lean 4.37 definitional-equality rules, applied to exports from Lean 4.37 and later.** Lean 4.37.0-rc1 is the
+  first release whose kernel decides differently since 4.35 (4.36.0 changed nothing in `src/kernel` but dead code).
+  Three changes are ported, each read from `type_checker.cpp` and `inductive.h` at `v4.37.0-rc1`:
+  proof irrelevance is asked before either side is normalized (lean4#15103); a recursor's major premise is not reduced
+  when it is a proof, and is eta-expanded when the recursor eliminates into every sort, which now covers a subsingleton
+  structure such as `And` (lean4#15371); and structure eta applies against a partially applied constructor
+  (lean4#15373). The fourth change of that series, a wider unit-like rule (lean4#15372), was reverted upstream before
+  the release (lean4#16443) and is not ported. The rules are not all in one direction: the eta changes accept more, and
+  not reducing a proof accepts less, so a term such as `Acc.rec` on a closed proof that 4.36 unfolded to a constructor
+  is stuck in 4.37. Tenet therefore keeps both rule sets and picks by the version in the export or `.olean`
+  (`LeanVersion.KernelHasEta437`, `Environment.Eta437`); a missing or unparsable version gets the earlier rules, and a
+  4.37 nightly counts from 2026-10-21.
+  `tests/fixtures/eta437` holds one export written by each Lean, and `Eta437Tests` checks each under both rule sets:
+  the 4.37 file fails at exactly `Eta437.andMajor` and `Eta437.partialCtor` under the earlier rules, and the 4.36 file
+  fails at exactly `Acc436.accReduces` under the new ones. The reference kernel of each version gives those same
+  verdicts (`tools/leancheck` built on 4.36.0 and on 4.37.0-rc1). Breaking any one of the rules, or the version test,
+  fails a test, with one exception: no file was found on which the order of the proof-irrelevance step alone changes a
+  verdict under the 4.37 rules, so that step is ported from the source and not pinned by a test.
+- **Reads `.olean` format 4.** Lean 4.37 made the layout formerly called 3 the only one and renumbered it, because the
+  expression hash stored in the file changed. Tenet computes its own hashes, so the reader change is the version number.
+- **An inductive type or constructor type with a loose bound variable is refused up front**, as Lean does from 4.37
+  (lean4#16512). Tenet already rejected the reported case later, in the type checker, so no verdict changes.
+- **Checked against Lean 4.36.0 and 4.37.0-rc1.** On 2026-11-19, exports written by each
+  toolchain's own `leanexport` check with 0 failures: `Init` (58,547 declarations on 4.36.0, 61,002 on 4.37.0-rc1) and
+  the whole `Lean` library (167,602 and 175,734). Read from the toolchains' `.olean` files: `Init` 64,828 and 68,123
+  declarations, `Lean` 204,139 and 215,726, 0 failures. Differential runs against each version's own kernel, on
+  mutated `Init.Prelude` (60 variants) and `Init.Core` (20 variants): 11,565 agreed rejections on 4.36.0 and 11,711 on
+  4.37.0-rc1, with no soundness and no strictness disagreement; 3 of the 160 variants were inconclusive.
+  The Lean libraries pass with or without the new rules, so they show nothing about the port; the fixtures above do.
+  As the negative control, every theorem of `Init` 4.37.0-rc1 that could be given another theorem's proof was
+  (44,235 of 44,311): Tenet rejected 43,711 of them (run with `TENET_MAX_UNFOLDS=3000000`, 7,387 s on a loaded machine), the identical set tenet-hs rejected.
+  Not rechecked on either version: Mathlib and the other large corpora.
+  The Lean Kernel Arena suite as published that day: 90 of 90 must-reject files rejected, 135 of 135 must-accept
+  files accepted.
+- **`tools/leancheck` uses the exporter Lean ships** (`LeanExport`, bundled since 4.36) and pins Lean 4.36.0; it no
+  longer depends on the lean4export repository, whose parser does not build on 4.37 yet. CI exports with the bundled
+  `leanexport` from the same toolchain, so the export, the oracle and the `.olean` files it is compared with are one
+  Lean. The `olean-compat` matrix adds 4.36.0 and 4.37.0-rc1.
+- **Native reduction is declined or rejected according to the Lean that wrote the export.** Lean 4.35 removed in-kernel
+  native reduction (`reduce_native` is gone from `type_checker.cpp` from 4.35.0-rc1; `Lean.ofReduceBool` no longer exists, and
+  `native_decide` already produced a per-proof axiom on 4.34). For an export from Lean 4.35 or later, `Lean.reduceBool` and
+  `Lean.reduceNat` are now ordinary constants, so a file that leans on them fails as a type mismatch (exit 1), as it does in
+  Lean. For 4.34 and earlier, and for an export whose Lean version is missing, unparsable or a nightly, Tenet still declines
+  (exit 4): those kernels may have accepted it, and Tenet will not vouch for running compiled code. Real 4.35 exports do not
+  contain these terms, so no verdict on a real library changes; the difference shows only on hand-written files.
+  23 tests pin the version rule and both outcomes, serial and parallel; ignoring the new flag makes 4 of them fail.
+
+### Added
+- Two cases in the negative corpus: `partial-constructor-eta.ndjson` (every function into a structure is not its
+  constructor; the careless form of the new partial-constructor eta accepts it) and `loose-bvar-inductive.ndjson`.
+
+## [0.11.3] - 2026-10-23
+
+### Changed
+- **Checked against Lean 4.35.0.** `Init` exported from 4.35.0 checks with 0 failures in both Tenet (57,919 declarations)
+  and the reference kernel, and all of `Init` read from the toolchain's `.olean` files checks with 0 failures
+  (64,658 declarations). The CI `olean-compat` matrix now runs 4.35.0 in place of 4.35.0-rc3.
+  A differential run of 60 mutated variants of `Init.Prelude` against the 4.35.0 kernel agreed on 14,210 rejections, with
+  no soundness and no strictness disagreement. Not rechecked on 4.35.0: Mathlib and the other large corpora.
+- **Lean 4.35.0 removed native reduction from its kernel.** `reduce_native` is gone from `type_checker.cpp`, so the
+  reference no longer evaluates `Lean.reduceBool` or `Lean.reduceNat`. Tenet still refuses them, which is the
+  stricter reading; on a file that uses them Tenet reports a declined declaration where the 4.35.0 kernel reports an
+  ordinary type mismatch.
+
 ## [0.11.2] - 2026-10-12
 
 ### Fixed

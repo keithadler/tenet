@@ -16,10 +16,33 @@ public sealed class Environment
 
     public Environment() { }
 
+    /// <summary>
+    /// The Lean that wrote this environment's declarations has no in-kernel native reduction (see <see cref="LeanVersion"/>),
+    /// so <c>Lean.reduceBool</c> and <c>Lean.reduceNat</c> are ordinary constants here and are not declined.
+    /// </summary>
+    public bool NativeReductionRemoved { get; set; }
+
+    /// <summary>
+    /// The Lean that wrote this environment's declarations has the 4.37 definitional-equality rules (see
+    /// <see cref="LeanVersion.KernelHasEta437"/>): proof irrelevance before weak head normalization, no reduction of a
+    /// proof standing as a recursor's major premise, eta for the major of a subsingleton structure's recursor, and
+    /// structure eta against a partially applied constructor.
+    /// </summary>
+    public bool Eta437 { get; set; }
+
+    /// <summary>Set every rule that depends on the Lean version from the version string an export or .olean carries.</summary>
+    public void UseRulesOf(string? leanVersion)
+    {
+        NativeReductionRemoved = LeanVersion.KernelHasNoNativeReduction(leanVersion);
+        Eta437 = LeanVersion.KernelHasEta437(leanVersion);
+    }
+
     private Environment(Environment parent, HashSet<Name>? hidden)
     {
         _parent = parent;
         _hidden = hidden;
+        NativeReductionRemoved = parent.NativeReductionRemoved;
+        Eta437 = parent.Eta437;
         _quotInitialized = parent._quotInitialized && (hidden is null || !hidden.Contains(Quot.QuotName));
     }
 

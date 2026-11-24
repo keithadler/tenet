@@ -72,7 +72,9 @@ You do not have to trust Lean's kernel, its compiler, or any tactic.
 
 Native reduction (`Lean.reduceBool`, `Lean.reduceNat`) is refused: it means running the
 compiled form of a Lean function, and an external checker has no way to know that
-compilation was correct.
+compilation was correct. Lean 4.35 removed it from its own kernel, so for exports from 4.35 and later
+those terms are ordinary constants and a proof that needs them is rejected; for 4.34 and earlier Tenet
+declines.
 
 ## Non-goals
 

@@ -38,7 +38,7 @@ differently, [divergences.md](divergences.md) says so and why.
 | `ZetaFVar` | x ↝ v for a let-bound x := v in the local context. | `WhnfFVar` | `whnf_fvar` |
 | `Delta` | c.{v̄} ↝ its value, for a definition c, during weak head normalization. | `Whnf` | `whnf` |
 | `DeltaLazy` | The same unfolding during lazy delta reduction, where only the side that needs it is unfolded. | `LazyDeltaReductionStep` | `lazy_delta_reduction_step` |
-| `Iota` | I.rec ... (I.ctor_i ā) ↝ the i-th minor premise applied to ā and the recursive results. | `Inductive.TryReduceRec` | `inductive_reduce_rec` |
+| `Iota` | I.rec ... (I.ctor_i ā) ↝ the i-th minor premise applied to ā and the recursive results. The major premise is first reduced to weak head normal form, and a major whose type is a structure is eta-expanded to its constructor. For exports from Lean 4.37 and later (`Environment.Eta437`, lean4#15371) a major that is a proof is not reduced, and the eta-expansion applies whenever the recursor eliminates into every sort, which now includes a subsingleton structure in `Prop` such as `And`; before 4.37 it applied to no proposition. | `Inductive.TryReduceRec` | `inductive_reduce_rec` |
 | `IotaK` | K-like reduction. For an inductive proposition with one constructor and no fields, a major premise whose type is that proposition is replaced by the constructor even when it is a variable, so iota can proceed. | `Inductive.TryReduceRec` | `inductive_reduce_rec`<br>eligibility is computed by init_K_target in inductive.cpp |
 | `Proj` | (S.mk ā).i ↝ aᵢ. | `WhnfCore` | `reduce_proj` |
 | `QuotLift` | Quot.lift f h (Quot.mk r a) ↝ f a. | `Quot.TryReduceRec` | `quot_reduce_rec` |
@@ -46,7 +46,7 @@ differently, [divergences.md](divergences.md) says so and why.
 | `NatLitOp` | An arithmetic operation on Nat literals computed directly: add, sub, mul, div, mod, pow, gcd, and the bitwise ones. | `ReduceBinNatOp` | `reduce_nat` |
 | `NatLitPred` | A predicate on Nat literals computed directly: decEq, beq, ble. | `ReduceBinNatPred` | `reduce_nat` |
 | `StringLitToCtor` | A string literal expanded into its constructor form over a list of characters. | `ReduceProjCore` | `string_lit_to_constructor` |
-| `NativeReduce` | Lean.reduceBool and Lean.reduceNat, which would require running compiled code. Tenet refuses rather than trusting it, so reaching this rule is a rejection and not a reduction. | `ReduceNative` | `reduce_native`<br>Lean evaluates; Tenet refuses (see divergences.md) |
+| `NativeReduce` | Lean.reduceBool and Lean.reduceNat, which would require running compiled code. For exports from Lean 4.34 and earlier, or a Lean Tenet cannot identify, Tenet declines rather than trusting it, so reaching this rule is a decline and not a reduction. For exports from Lean 4.35 and later the rule does not exist and the terms are ordinary constants (`Environment.NativeReductionRemoved`), so a proof that needs them is rejected as a type mismatch, as the reference does. | `ReduceNative` | `reduce_native`<br>Lean evaluates up to 4.34 and has no such rule from 4.35.0-rc1; Tenet declines on those versions and does not reduce on 4.35 and later (see divergences.md) |
 
 ## Definitional equality
 
@@ -58,9 +58,9 @@ differently, [divergences.md](divergences.md) says so and why.
 | `DefEqApp` | f ā ≡ g b̄ when f ≡ g and the spines are equal pointwise, without unfolding either head. | `IsDefEqCore` | `is_def_eq_app` |
 | `DefEqBinding` | Congruence under a binder: domains equal, then bodies equal under the extended context. | `QuickIsDefEq` | `quick_is_def_eq` |
 | `DefEqEta` | f ≡ (fun x => f x), eta for functions. | `IsDefEqCore` | `try_eta_expansion` |
-| `DefEqEtaStruct` | s ≡ S.mk s.1 ... s.n for a structure S, eta for structures. | `IsDefEqCore` | `try_eta_struct` |
+| `DefEqEtaStruct` | s ≡ S.mk s.1 ... s.n for a structure S, eta for structures. For exports from Lean 4.37 and later (lean4#15373) the constructor may be partially applied: both sides are applied to fresh variables for the missing fields first. | `IsDefEqCore` | `try_eta_struct` |
 | `DefEqUnitLike` | Any two elements of a type with one constructor taking no fields are equal. | `IsDefEqCore` | `is_def_eq_unit_like` |
-| `DefEqProofIrrel` | Γ ⊢ h : p, Γ ⊢ h' : p, p : Prop, therefore h ≡ h'. Proof irrelevance. | `IsDefEqCore` | `is_def_eq_proof_irrel` |
+| `DefEqProofIrrel` | Γ ⊢ h : p, Γ ⊢ h' : p, p : Prop, therefore h ≡ h'. Proof irrelevance. For exports from Lean 4.37 and later (lean4#15103) it is asked before either side is normalized, so that a proof is never reduced here; before 4.37 it was asked after the first `whnf_core`. | `IsDefEqCore` | `is_def_eq_proof_irrel` |
 | `DefEqStringLit` | A string literal against an application of the string constructor. Keyed on String.ofList where it exists and String.mk otherwise, matching Lean's g_string_mk, and placed after lazy delta as Lean places it. On current Lean that ordering makes the rule unreachable in both kernels, since String.ofList is now a definition that delta unfolds first; no corpus on any version reaches it, and SafetyTests covers it directly. | `IsDefEqCore` | `try_string_lit_expansion`<br>unreachable in both while String is a structure |
 | `DefEqFVar` | Γ, x : A ⊢ x ≡ x. The same free variable on both sides. | `IsDefEqCore` | `is_def_eq_core`<br>inline, after the constant case |
 | `DefEqReflect` | A closed term against Bool.true, reduced rather than compared. Proofs by reflection end here, which is why the kernel reduces one side fully instead of looking for a shared structure. | `IsDefEqCore` | `is_def_eq_core`<br>inline: the Bool.true step, before whnf_core |

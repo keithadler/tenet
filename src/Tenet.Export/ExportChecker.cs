@@ -80,6 +80,7 @@ public static class ExportChecker
         }
         var result = new CheckResult();
         var env = new Environment();
+        env.UseRulesOf(file.Meta?.LeanVersion);
         result.Environment = env;
         var total = Stopwatch.StartNew();
         int index = 0;
@@ -441,6 +442,7 @@ public static class ExportChecker
     private static CheckResult CheckParallel(ExportFile file, CheckOptions options)
     {
         var env = new Environment();
+        env.UseRulesOf(file.Meta?.LeanVersion);
         using var tally = new Tally();
 
         // Phase 1: every constant, unchecked, and the position of each name in the export.
@@ -724,6 +726,10 @@ public static class ExportChecker
                 NdjsonReader.ReadStreaming(stream, file, decl =>
                 {
                     int i = declCount++;
+                    if (i == 0)
+                    {
+                        env.UseRulesOf(file.Meta?.LeanVersion);
+                    }
                     bool dup = false;
                     foreach (Name n in NamesOf(decl))
                     {

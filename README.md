@@ -243,7 +243,7 @@ prover; this project only reads its export format.
 
 | | Versions | How |
 | --- | --- | --- |
-| Lean | 4.35.0-rc1, 4.34.0, 4.33.1, 4.28.0, 4.24.0, 4.16.0, 4.12.0 | each toolchain's whole `Init` library checked in place, every push |
+| Lean | 4.37.0-rc1, 4.36.0, 4.35.0, 4.34.1, 4.34.0, 4.33.1, 4.28.0, 4.24.0, 4.16.0, 4.12.0 | each toolchain's whole `Init` library checked in place, every push |
 | .NET | 10 (ships), 11 RC1 (tracked) | built and tested on both; 10 is the active LTS |
 | Platforms | Linux, macOS, Windows | build and test on every push |
 | Mathlib | master, on Lean 4.35.0-rc1 | 766,950 declarations, 0 failures, checked nightly |
@@ -555,8 +555,8 @@ Lean's kernel, three more from older toolchains, `.olean` fuzzing and profiling,
 bugs from hostile files, a reader that demanded more of the export format than the format
 demands, and one that accepted an empty export as "OK: 0 checked". Across all of Mathlib and its
 dependencies, about 140,000 deliberately damaged declarations compared verdict by verdict against
-Lean's own kernel, 166,048 constants compared between the `.olean` reader and Lean's exporter, six
-toolchains from 4.12 to 4.35, and a corpus written specifically to attack a checker, **this project
+Lean's own kernel, 166,048 constants compared between the `.olean` reader and Lean's exporter, ten
+toolchains from 4.12 to 4.37, and a corpus written specifically to attack a checker, **this project
 has not found a bug in Lean's kernel.**
 
 Others have. In July and August 2026 several soundness bugs in Lean's kernel were reported and fixed, each

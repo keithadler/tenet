@@ -288,6 +288,7 @@ public sealed class OleanChecker : IDisposable
         if (_modules.Count > 0)
         {
             result.LeanVersion = _modules.Values.First().LeanVersion;
+            env.UseRulesOf(result.LeanVersion);
         }
 
         // Modules to check, in import order.

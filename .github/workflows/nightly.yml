@@ -36,6 +36,12 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/leanprover-community/mathlib4 "$RUNNER_TEMP/mathlib4"
           cd "$RUNNER_TEMP/mathlib4"
+          # releases.lean-lang.org sometimes stalls; fetch the toolchain with retries before lake needs it.
+          for i in 1 2 3 4 5; do
+            elan toolchain install "$(cat lean-toolchain)" && break
+            echo "toolchain download failed (attempt $i), retrying"; sleep $((i*30))
+            [ "$i" = 5 ] && exit 1
+          done
           lake exe cache get
           lake build Mathlib.Init          # enough to populate the tree; the cache supplies the rest
           echo "MATHLIB=$RUNNER_TEMP/mathlib4" >> "$GITHUB_ENV"
@@ -119,6 +125,12 @@ jobs:
           cd "$RUNNER_TEMP/mathlib4"
           git fetch -q --depth 1 https://github.com/leanprover-community/mathlib4 "$MATHLIB_REV"
           git checkout -q FETCH_HEAD
+          # releases.lean-lang.org sometimes stalls; fetch the toolchain with retries before lake needs it.
+          for i in 1 2 3 4 5; do
+            elan toolchain install "$(cat lean-toolchain)" && break
+            echo "toolchain download failed (attempt $i), retrying"; sleep $((i*30))
+            [ "$i" = 5 ] && exit 1
+          done
           lake exe cache get
           lake build Mathlib.Init
 
@@ -279,11 +291,11 @@ jobs:
           curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      # Three Lean projects pinning three different toolchains; elan picks each one per directory.
-      - name: Build the exporter and both oracles
+      # Two Lean projects pinning two toolchains; elan picks each one per directory. The exporter is the
+      # one Lean ships (`leanexport`, since 4.36), run from the oracle's toolchain, so the export and the
+      # kernel that judges it are the same Lean and stay so when lean4export's own pin moves.
+      - name: Build both oracles
         run: |
-          git clone --depth 1 https://github.com/leanprover/lean4export
-          (cd lean4export && lake build)
           (cd tools/leancheck && lake build)
           git clone --depth 1 https://github.com/leanprover/con-leche
           (cd con-leche && lake build con-leche)
@@ -291,9 +303,9 @@ jobs:
       - name: Export Init.Prelude and Init.Core
         run: |
           mkdir -p exports
-          cd lean4export
-          lake env .lake/build/bin/lean4export Init.Prelude > ../exports/Init.Prelude.ndjson
-          lake env .lake/build/bin/lean4export Init.Core > ../exports/Init.Core.ndjson
+          cd tools/leancheck
+          lake env leanexport Init.Prelude > ../../exports/Init.Prelude.ndjson
+          lake env leanexport Init.Core > ../../exports/Init.Core.ndjson
 
       - name: Differential test with con-leche as a third opinion
         run: |

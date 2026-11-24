@@ -84,8 +84,11 @@ internal sealed unsafe class Region : IDisposable
             dataStart = FormatVersion switch
             {
                 2 => HeaderSize,
-                3 => HeaderSize + 8, // a data_size word precedes the data
-                _ => throw new OleanFormatException(path, $"unsupported .olean format version {FormatVersion} (Tenet reads 1, 2 and 3)"),
+                // A data_size word precedes the data. Version 3 was the closures-capable variant; Lean 4.37 made it
+                // the only layout and called it 4, because the expression hash stored in the file changed. Tenet
+                // computes its own hashes and never reads the stored ones.
+                3 or 4 => HeaderSize + 8,
+                _ => throw new OleanFormatException(path, $"unsupported .olean format version {FormatVersion} (Tenet reads 1 to 4)"),
             };
         }
         RootAddr = *(ulong*)(p + dataStart);
