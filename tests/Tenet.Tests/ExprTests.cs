@@ -149,4 +149,23 @@ public class DepthTests
         Assert.Equal("_private.Mathlib.Foo.0.bar", Name.Parse("_private.Mathlib.Foo.0.bar").ToString());
         Assert.Equal(Name.Of("Nat", "succ"), Name.Parse("Nat.succ"));
     }
+
+    [Theory]
+    [InlineData("Std", "term_..._")]          // a notation name with dots inside a component (Init has these)
+    [InlineData("Lean", "binderPred≤_")]
+    [InlineData("Foo", "a,b")]                // a comma inside a component
+    [InlineData("Foo", "0")]                  // a string component that looks numeric
+    public void NameParseRoundTripsEscapedComponents(string prefix, string last)
+    {
+        Name n = Name.Of(prefix).Str(last);
+        Assert.Equal(n, Name.Parse(n.ToString()));
+    }
+
+    [Fact]
+    public void ANameListSplitsOnlyOutsideEscapes()
+    {
+        string[] parts = Name.SplitList("Nat.add,Foo.«a,b»,Std.«term_..._»").ToArray();
+        Assert.Equal(["Nat.add", "Foo.«a,b»", "Std.«term_..._»"], parts);
+        Assert.Equal(Name.Of("Foo").Str("a,b"), Name.Parse(parts[1]));
+    }
 }

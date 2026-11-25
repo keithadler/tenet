@@ -53,11 +53,58 @@ public abstract class Name : IEquatable<Name>, IComparable<Name>
         {
             return n;
         }
-        foreach (string p in dotted.Split('.'))
+        // Components are separated by dots; a component written «…» is taken verbatim, dots and all, as Lean and
+        // ToString write a component that is not a plain identifier. A bare all-digit component is numeric.
+        int i = 0;
+        while (true)
         {
-            n = p.Length > 0 && p.All(char.IsAsciiDigit) && ulong.TryParse(p, out ulong v) ? n.Num(v) : n.Str(p);
+            string part;
+            bool escaped = i < dotted.Length && dotted[i] == '«';
+            int close = escaped ? dotted.IndexOf('»', i + 1) : -1;
+            if (escaped && close > 0)
+            {
+                part = dotted[(i + 1)..close];
+                i = close + 1;
+            }
+            else
+            {
+                escaped = false;
+                int dot = dotted.IndexOf('.', i);
+                int end = dot < 0 ? dotted.Length : dot;
+                part = dotted[i..end];
+                i = end;
+            }
+            n = !escaped && part.Length > 0 && part.All(char.IsAsciiDigit) && ulong.TryParse(part, out ulong v) ? n.Num(v) : n.Str(part);
+            if (i >= dotted.Length || dotted[i] != '.')
+            {
+                return n;
+            }
+            i++;
         }
-        return n;
+    }
+
+    /// <summary>Split a comma-separated list of names, ignoring commas inside «…».</summary>
+    public static IEnumerable<string> SplitList(string list)
+    {
+        int depth = 0, start = 0;
+        for (int i = 0; i < list.Length; i++)
+        {
+            char c = list[i];
+            if (c == '«')
+            {
+                depth++;
+            }
+            else if (c == '»' && depth > 0)
+            {
+                depth--;
+            }
+            else if (c == ',' && depth == 0)
+            {
+                yield return list[start..i];
+                start = i + 1;
+            }
+        }
+        yield return list[start..];
     }
 
     /// <summary>Lean's <c>Name.appendIndexAfter</c>: <c>u</c> becomes <c>u_1</c>.</summary>

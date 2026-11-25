@@ -16,6 +16,11 @@ both Apache License 2.0, Copyright Lean FRO and contributors.
 Lean 4.34.0-rc2 toolchain (Apache License 2.0, Copyright Lean FRO and contributors), used by the
 `.olean` reader tests and by the corruption fuzzer in `OleanFuzzTests`.
 
+`nested/Lean.Syntax.ndjson` is `Lean.Syntax` with its dependencies (273 declarations), exported by
+[leanout](https://github.com/keithadler/leanout) from Lean 4.36.0 (`leanout Init -- Lean.Syntax`). `Lean.Syntax`
+is a nested inductive (it holds an `Array Syntax`), which the kernel checks through auxiliary types in a separate
+environment; it is here so the trace tests cover that path.
+
 Larger exports (`Init.Prelude`, `Init.Core`, all of `Init`) are generated, never
 committed. Set `TENET_EXPORTS` to a directory containing them to run the
 integration tests; see `docs/testing.md`.

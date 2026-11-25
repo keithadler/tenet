@@ -186,6 +186,48 @@ public class TraceTests
         Assert.Null(KernelTrace.Current);
     }
 
+    [Theory]
+    [MemberData(nameof(AllExports))]
+    public void EveryRecallPointsBackToTheSameConclusion(string fixture)
+    {
+        (_, List<(Name Name, KernelTrace Trace)> traces) = CheckTraced(fixture);
+        foreach ((Name name, KernelTrace trace) in traces)
+        {
+            for (int i = 0; i < trace.Count; i++)
+            {
+                TraceStep s = trace.Steps[i];
+                if (s.Of < 0)
+                {
+                    continue;
+                }
+                Assert.True(s.Of < i, $"{name} step {i} recalls a later step");
+                TraceStep o = trace.Steps[s.Of];
+                Assert.Equal(s.Kind, o.Kind);
+                bool same = s.Lhs.Equals(o.Lhs) && s.Rhs!.Equals(o.Rhs)
+                    || (s.Kind == TraceKind.DefEq && s.Lhs.Equals(o.Rhs) && s.Rhs!.Equals(o.Lhs));
+                Assert.True(same, $"{name} step {i} recalls step {s.Of}, which concludes something else");
+            }
+        }
+    }
+
+    [Fact]
+    public void RecallReplacesRederivation()
+    {
+        // Nat.add_succ's trace reuses results: some steps recall an earlier one.
+        (_, List<(Name Name, KernelTrace Trace)> traces) = CheckTraced("Nat.add_succ.ndjson");
+        Assert.Contains(traces.SelectMany(t => t.Trace.Steps), s => s.Of >= 0);
+    }
+
+    [Fact]
+    public void ADeclarationIsCheckedNotOnlyInferred()
+    {
+        // The declaration's own type and value are inferred in checking mode, so the trace says Check for them.
+        (_, List<(Name Name, KernelTrace Trace)> traces) = CheckTraced("Nat.add_succ.ndjson");
+        (Name _, KernelTrace t) = traces.Single(x => x.Name.Equals(Name.Of("Nat", "add_succ")));
+        Assert.Contains(t.Steps, s => s.Kind == TraceKind.Check);
+        Assert.Contains(t.Steps, s => s.Kind == TraceKind.Infer);
+    }
+
     [Fact]
     public void TheWriterHashConsesTerms()
     {

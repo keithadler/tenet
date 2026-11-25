@@ -6,6 +6,15 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Traces record checking-mode inference as `Check`** and infer-only inference as `Infer`, so a replayer knows whether
+  the checks checking mode adds (argument types against domains, domains are types, universe levels) are among a
+  step's premises.
+- **Traces recall instead of re-deriving.** Tracing used to bypass the kernel's caches, since a cache hit skips the
+  steps that justify it; some declarations then redid the same work until the trace ran to many gigabytes. A traced
+  result is now remembered by the step that concluded it, and a later request for it records a step that points back
+  to that one (`"of"`). Each recall first checks that the step is still in the trace, because a rollback can remove
+  it. On a 998-declaration sample of `Init` (Lean 4.36.0, exported by leanout) the trace fell from 13,955,110 steps
+  and 826 MB to 1,184,351 steps and 117 MB, and tracing from 17 s to 4.7 s.
 - **Derivation traces: `tenet check <file.ndjson> --trace <out.ndjson>`.** Records the steps behind every accepted
   declaration: each rule that fired with the terms it fired on, each inference, normalization and definitional
   equality as a conclusion over its premises, and each local variable as it enters the context. Only the derivation
