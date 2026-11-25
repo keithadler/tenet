@@ -10,7 +10,14 @@ namespace Tenet.Export;
 public sealed class ExportFormatException : Exception
 {
     public long Line { get; }
-    public ExportFormatException(long line, string message) : base($"line {line}: {message}") => Line = line;
+    /// <summary>The file is in a format this checker does not know, which says nothing about the proofs in it.</summary>
+    public bool UnsupportedFormat { get; }
+
+    public ExportFormatException(long line, string message, bool unsupportedFormat = false) : base($"line {line}: {message}")
+    {
+        Line = line;
+        UnsupportedFormat = unsupportedFormat;
+    }
 }
 
 /// <summary>
@@ -20,6 +27,12 @@ public sealed class ExportFormatException : Exception
 public static class NdjsonReader
 {
     public static readonly string[] SupportedFormatMajors = ["3"];
+
+    /// <summary>
+    /// The newest minor version of format 3 that is understood. 3.2 adds flags to inductive types that the kernel must
+    /// check (lean4#16595); reading it without them would give verdicts under the wrong rules, so it is declined.
+    /// </summary>
+    public const int MaxFormatMinor = 1;
 
     public static ExportFile ReadFile(string path)
     {
@@ -611,6 +624,11 @@ public static class NdjsonReader
         if (Array.IndexOf(SupportedFormatMajors, major) < 0)
         {
             throw new ExportFormatException(lineNo, $"unsupported export format version {format} (supported: {string.Join(", ", SupportedFormatMajors.Select(m => m + ".x"))})");
+        }
+        string[] parts = format.Split('.');
+        if (parts.Length > 1 && !(int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out int minor) && minor <= MaxFormatMinor))
+        {
+            throw new ExportFormatException(lineNo, $"export format {format} is not supported yet (the newest supported is {major}.{MaxFormatMinor})", unsupportedFormat: true);
         }
         file.Meta = new ExportMeta(exporterName, exporterVersion, leanVersion, leanHash, format);
     }

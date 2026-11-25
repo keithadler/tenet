@@ -254,6 +254,30 @@ public class ReaderRobustnessTests
         Assert.Contains("already defined", ex.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>Format 3.2 adds inductive flags the kernel must check (lean4#16595). Ignoring them would be a wrong answer.</summary>
+    [Theory]
+    [InlineData("3.0.0", true)]
+    [InlineData("3.1.0", true)]
+    [InlineData("3.1", true)]
+    [InlineData("3", true)]
+    [InlineData("3.2.0", false)]
+    [InlineData("3.2", false)]
+    [InlineData("3.10.0", false)]
+    [InlineData("3.x", false)]
+    [InlineData("3.-1", false)]
+    public void AFormatNewerThanTheReaderIsDeclined(string version, bool read)
+    {
+        string text = "{\"meta\":{\"exporter\":{\"name\":\"x\",\"version\":\"9.0.0\"},\"lean\":{\"githash\":\"\",\"version\":\"\"},\"format\":{\"version\":\"" + version + "\"}}}\n";
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text));
+        if (read)
+        {
+            Assert.Equal(version, NdjsonReader.Read(ms).Meta!.FormatVersion);
+            return;
+        }
+        var ex = Assert.Throws<ExportFormatException>(() => NdjsonReader.Read(ms));
+        Assert.True(ex.UnsupportedFormat);
+    }
+
     [Fact]
     public void UnsupportedFormatVersionIsRejected()
     {

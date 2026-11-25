@@ -62,7 +62,8 @@ internal static class Program
         exit status: 0 all declarations checked, 1 some failed, 2 usage or file error,
                      3 the export is truncated or malformed (declarations before the problem were checked),
                      4 declined: nothing was found wrong, but the file asks this checker to trust
-                       something it will not, such as the output of compiled code
+                       something it will not, such as the output of compiled code,
+                       or is in an export format newer than it reads
         """;
 
     private static int Main(string[] args)
@@ -1737,7 +1738,8 @@ internal static class Program
 
         if (result.ReadError is ExportFormatException re)
         {
-            Console.WriteLine($"INCOMPLETE: the export could not be read past {re.Message}; everything before it was checked");
+            Console.WriteLine(re.UnsupportedFormat ? "declined: " + re.Message
+                : $"INCOMPLETE: the export could not be read past {re.Message}; everything before it was checked");
         }
         foreach (CheckFailure f in result.Failures)
         {
@@ -1779,7 +1781,9 @@ internal static class Program
         // A file this checker will not vouch for is not a file it says is wrong. Everything that failed
         // being a refusal to trust compiled code is the one case where saying "rejected" would be a claim
         // about the proof that Tenet is not making.
-        bool declined = result.Failures.Count > 0 && result.Failures.All(f => f.Unsupported);
+        // The same goes for a file in a format newer than Tenet reads, where nothing was checked at all.
+        bool declined = result.Failures.Count > 0 ? result.Failures.All(f => f.Unsupported) && result.ReadError is not { UnsupportedFormat: true }
+            : result.ReadError is { UnsupportedFormat: true };
         string verdict = declined ? "DECLINED" : result.Failures.Count > 0 ? "FAILED" : result.ReadError is not null ? "INCOMPLETE" : "OK";
         Console.WriteLine($"{verdict}: {result.Checked} checked, {result.Failures.Count} failed, {result.Skipped} skipped, {result.Environment.Count} constants, {result.Elapsed.TotalSeconds:F1}s, {jobs} job{(jobs == 1 ? "" : "s")}");
         return declined ? 4 : result.Failures.Count > 0 ? 1 : result.ReadError is not null ? 3 : 0;
