@@ -8,7 +8,10 @@ public enum TraceKind : byte
     /// <summary>One kernel rule fired: <see cref="TraceStep.Rule"/> names it. Lhs and Rhs are the rule's terms.</summary>
     Rule,
 
-    /// <summary>Γ ⊢ Lhs : Rhs. The last rule step inside its span says which typing rule.</summary>
+    /// <summary>
+    /// Γ ⊢ Lhs : Rhs, computed in infer-only mode: the kernel trusts that Lhs is well typed (it is a subterm or a
+    /// reduct of a term already checked) and only computes its type.
+    /// </summary>
     Infer,
 
     /// <summary>Lhs ↝* Rhs by weak head normalization without delta (whnf_core).</summary>
@@ -22,6 +25,13 @@ public enum TraceKind : byte
 
     /// <summary>A local variable entering the context: Lhs is the free variable, Rhs its type, Value its let-value if any.</summary>
     Local,
+
+    /// <summary>
+    /// Γ ⊢ Lhs : Rhs, computed in checking mode: as Infer, and in addition every argument's type was compared with
+    /// its domain, every binder domain was checked to be a type, and every universe level was checked against the
+    /// declaration's universe parameters. The premises inside its span are those checks.
+    /// </summary>
+    Check,
 }
 
 /// <summary>

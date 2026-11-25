@@ -533,7 +533,7 @@ public sealed class TypeChecker
         }
         int mark = _trace.Mark();
         Expr r = InferTypeCoreImpl(e, inferOnly);
-        _trace.Conclude(TraceKind.Infer, e, r, mark);
+        _trace.Conclude(inferOnly ? TraceKind.Infer : TraceKind.Check, e, r, mark);
         return r;
     }
 

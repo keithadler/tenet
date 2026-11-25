@@ -187,6 +187,16 @@ public class TraceTests
     }
 
     [Fact]
+    public void ADeclarationIsCheckedNotOnlyInferred()
+    {
+        // The declaration's own type and value are inferred in checking mode, so the trace says Check for them.
+        (_, List<(Name Name, KernelTrace Trace)> traces) = CheckTraced("Nat.add_succ.ndjson");
+        (Name _, KernelTrace t) = traces.Single(x => x.Name.Equals(Name.Of("Nat", "add_succ")));
+        Assert.Contains(t.Steps, s => s.Kind == TraceKind.Check);
+        Assert.Contains(t.Steps, s => s.Kind == TraceKind.Infer);
+    }
+
+    [Fact]
     public void TheWriterHashConsesTerms()
     {
         (_, List<(Name Name, KernelTrace Trace)> traces) = CheckTraced("Nat.add_succ.ndjson");
