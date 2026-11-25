@@ -43,6 +43,13 @@ public sealed class CheckOptions
     /// dedicated threads with large stacks rather than pool threads. The reservation is virtual; only touched pages cost memory.
     /// </summary>
     public int WorkerStackMb { get; init; } = 512;
+
+    /// <summary>
+    /// Record a derivation for every checked declaration and hand it here once the declaration is accepted
+    /// (see <see cref="Trace"/>). Rejected declarations produce no trace. Tracing checks sequentially, whatever
+    /// <see cref="Jobs"/> says, and bypasses the kernel's caches, so it is much slower than checking.
+    /// </summary>
+    public Action<Name, KernelTrace>? TraceDecl { get; init; }
 }
 
 /// <summary>What the streaming checker learned about the export while reading it.</summary>
@@ -74,7 +81,7 @@ public static class ExportChecker
     public static CheckResult Check(ExportFile file, CheckOptions? options = null)
     {
         options ??= new CheckOptions();
-        if (options.Jobs > 1)
+        if (options.Jobs > 1 && options.TraceDecl is null)
         {
             return CheckParallel(file, options);
         }
@@ -98,8 +105,16 @@ public static class ExportChecker
             {
                 try
                 {
-                    CheckDecl(env, decl, options.CompareInductive);
+                    KernelTrace? trace = options.TraceDecl is null ? null : new KernelTrace();
+                    using (trace is null ? default : new KernelTrace.Scope(trace))
+                    {
+                        CheckDecl(env, decl, options.CompareInductive);
+                    }
                     result.Checked++;
+                    if (trace is not null)
+                    {
+                        options.TraceDecl!(decl.DisplayName, trace);
+                    }
                 }
                 catch (KernelException e)
                 {

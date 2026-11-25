@@ -234,12 +234,15 @@ public sealed class Environment
     private void RunFastThenFaithful(Action action)
     {
         bool fast = TypeChecker.CacheFailures && !TypeChecker.InFaithfulScope;
+        int traceMark = KernelTrace.Current?.Mark() ?? 0;
         try
         {
             RunWithRollback(action);
         }
         catch (KernelException e) when (fast && e is not DeterministicTimeoutException and not RecursionLimitException)
         {
+            // The rejected attempt's steps prove nothing; the retry records its own.
+            KernelTrace.Current?.Rollback(traceMark);
             TypeChecker.Stats.CountFaithfulRetry();
             using var _ = new TypeChecker.FaithfulScope();
             RunWithRollback(action);

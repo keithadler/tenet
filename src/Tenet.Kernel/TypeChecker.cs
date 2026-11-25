@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace Tenet.Kernel;
 
@@ -37,6 +38,13 @@ public sealed class TypeChecker
     public Environment Env { get; }
     public LocalContext Lctx { get; }
     private readonly DefinitionSafety _safety;
+
+    /// <summary>
+    /// The trace this checker records into: the one attached to the thread when the checker was created, or null.
+    /// While tracing, the inference, normalization and success caches are bypassed, since a cache hit would skip the
+    /// steps that justify it. See <see cref="Trace"/>.
+    /// </summary>
+    private readonly KernelTrace? _trace;
 
     /// <summary>Process-wide counters of kernel work, for diagnostics and for proving a run was not vacuous.</summary>
     public static class Stats
@@ -179,6 +187,7 @@ public sealed class TypeChecker
         Lctx = lctx ?? new LocalContext();
         _safety = safety;
         _cacheFailures = CacheFailures && !t_faithful;
+        _trace = KernelTrace.Current;
     }
 
     // ------------------------------------------------------------------ public API
@@ -515,7 +524,20 @@ public sealed class TypeChecker
         return e.Value.Type;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private Expr InferTypeCore(Expr e, bool inferOnly)
+    {
+        if (_trace is null)
+        {
+            return InferTypeCoreImpl(e, inferOnly);
+        }
+        int mark = _trace.Mark();
+        Expr r = InferTypeCoreImpl(e, inferOnly);
+        _trace.Conclude(TraceKind.Infer, e, r, mark);
+        return r;
+    }
+
+    private Expr InferTypeCoreImpl(Expr e, bool inferOnly)
     {
         if (e.HasLooseBVars)
         {
@@ -528,7 +550,7 @@ public sealed class TypeChecker
         }
         StackGuard.Check();
         Dictionary<Expr, Expr> cache = inferOnly ? _inferOnlyCache : _checkCache;
-        if (cache.TryGetValue(e, out Expr? cached))
+        if (_trace is null && cache.TryGetValue(e, out Expr? cached))
         {
             Stats.InferHit();
             return cached;
@@ -619,6 +641,7 @@ public sealed class TypeChecker
         if (d?.Value is Expr v)
         {
             Rules.Hit(Rule.ZetaFVar);
+            _trace?.Step(Rule.ZetaFVar, e, v);
             return WhnfCore(v, cheapRec, cheapProj);
         }
         return e;
@@ -629,7 +652,9 @@ public sealed class TypeChecker
         if (c.IsStrLit)
         {
             Rules.Hit(Rule.StringLitToCtor);
-            c = Whnf(Inductive.StringLitToConstructor(Env, c));
+            Expr ctorForm = Inductive.StringLitToConstructor(Env, c);
+            _trace?.Step(Rule.StringLitToCtor, c, ctorForm);
+            c = Whnf(ctorForm);
         }
         Expr mk = c.GetAppArgs(out Expr[] args);
         if (mk is not ConstExpr mkc || Env.Get(mkc.Name) is not ConstructorInfo mkVal)   // `get`, as in Lean's reduce_proj_core
@@ -653,7 +678,33 @@ public sealed class TypeChecker
     private bool IsLetFVar(Expr e) => e is FVarExpr f && Lctx.Find(f.Id)?.Value is not null;
 
     /// <summary>Weak head normal form without delta reduction (beta, zeta, projection, iota, quotient).</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Expr WhnfCore(Expr e, bool cheapRec = false, bool cheapProj = false)
+    {
+        if (_trace is null)
+        {
+            return WhnfCoreImpl(e, cheapRec, cheapProj);
+        }
+        int mark = _trace.Mark();
+        Expr r = WhnfCoreImpl(e, cheapRec, cheapProj);
+        ConcludeReduction(TraceKind.WhnfCore, e, r, mark);
+        return r;
+    }
+
+    /// <summary>Record e ↝* r over the steps since mark, or drop those steps when nothing changed.</summary>
+    private void ConcludeReduction(TraceKind kind, Expr e, Expr r, int mark)
+    {
+        if (ReferenceEquals(r, e) || r.Equals(e))
+        {
+            _trace!.Rollback(mark);
+        }
+        else
+        {
+            _trace!.Conclude(kind, e, r, mark);
+        }
+    }
+
+    private Expr WhnfCoreImpl(Expr e, bool cheapRec, bool cheapProj)
     {
         switch (e.Kind)
         {
@@ -671,7 +722,7 @@ public sealed class TypeChecker
                 }
                 break;
         }
-        if (_whnfCoreCache.TryGetValue(e, out Expr? cached))
+        if (_trace is null && _whnfCoreCache.TryGetValue(e, out Expr? cached))
         {
             Stats.WhnfCoreHit();
             return cached;
@@ -686,7 +737,7 @@ public sealed class TypeChecker
             case ProjExpr p:
                 {
                     Expr? m = ReduceProj(p, cheapRec, cheapProj);
-                    if (m is not null) { Rules.Hit(Rule.Proj); }
+                    if (m is not null) { Rules.Hit(Rule.Proj); _trace?.Step(Rule.Proj, e, m); }
                     r = m is not null ? WhnfCore(m, cheapRec, cheapProj) : e;
                     break;
                 }
@@ -706,7 +757,11 @@ public sealed class TypeChecker
                         }
                         Rules.Hit(Rule.Beta);
                         Expr inst = ExprOps.Instantiate(body, 0, revArgs.AsSpan(numArgs - m, m).ToArray());
-                        r = WhnfCore(Expr.MkRevApp(inst, revArgs.AsSpan(0, numArgs - m)), cheapRec, cheapProj);
+                        Expr reduct = Expr.MkRevApp(inst, revArgs.AsSpan(0, numArgs - m));
+                        // The head was normalized first (a WhnfCore conclusion just above, when it changed), so the
+                        // beta step is taken on the application with the normalized head.
+                        _trace?.Step(Rule.Beta, Expr.MkRevApp(f, revArgs), reduct);
+                        r = WhnfCore(reduct, cheapRec, cheapProj);
                     }
                     else if (f.Equals(f0))
                     {
@@ -729,12 +784,14 @@ public sealed class TypeChecker
                 }
             case LetExpr let:
                 Rules.Hit(Rule.Zeta);
-                r = WhnfCore(ExprOps.Instantiate1(let.Body, let.Value), cheapRec, cheapProj);
+                Expr zeta = ExprOps.Instantiate1(let.Body, let.Value);
+                _trace?.Step(Rule.Zeta, e, zeta);
+                r = WhnfCore(zeta, cheapRec, cheapProj);
                 break;
             default:
                 throw new InvalidOperationException();
         }
-        if (!cheapRec && !cheapProj)
+        if (!cheapRec && !cheapProj && _trace is null)
         {
             _whnfCoreCache[e] = r;
         }
@@ -985,7 +1042,20 @@ public sealed class TypeChecker
     }
 
     /// <summary>Weak head normal form, including delta reduction and literal arithmetic.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Expr Whnf(Expr e)
+    {
+        if (_trace is null)
+        {
+            return WhnfImpl(e);
+        }
+        int mark = _trace.Mark();
+        Expr r = WhnfImpl(e);
+        ConcludeReduction(TraceKind.Whnf, e, r, mark);
+        return r;
+    }
+
+    private Expr WhnfImpl(Expr e)
     {
         switch (e.Kind)
         {
@@ -1001,7 +1071,7 @@ public sealed class TypeChecker
                 }
                 break;
         }
-        if (_whnfCache.TryGetValue(e, out Expr? cached))
+        if (_trace is null && _whnfCache.TryGetValue(e, out Expr? cached))
         {
             Stats.WhnfHit();
             return cached;
@@ -1022,6 +1092,7 @@ public sealed class TypeChecker
             {
                 Stats.CountNatLit();
                 Rules.Hit(Rule.NatLitOp);
+                TraceNatLit(t1, v);
                 _whnfCache[e] = v;
                 return v;
             }
@@ -1029,6 +1100,7 @@ public sealed class TypeChecker
             if (next is not null)
             {
                 Rules.Hit(Rule.Delta);
+                _trace?.Step(Rule.Delta, t1, next);
                 if (Stats.Enabled)
                 {
                     Stats.CountUnfold(((ConstExpr)t1.GetAppFn()).Name);
@@ -1107,9 +1179,10 @@ public sealed class TypeChecker
         if (t.Equals(s))
         {
             Rules.Hit(Rule.DefEqSyntactic);
+            _trace?.Step(Rule.DefEqSyntactic, t, s);
             return LBool.True;
         }
-        if (SucceededBefore(t, s))
+        if (_trace is null && SucceededBefore(t, s))
         {
             Stats.DefEqSuccessHit();
             return LBool.True;
@@ -1119,11 +1192,23 @@ public sealed class TypeChecker
             switch (t)
             {
                 case BindingExpr tb:
-                    Rules.Hit(Rule.DefEqBinding);
-                    return ToLBool(IsDefEqBinding(tb, (BindingExpr)s));
+                    {
+                        Rules.Hit(Rule.DefEqBinding);
+                        int mark = _trace?.Mark() ?? 0;
+                        bool ok = IsDefEqBinding(tb, (BindingExpr)s);
+                        if (_trace is not null)
+                        {
+                            if (ok) { _trace.Step(Rule.DefEqBinding, t, s, mark); } else { _trace.Rollback(mark); }
+                        }
+                        return ToLBool(ok);
+                    }
                 case SortExpr ts:
-                    Rules.Hit(Rule.DefEqSort);
-                    return ToLBool(Level.IsEquiv(ts.Level, ((SortExpr)s).Level));
+                    {
+                        Rules.Hit(Rule.DefEqSort);
+                        bool ok = Level.IsEquiv(ts.Level, ((SortExpr)s).Level);
+                        if (ok) { _trace?.Step(Rule.DefEqSort, t, s); }
+                        return ToLBool(ok);
+                    }
                 case LitExpr tl:
                     return ToLBool(tl.Value.Equals(((LitExpr)s).Value));
             }
@@ -1276,6 +1361,7 @@ public sealed class TypeChecker
                 return null;
             }
             Rules.Hit(Rule.UnfoldProjApp);
+            _trace?.Step(Rule.UnfoldProjApp, e, n);
             return n;
         }
         return null;
@@ -1316,7 +1402,7 @@ public sealed class TypeChecker
                 {
                     Stats.CountUnfold(dt!.Name);
                 }
-                tn = WhnfCore(UnfoldDefinition(tn)!, false, true);
+                tn = WhnfCore(UnfoldLazy(tn), false, true);
             }
         }
         else if (dt is null && ds is not null)
@@ -1332,7 +1418,7 @@ public sealed class TypeChecker
                 {
                     Stats.CountUnfold(ds!.Name);
                 }
-                sn = WhnfCore(UnfoldDefinition(sn)!, false, true);
+                sn = WhnfCore(UnfoldLazy(sn), false, true);
             }
         }
         else
@@ -1344,7 +1430,7 @@ public sealed class TypeChecker
                 {
                     Stats.CountUnfold(dt!.Name);
                 }
-                tn = WhnfCore(UnfoldDefinition(tn)!, false, true);
+                tn = WhnfCore(UnfoldLazy(tn), false, true);
             }
             else if (c > 0)
             {
@@ -1352,7 +1438,7 @@ public sealed class TypeChecker
                 {
                     Stats.CountUnfold(ds!.Name);
                 }
-                sn = WhnfCore(UnfoldDefinition(sn)!, false, true);
+                sn = WhnfCore(UnfoldLazy(sn), false, true);
             }
             else
             {
@@ -1373,8 +1459,8 @@ public sealed class TypeChecker
                     Stats.CountUnfold(dt!.Name);
                     Stats.CountUnfold(ds!.Name);
                 }
-                tn = WhnfCore(UnfoldDefinition(tn)!, false, true);
-                sn = WhnfCore(UnfoldDefinition(sn)!, false, true);
+                tn = WhnfCore(UnfoldLazy(tn), false, true);
+                sn = WhnfCore(UnfoldLazy(sn), false, true);
             }
         }
         return QuickIsDefEq(tn, sn) switch
@@ -1384,6 +1470,18 @@ public sealed class TypeChecker
             _ => ReductionStatus.Continue,
         };
     }
+
+    /// <summary>One unfolding during lazy delta reduction, recorded as a <see cref="Rule.DeltaLazy"/> step.</summary>
+    private Expr UnfoldLazy(Expr e)
+    {
+        Expr r = UnfoldDefinition(e)!;
+        _trace?.Step(Rule.DeltaLazy, e, r);
+        return r;
+    }
+
+    /// <summary>Record a literal computation e ↝ v, as an operation or as a predicate by what it returned.</summary>
+    private void TraceNatLit(Expr e, Expr v) =>
+        _trace?.Step(v.IsConstOf(BoolTrue) || v.IsConstOf(BoolFalse) ? Rule.NatLitPred : Rule.NatLitOp, e, v);
 
     /// <summary>Theorems and non-regular definitions unfold like opaque-hinted definitions.</summary>
     private static ReducibilityHints HintsOf(ConstantInfo c) => c is DefinitionInfo d ? d.Hints : ReducibilityHints.Opaque;
@@ -1408,13 +1506,17 @@ public sealed class TypeChecker
         Rules.Hit(Rule.DefEqOffset);
         if (IsNatZero(t) && IsNatZero(s))
         {
+            _trace?.Step(Rule.DefEqOffset, t, s);
             return LBool.True;
         }
         Expr? predT = IsNatSucc(t);
         Expr? predS = IsNatSucc(s);
         if (predT is not null && predS is not null)
         {
-            return ToLBool(IsDefEqCore(predT, predS));
+            int mark = _trace?.Mark() ?? 0;
+            bool ok = IsDefEqCore(predT, predS);
+            if (ok) { _trace?.Step(Rule.DefEqOffset, t, s, mark); }
+            return ToLBool(ok);
         }
         return LBool.Undef;
     }
@@ -1433,11 +1535,13 @@ public sealed class TypeChecker
                 Expr? tv = ReduceNat(tn);
                 if (tv is not null)
                 {
+                    TraceNatLit(tn, tv);
                     return ToLBool(IsDefEqCore(tv, sn));
                 }
                 Expr? sv = ReduceNat(sn);
                 if (sv is not null)
                 {
+                    TraceNatLit(sn, sv);
                     return ToLBool(IsDefEqCore(tn, sv));
                 }
             }
@@ -1524,7 +1628,31 @@ public sealed class TypeChecker
         return IsDefEqCore(tType, Infer(s));
     }
 
+    /// <summary>
+    /// Definitional equality without the caches of <see cref="IsDefEq"/>. While tracing, a success concludes
+    /// t ≡ s over every step taken since entry, and a failure rolls those steps back.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool IsDefEqCore(Expr t, Expr s)
+    {
+        if (_trace is null)
+        {
+            return IsDefEqCoreImpl(t, s);
+        }
+        int mark = _trace.Mark();
+        bool ok = IsDefEqCoreImpl(t, s);
+        if (ok)
+        {
+            _trace.Conclude(TraceKind.DefEq, t, s, mark);
+        }
+        else
+        {
+            _trace.Rollback(mark);
+        }
+        return ok;
+    }
+
+    private bool IsDefEqCoreImpl(Expr t, Expr s)
     {
         StackGuard.Check();
         Stats.CountDefEq();
@@ -1540,6 +1668,7 @@ public sealed class TypeChecker
             if (Whnf(t).IsConstOf(BoolTrue))
             {
                 Rules.Hit(Rule.DefEqReflect);
+                _trace?.Step(Rule.DefEqReflect, t, s);
                 return true;
             }
         }
@@ -1553,6 +1682,7 @@ public sealed class TypeChecker
             if (r != LBool.Undef)
             {
                 Rules.Hit(Rule.DefEqProofIrrel);
+                _trace?.Step(Rule.DefEqProofIrrel, t, s);
                 return r == LBool.True;
             }
         }
@@ -1575,6 +1705,7 @@ public sealed class TypeChecker
             if (r != LBool.Undef)
             {
                 Rules.Hit(Rule.DefEqProofIrrel);
+                _trace?.Step(Rule.DefEqProofIrrel, tn, sn);
                 return r == LBool.True;
             }
         }
@@ -1583,17 +1714,20 @@ public sealed class TypeChecker
         if (r != LBool.Undef)
         {
             Rules.Hit(Rule.DefEqLazyDelta);
+            _trace?.Step(Rule.DefEqLazyDelta, tn, sn);
             return r == LBool.True;
         }
 
         if (tn is ConstExpr tc && sn is ConstExpr sc && tc.Name.Equals(sc.Name) && IsDefEqLevels(tc.Levels, sc.Levels))
         {
             Rules.Hit(Rule.DefEqConst);
+            _trace?.Step(Rule.DefEqConst, tn, sn);
             return true;
         }
         if (tn is FVarExpr tf && sn is FVarExpr sf && tf.Id == sf.Id)
         {
             Rules.Hit(Rule.DefEqFVar);
+            _trace?.Step(Rule.DefEqFVar, tn, sn);
             return true;
         }
         if (tn is ProjExpr tp && sn is ProjExpr sp && tp.StructName.Equals(sp.StructName) && tp.Idx == sp.Idx)
@@ -1603,6 +1737,7 @@ public sealed class TypeChecker
             if (LazyDeltaProjReduction(ref tcStruct, ref scStruct, tp.StructName, tp.Idx))
             {
                 Rules.Hit(Rule.DefEqLazyDeltaProj);
+                _trace?.Step(Rule.DefEqLazyDeltaProj, tn, sn);
                 return true;
             }
         }
@@ -1618,27 +1753,32 @@ public sealed class TypeChecker
         if (IsDefEqApp(tn, sn))
         {
             Rules.Hit(Rule.DefEqApp);
+            _trace?.Step(Rule.DefEqApp, tn, sn);
             return true;
         }
         if (TryEtaExpansion(tn, sn))
         {
             Rules.Hit(Rule.DefEqEta);
+            _trace?.Step(Rule.DefEqEta, tn, sn);
             return true;
         }
         if (TryEtaStruct(tn, sn))
         {
             Rules.Hit(Rule.DefEqEtaStruct);
+            _trace?.Step(Rule.DefEqEtaStruct, tn, sn);
             return true;
         }
         r = TryStringLitExpansion(tn, sn);
         if (r != LBool.Undef)
         {
             Rules.Hit(Rule.DefEqStringLit);
+            _trace?.Step(Rule.DefEqStringLit, tn, sn);
             return r == LBool.True;
         }
         if (IsDefEqUnitLike(tn, sn))
         {
             Rules.Hit(Rule.DefEqUnitLike);
+            _trace?.Step(Rule.DefEqUnitLike, tn, sn);
             return true;
         }
         return false;

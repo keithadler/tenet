@@ -36,7 +36,9 @@ public sealed class LocalContext
     {
         var id = FVarId.Fresh();
         _decls[id] = new LocalDecl(id, userName, type, null, info);
-        return Expr.FVar(id);
+        Expr fv = Expr.FVar(id);
+        KernelTrace.Current?.Local(fv, type, null);
+        return fv;
     }
 
     /// <summary>Introduce a fresh let-bound free variable.</summary>
@@ -44,7 +46,9 @@ public sealed class LocalContext
     {
         var id = FVarId.Fresh();
         _decls[id] = new LocalDecl(id, userName, type, value, BinderInfo.Default);
-        return Expr.FVar(id);
+        Expr fv = Expr.FVar(id);
+        KernelTrace.Current?.Local(fv, type, value);
+        return fv;
     }
 
     public LocalDecl? Find(FVarId id) => _decls.TryGetValue(id, out LocalDecl? d) ? d : null;
