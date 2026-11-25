@@ -116,6 +116,11 @@ internal static class Program
         {
             return Fail(e.Message);
         }
+        catch (ExportFormatException e) when (e.UnsupportedFormat)
+        {
+            Console.Error.WriteLine("declined: " + e.Message);
+            return 4;
+        }
         catch (ExportFormatException e)
         {
             Console.Error.WriteLine("error: not a valid export: " + e.Message);
