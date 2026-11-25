@@ -102,31 +102,33 @@ public sealed class KernelTrace
     // remove the step a memory points to, so every recall first checks that the step is still there and still says
     // the same thing. A term remembered as already normal needs no step at all: it asserts nothing.
 
-    private readonly Dictionary<(TraceKind, Expr), int> _known = new();
-    private readonly Dictionary<(Expr, Expr), int> _knownEq = new();
-    private readonly HashSet<(TraceKind, Expr)> _normal = new();
+    // Keyed by environment too: a nested inductive is checked in an auxiliary environment with constants the
+    // declaration's own environment does not have, and a result from one must never be recalled in the other.
+    private readonly Dictionary<(Environment, TraceKind, Expr), int> _known = new();
+    private readonly Dictionary<(Environment, Expr, Expr), int> _knownEq = new();
+    private readonly HashSet<(Environment, TraceKind, Expr)> _normal = new();
 
     /// <summary>Remember that the last step concluded <paramref name="lhs"/>'s result of this kind.</summary>
-    public void Remember(TraceKind kind, Expr lhs) => _known[(kind, lhs)] = _steps.Count - 1;
+    public void Remember(Environment env, TraceKind kind, Expr lhs) => _known[(env, kind, lhs)] = _steps.Count - 1;
 
     /// <summary>Remember that <paramref name="e"/> is already in normal form of this kind.</summary>
-    public void RememberNormal(TraceKind kind, Expr e) => _normal.Add((kind, e));
+    public void RememberNormal(Environment env, TraceKind kind, Expr e) => _normal.Add((env, kind, e));
 
     /// <summary>Remember that the last step concluded t ≡ s.</summary>
-    public void RememberEq(Expr t, Expr s) => _knownEq[(t, s)] = _steps.Count - 1;
+    public void RememberEq(Environment env, Expr t, Expr s) => _knownEq[(env, t, s)] = _steps.Count - 1;
 
     /// <summary>
     /// If this result was concluded by a step still in the trace, record a step pointing back to it and return the
     /// result. A term remembered as normal is returned as it is, with no step.
     /// </summary>
-    public bool TryRecall(TraceKind kind, Expr lhs, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out Expr? result)
+    public bool TryRecall(Environment env, TraceKind kind, Expr lhs, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out Expr? result)
     {
-        if (_normal.Contains((kind, lhs)))
+        if (_normal.Contains((env, kind, lhs)))
         {
             result = lhs;
             return true;
         }
-        if (_known.TryGetValue((kind, lhs), out int i) && i < _steps.Count && _steps[i].Kind == kind && _steps[i].Lhs.Equals(lhs))
+        if (_known.TryGetValue((env, kind, lhs), out int i) && i < _steps.Count && _steps[i].Kind == kind && _steps[i].Lhs.Equals(lhs))
         {
             result = _steps[i].Rhs!;
             _steps.Add(new TraceStep(kind, default, lhs, result, _steps.Count, null, i));
@@ -137,11 +139,11 @@ public sealed class KernelTrace
     }
 
     /// <summary>As <see cref="TryRecall"/>, for a definitional equality in either order.</summary>
-    public bool TryRecallEq(Expr t, Expr s)
+    public bool TryRecallEq(Environment env, Expr t, Expr s)
     {
         foreach ((Expr a, Expr b) in new[] { (t, s), (s, t) })
         {
-            if (_knownEq.TryGetValue((a, b), out int i) && i < _steps.Count && _steps[i].Kind == TraceKind.DefEq
+            if (_knownEq.TryGetValue((env, a, b), out int i) && i < _steps.Count && _steps[i].Kind == TraceKind.DefEq
                 && _steps[i].Lhs.Equals(a) && _steps[i].Rhs!.Equals(b))
             {
                 _steps.Add(new TraceStep(TraceKind.DefEq, default, t, s, _steps.Count, null, i));

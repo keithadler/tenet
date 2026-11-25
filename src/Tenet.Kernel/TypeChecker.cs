@@ -532,14 +532,14 @@ public sealed class TypeChecker
             return InferTypeCoreImpl(e, inferOnly);
         }
         TraceKind kind = inferOnly ? TraceKind.Infer : TraceKind.Check;
-        if (_trace.TryRecall(kind, e, out Expr? known))
+        if (_trace.TryRecall(Env, kind, e, out Expr? known))
         {
             return known;
         }
         int mark = _trace.Mark();
         Expr r = InferTypeCoreImpl(e, inferOnly);
         _trace.Conclude(kind, e, r, mark);
-        _trace.Remember(kind, e);
+        _trace.Remember(Env, kind, e);
         return r;
     }
 
@@ -693,7 +693,7 @@ public sealed class TypeChecker
         }
         // Only the full reduction is remembered, as only it is cached when not tracing.
         bool remember = !cheapRec && !cheapProj;
-        if (remember && _trace.TryRecall(TraceKind.WhnfCore, e, out Expr? known))
+        if (remember && _trace.TryRecall(Env, TraceKind.WhnfCore, e, out Expr? known))
         {
             return known;
         }
@@ -711,7 +711,7 @@ public sealed class TypeChecker
             _trace!.Rollback(mark);
             if (remember)
             {
-                _trace.RememberNormal(kind, e);
+                _trace.RememberNormal(Env, kind, e);
             }
         }
         else
@@ -719,7 +719,7 @@ public sealed class TypeChecker
             _trace!.Conclude(kind, e, r, mark);
             if (remember)
             {
-                _trace.Remember(kind, e);
+                _trace.Remember(Env, kind, e);
             }
         }
     }
@@ -1069,7 +1069,7 @@ public sealed class TypeChecker
         {
             return WhnfImpl(e);
         }
-        if (_trace.TryRecall(TraceKind.Whnf, e, out Expr? known))
+        if (_trace.TryRecall(Env, TraceKind.Whnf, e, out Expr? known))
         {
             return known;
         }
@@ -1663,7 +1663,7 @@ public sealed class TypeChecker
         {
             return IsDefEqCoreImpl(t, s);
         }
-        if (_trace.TryRecallEq(t, s))
+        if (_trace.TryRecallEq(Env, t, s))
         {
             return true;
         }
@@ -1672,7 +1672,7 @@ public sealed class TypeChecker
         if (ok)
         {
             _trace.Conclude(TraceKind.DefEq, t, s, mark);
-            _trace.RememberEq(t, s);
+            _trace.RememberEq(Env, t, s);
         }
         else
         {
