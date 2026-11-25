@@ -45,6 +45,8 @@ internal static class Program
           --rules                     which kernel rules the run exercised, and which it never reached
           --verbose                   name each declaration before checking it (.olean files)
           --report <file.json>        also write the outcome (counts, failures, slow declarations) as JSON
+          --trace <file.ndjson>       record the derivation of every accepted declaration (export files only;
+                                        sequential and uncached, so much slower; for github.com/keithadler/tenet-zfc)
           --jobs <n>                  check n declarations concurrently (default: number of cores; 1 = sequential)
           --slow <seconds>            report declarations slower than this (default 1)
           --stack-mb <n>              stack size for each checking thread, in MB (default 512)
@@ -1596,10 +1598,18 @@ internal static class Program
         double slow = 1.0;
         int jobs = System.Environment.ProcessorCount;
         string? report = null;
+        string? tracePath = null;
         for (int i = 1; i < args.Length; i++)
         {
             switch (args[i])
             {
+                case "--trace":
+                    if (++i >= args.Length)
+                    {
+                        return Fail("--trace needs a file name");
+                    }
+                    tracePath = args[i];
+                    break;
                 case "--only":
                     if (++i >= args.Length)
                     {
@@ -1666,8 +1676,11 @@ internal static class Program
         var lastReport = Stopwatch.StartNew();
         var reportLock = new object();
         bool isTty = !Console.IsErrorRedirected;
+        StreamWriter? traceOut = tracePath is null ? null : new StreamWriter(tracePath);
+        TraceWriter? traceWriter = traceOut is null ? null : new TraceWriter(traceOut);
         var options = new CheckOptions
         {
+            TraceDecl = traceWriter is null ? null : (name, trace) => traceWriter.WriteDecl(name, trace),
             Only = only,
             ContinueOnError = !failFast,
             CompareInductive = compare,
@@ -1696,8 +1709,17 @@ internal static class Program
             },
         };
         CheckResult result;
-        using (FileStream fs = File.OpenRead(path))
+        if (traceOut is not null)
         {
+            // Tracing is sequential, so the export is read whole and checked in order.
+            using (traceOut)
+            {
+                result = ExportChecker.Check(NdjsonReader.ReadFile(path), options);
+            }
+        }
+        else
+        {
+            using FileStream fs = File.OpenRead(path);
             result = ExportChecker.CheckStreaming(fs, options);
         }
         if (!quiet && isTty)

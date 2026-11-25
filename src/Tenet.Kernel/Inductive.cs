@@ -176,7 +176,9 @@ public static class Inductive
         else if (major.IsStrLit)
         {
             Rules.Hit(Rule.StringLitToCtor);
-            major = whnf(StringLitToConstructor(env, major));
+            Expr ctorForm = StringLitToConstructor(env, major);
+            KernelTrace.Record(Rule.StringLitToCtor, major, ctorForm);
+            major = whnf(ctorForm);
         }
         else
         {
@@ -207,6 +209,7 @@ public static class Inductive
             rhs = Expr.MkApp(rhs, recArgs.AsSpan(majorIdx + 1));
         }
         Rules.Hit(byK ? Rule.IotaK : Rule.Iota);
+        KernelTrace.Record(byK ? Rule.IotaK : Rule.Iota, e, rhs);
         return rhs;
     }
 

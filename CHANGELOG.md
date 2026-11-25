@@ -3,6 +3,20 @@
 All notable changes to Tenet. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Derivation traces: `tenet check <file.ndjson> --trace <out.ndjson>`.** Records the steps behind every accepted
+  declaration: each rule that fired with the terms it fired on, each inference, normalization and definitional
+  equality as a conclusion over its premises, and each local variable as it enters the context. Only the derivation
+  that succeeded is kept; a failed attempt (a lazy-delta branch, a fast-mode rejection that is re-checked) is rolled
+  back. Terms are hash-consed across the file in lean4export's shapes. This is milestone 1 of a Lean-to-ZFC
+  translator ([tenet-zfc](https://github.com/keithadler/tenet-zfc)); the format is in its `docs/trace-format.md`.
+  Tracing checks sequentially and bypasses the caches, so it is slow. Without `--trace` nothing changes:
+  the new `TraceTests` show the same verdicts with and without tracing on every fixture, and all of `Init` from
+  4.35.0 (64,658 declarations) checks with 0 failures in the same time as before. Library API: `KernelTrace`,
+  `KernelTrace.Scope`, `TraceWriter`, and `CheckOptions.TraceDecl`.
+
 ## [0.11.5] - 2026-11-24
 
 ### Fixed

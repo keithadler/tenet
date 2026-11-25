@@ -152,6 +152,7 @@ public static class Quot
             r = Expr.MkApp(r, args.AsSpan(elimArity));
         }
         Rules.Hit(rule);
+        KernelTrace.Record(rule, e, r);
         return r;
     }
 }
