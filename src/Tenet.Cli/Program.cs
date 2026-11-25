@@ -1616,7 +1616,7 @@ internal static class Program
                     {
                         return Fail("--only needs a value");
                     }
-                    only = new HashSet<Name>(args[i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(Name.Parse));
+                    only = new HashSet<Name>(Name.SplitList(args[i]).Select(x => x.Trim()).Where(x => x.Length > 0).Select(Name.Parse));
                     break;
                 case "--fail-fast":
                     failFast = true;
@@ -1824,7 +1824,7 @@ internal static class Program
             {
                 case "--only":
                     if (++i >= args.Length) return Fail("--only needs a value");
-                    only = new HashSet<Name>(args[i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(Name.Parse));
+                    only = new HashSet<Name>(Name.SplitList(args[i]).Select(x => x.Trim()).Where(x => x.Length > 0).Select(Name.Parse));
                     break;
                 case "--lib":
                     if (++i >= args.Length) return Fail("--lib needs a directory");
