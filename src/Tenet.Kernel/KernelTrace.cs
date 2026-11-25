@@ -39,7 +39,7 @@ public enum TraceKind : byte
 /// premises are the steps from <see cref="SpanStart"/> up to the step itself; its direct premises are found by walking
 /// back from the step before it, jumping to each premise's own <see cref="SpanStart"/>.
 /// </summary>
-public readonly record struct TraceStep(TraceKind Kind, Rule Rule, Expr Lhs, Expr? Rhs, int SpanStart, Expr? Value = null);
+public readonly record struct TraceStep(TraceKind Kind, Rule Rule, Expr Lhs, Expr? Rhs, int SpanStart, Expr? Value = null, int Of = -1);
 
 /// <summary>
 /// A record of the steps the kernel took to accept a declaration, for the Lean-to-ZFC translator
@@ -78,7 +78,13 @@ public sealed class KernelTrace
     }
 
     /// <summary>Discard everything.</summary>
-    public void Clear() => _steps.Clear();
+    public void Clear()
+    {
+        _steps.Clear();
+        _known.Clear();
+        _knownEq.Clear();
+        _normal.Clear();
+    }
 
     /// <summary>Record that <paramref name="rule"/> fired on <paramref name="lhs"/> (and <paramref name="rhs"/>), with premises since <paramref name="spanStart"/>.</summary>
     public void Step(Rule rule, Expr lhs, Expr? rhs, int spanStart = -1) =>
@@ -87,6 +93,63 @@ public sealed class KernelTrace
     /// <summary>Record a conclusion whose premises are the steps since <paramref name="spanStart"/>.</summary>
     public void Conclude(TraceKind kind, Expr lhs, Expr rhs, int spanStart) =>
         _steps.Add(new TraceStep(kind, default, lhs, rhs, spanStart));
+
+    // ---- recall: the trace's own cache ----
+    //
+    // A checker's caches would skip the steps that justify a result, so while tracing it does not use them. These
+    // take their place: a result is remembered by the index of the step that concluded it, and a later request for
+    // the same result records a step that points back to that one ("Of") instead of deriving it again. A rollback can
+    // remove the step a memory points to, so every recall first checks that the step is still there and still says
+    // the same thing. A term remembered as already normal needs no step at all: it asserts nothing.
+
+    private readonly Dictionary<(TraceKind, Expr), int> _known = new();
+    private readonly Dictionary<(Expr, Expr), int> _knownEq = new();
+    private readonly HashSet<(TraceKind, Expr)> _normal = new();
+
+    /// <summary>Remember that the last step concluded <paramref name="lhs"/>'s result of this kind.</summary>
+    public void Remember(TraceKind kind, Expr lhs) => _known[(kind, lhs)] = _steps.Count - 1;
+
+    /// <summary>Remember that <paramref name="e"/> is already in normal form of this kind.</summary>
+    public void RememberNormal(TraceKind kind, Expr e) => _normal.Add((kind, e));
+
+    /// <summary>Remember that the last step concluded t ≡ s.</summary>
+    public void RememberEq(Expr t, Expr s) => _knownEq[(t, s)] = _steps.Count - 1;
+
+    /// <summary>
+    /// If this result was concluded by a step still in the trace, record a step pointing back to it and return the
+    /// result. A term remembered as normal is returned as it is, with no step.
+    /// </summary>
+    public bool TryRecall(TraceKind kind, Expr lhs, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out Expr? result)
+    {
+        if (_normal.Contains((kind, lhs)))
+        {
+            result = lhs;
+            return true;
+        }
+        if (_known.TryGetValue((kind, lhs), out int i) && i < _steps.Count && _steps[i].Kind == kind && _steps[i].Lhs.Equals(lhs))
+        {
+            result = _steps[i].Rhs!;
+            _steps.Add(new TraceStep(kind, default, lhs, result, _steps.Count, null, i));
+            return true;
+        }
+        result = null;
+        return false;
+    }
+
+    /// <summary>As <see cref="TryRecall"/>, for a definitional equality in either order.</summary>
+    public bool TryRecallEq(Expr t, Expr s)
+    {
+        foreach ((Expr a, Expr b) in new[] { (t, s), (s, t) })
+        {
+            if (_knownEq.TryGetValue((a, b), out int i) && i < _steps.Count && _steps[i].Kind == TraceKind.DefEq
+                && _steps[i].Lhs.Equals(a) && _steps[i].Rhs!.Equals(b))
+            {
+                _steps.Add(new TraceStep(TraceKind.DefEq, default, t, s, _steps.Count, null, i));
+                return true;
+            }
+        }
+        return false;
+    }
 
     /// <summary>Record a local variable entering the context.</summary>
     public void Local(Expr fvar, Expr type, Expr? value) =>
@@ -180,6 +243,10 @@ public sealed class TraceWriter
             if (s.SpanStart < i)
             {
                 _sb.Append(",\"from\":").Append(s.SpanStart);
+            }
+            if (s.Of >= 0)
+            {
+                _sb.Append(",\"of\":").Append(s.Of);
             }
             _sb.Append('}');
             _out.WriteLine(_sb.ToString());
