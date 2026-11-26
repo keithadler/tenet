@@ -477,8 +477,9 @@ rejected with a clear message, because trusting them means trusting the compiler
 A checker moves trust, it does not remove it. Accepting a Tenet run means trusting:
 
 - the .NET runtime and the C# compiler;
-- `Tenet.Kernel`, about 3,500 lines, and whichever front end you used: the export reader,
-  or the `.olean` reader, which decodes Lean's compiled object graph directly;
+- `Tenet.Kernel`, about 8,600 lines (7,100 without blank lines and comments), and whichever
+  front end you used: the export reader (about 2,000 lines), or the `.olean` reader (about
+  1,700 lines), which decodes Lean's compiled object graph directly;
 - that the input reflects what Lean actually checked. For an export, that is lean4export;
   for `.olean` files, that the files came from the build you think they did;
 - that the theorem statements say what you believe they say. No kernel can help here.
